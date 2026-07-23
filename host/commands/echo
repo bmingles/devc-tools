@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Trivial command used for the round-trip / arg / injection-safety smoke tests.
+# Args arrive as positional parameters ($1, $2, ...) — never as a shell string.
+#
+# NOTE: this deliberately accepts arbitrary args (it only echoes them, which is safe).
+# Do NOT copy it as a template for real commands — see the "Writing a command" section
+# in the README: real commands should validate args, not forward them.
+echo "echo: $*"

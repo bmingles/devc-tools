@@ -1,0 +1,217 @@
+// Headless core for the host command bridge: a loopback TCP server that dispatches
+// requests to allowlisted host scripts and watches a state directory for active
+// markers. No tray / no `deno desktop` dependency here, so this module is runnable
+// under a plain `deno run` and testable entirely inside a devcontainer.
+//
+// Transport note: we use TCP (not a unix socket) because a bind-mounted AF_UNIX
+// socket does not cross the Docker Desktop VM boundary — the container sees the
+// socket inode but connect() is refused (no listener in the guest kernel). The
+// container reaches the host-loopback server via `host.docker.internal`. A shared
+// token (delivered through the bind-mounted run dir as a regular file) authorizes
+// requests, since a loopback TCP port is otherwise reachable by any local process.
+//
+// The desktop entrypoint (server.ts) imports startServer() and adds the tray by
+// subscribing to `onActiveChange`.
+
+import { dirname, resolve } from "jsr:@std/path@^1";
+
+export interface ServerOptions {
+  /** Address to bind. Default host is 127.0.0.1 (reachable via host.docker.internal). */
+  hostname: string;
+  port: number;
+  /** Shared secret required on every request. */
+  token: string;
+  /** Directory of executable command scripts. The filenames are the allowlist. */
+  commandsDir: string;
+  /** Directory where scripts drop "active" marker files; watched for the tray. */
+  stateDir: string;
+  /** Called on startup and whenever the set of active markers changes. */
+  onActiveChange?: (active: string[]) => void;
+  /** Optional logger; defaults to console.error. */
+  log?: (msg: string) => void;
+}
+
+export interface Request {
+  token: string;
+  command: string;
+  args?: string[];
+}
+
+export type Response =
+  | { ok: true; exitCode: number; stdout: string; stderr: string }
+  | { ok: false; error: string };
+
+export interface RunningServer {
+  address: string;
+  /** Current set of active markers (sorted). */
+  active(): string[];
+  close(): void;
+}
+
+// A command name must be a bare filename — no path separators, no traversal.
+const NAME_RE = /^[A-Za-z0-9._-]+$/;
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+/** Yield newline-delimited chunks from a connection until EOF. */
+async function* readLines(conn: Deno.Conn): AsyncGenerator<string> {
+  let buf = "";
+  const chunk = new Uint8Array(4096);
+  while (true) {
+    const n = await conn.read(chunk);
+    if (n === null) break;
+    buf += decoder.decode(chunk.subarray(0, n), { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      yield buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+    }
+  }
+  if (buf.trim().length > 0) yield buf;
+}
+
+/** Resolve a request to an allowlisted script and run it with args as argv. */
+async function dispatch(
+  req: Request,
+  commandsDir: string,
+  stateDir: string,
+): Promise<Response> {
+  const name = req.command;
+  if (typeof name !== "string" || !NAME_RE.test(name) || name === "." || name === "..") {
+    return { ok: false, error: `invalid command name: ${JSON.stringify(name)}` };
+  }
+
+  const commandsRoot = resolve(commandsDir);
+  const scriptPath = resolve(commandsRoot, name);
+  // Defense in depth: the resolved path must sit directly inside commandsDir.
+  if (dirname(scriptPath) !== commandsRoot) {
+    return { ok: false, error: `invalid command name: ${JSON.stringify(name)}` };
+  }
+
+  let info: Deno.FileInfo;
+  try {
+    info = await Deno.stat(scriptPath);
+  } catch {
+    return { ok: false, error: `unknown command: ${name}` };
+  }
+  if (!info.isFile) {
+    return { ok: false, error: `unknown command: ${name}` };
+  }
+  // Require an executable bit so only intentional scripts run.
+  if (info.mode !== null && (info.mode & 0o111) === 0) {
+    return { ok: false, error: `command not executable: ${name}` };
+  }
+
+  const args = Array.isArray(req.args) ? req.args.map(String) : [];
+  try {
+    // args are passed as argv — never interpolated into a shell — so nothing the
+    // client sends can be interpreted as a shell metacharacter.
+    const cmd = new Deno.Command(scriptPath, {
+      args,
+      env: { ...Deno.env.toObject(), DEVC_HOST_STATE: stateDir },
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const out = await cmd.output();
+    return {
+      ok: true,
+      exitCode: out.code,
+      stdout: decoder.decode(out.stdout),
+      stderr: decoder.decode(out.stderr),
+    };
+  } catch (e) {
+    return { ok: false, error: `failed to run ${name}: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+async function scanActive(stateDir: string): Promise<string[]> {
+  const active: string[] = [];
+  try {
+    for await (const entry of Deno.readDir(stateDir)) {
+      if (entry.isFile) active.push(entry.name);
+    }
+  } catch {
+    // stateDir may not exist yet; treat as empty.
+  }
+  return active.sort();
+}
+
+export async function startServer(opts: ServerOptions): Promise<RunningServer> {
+  const log = opts.log ?? ((m: string) => console.error(m));
+  const commandsDir = resolve(opts.commandsDir);
+  const stateDir = resolve(opts.stateDir);
+
+  await Deno.mkdir(stateDir, { recursive: true });
+
+  const listener = Deno.listen({ hostname: opts.hostname, port: opts.port });
+  const address = `${opts.hostname}:${opts.port}`;
+
+  let currentActive = await scanActive(stateDir);
+  opts.onActiveChange?.(currentActive);
+
+  const watcher = Deno.watchFs(stateDir);
+  let closed = false;
+
+  // State-watch loop → recompute active set → notify subscriber (the tray).
+  (async () => {
+    for await (const _ev of watcher) {
+      const next = await scanActive(stateDir);
+      if (next.join("\0") !== currentActive.join("\0")) {
+        currentActive = next;
+        opts.onActiveChange?.(currentActive);
+      }
+    }
+  })().catch((e) => {
+    if (!closed) log(`watch error: ${e}`);
+  });
+
+  // Accept loop.
+  (async () => {
+    for await (const conn of listener) {
+      (async () => {
+        try {
+          for await (const line of readLines(conn)) {
+            if (line.trim().length === 0) continue;
+            let resp: Response;
+            try {
+              const req = JSON.parse(line) as Request;
+              if (req.token !== opts.token) {
+                resp = { ok: false, error: "unauthorized" };
+              } else {
+                resp = await dispatch(req, commandsDir, stateDir);
+              }
+            } catch (e) {
+              resp = { ok: false, error: `bad request: ${e instanceof Error ? e.message : String(e)}` };
+            }
+            await conn.write(encoder.encode(JSON.stringify(resp) + "\n"));
+          }
+        } catch (e) {
+          if (!closed) log(`connection error: ${e}`);
+        } finally {
+          try {
+            conn.close();
+          } catch {
+            // already closed
+          }
+        }
+      })();
+    }
+  })().catch((e) => {
+    if (!closed) log(`accept error: ${e}`);
+  });
+
+  return {
+    address,
+    active: () => currentActive,
+    close: () => {
+      closed = true;
+      try {
+        watcher.close();
+      } catch { /* ignore */ }
+      try {
+        listener.close();
+      } catch { /* ignore */ }
+    },
+  };
+}

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# macOS example: keep the host awake for the duration of a Claude session.
+#   caffeinate start | stop | status
+# Backgrounds the real `caffeinate(8)` and records its pid as the state marker so
+# the tray reflects awake-vs-idle. Host-only — needs macOS `caffeinate`.
+set -euo pipefail
+STATE_DIR="${DEVC_HOST_STATE:-$HOME/.config/devc-tools/state}"
+mkdir -p "$STATE_DIR"
+PIDFILE="$STATE_DIR/caffeinate"
+
+running() {
+  [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+case "${1:-status}" in
+  start)
+    if running; then echo "already running"; exit 0; fi
+    # Detach the child's stdio (</dev/null >/dev/null 2>&1) so it does not inherit
+    # and hold open the pipes the bridge reads — otherwise the server's output()
+    # never sees EOF and the client call hangs for the life of caffeinate.
+    caffeinate -dimsu </dev/null >/dev/null 2>&1 &
+    echo $! > "$PIDFILE"
+    echo "started"
+    ;;
+  stop)
+    if [[ -f "$PIDFILE" ]]; then
+      kill "$(cat "$PIDFILE")" 2>/dev/null || true
+      rm -f "$PIDFILE"
+    fi
+    echo "stopped"
+    ;;
+  status)
+    if running; then
+      echo "running"
+    else
+      rm -f "$PIDFILE" 2>/dev/null || true
+      echo "stopped"
+    fi
+    ;;
+  *)
+    echo "usage: caffeinate {start|stop|status}" >&2
+    exit 2
+    ;;
+esac

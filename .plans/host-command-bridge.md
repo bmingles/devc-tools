@@ -35,10 +35,10 @@ at runtime — perfect for an idle-vs-active visual cue. Confirmed via `deno des
 Host (macOS)                                  Devcontainer (Linux)
 ───────────────────────────────              ──────────────────────────
 deno desktop host/server.ts
-  ├─ listens: ~/.devc-host/run/devc.sock ◄──bind mount──►  /run/devc-host/devc.sock
+  ├─ listens: ~/.config/devc-tools/run/devc.sock ◄──bind mount──►  /run/devc-host/devc.sock
   ├─ dispatch: runs host/commands/<name> <args…>            ▲
   │            (Deno.Command, argv array, NO shell)         │
-  ├─ watches: ~/.devc-host/state/  (Deno.watchFs)     devc-host <name> [args…]
+  ├─ watches: ~/.config/devc-tools/state/  (Deno.watchFs)     devc-host <name> [args…]
   │            → repaints tray icon idle/active            (client CLI)
   └─ tray: menu-bar icon + menu (active list, Quit)
 ```
@@ -68,8 +68,8 @@ socket dir is mounted), so it can invoke scripts but not edit them.
 ## Filesystem layout
 
 Host-only (created once; server `mkdir -p`s state/run on start):
-- `~/.devc-host/run/devc.sock`  ← the only thing bind-mounted
-- `~/.devc-host/state/`         ← markers, watched by tray
+- `~/.config/devc-tools/run/devc.sock`  ← the only thing bind-mounted
+- `~/.config/devc-tools/state/`         ← markers, watched by tray
 
 Repo:
 ```
@@ -103,7 +103,7 @@ echo "echo: $*"
 ```sh
 #!/usr/bin/env bash
 set -euo pipefail
-STATE_DIR="${DEVC_HOST_STATE:-$HOME/.devc-host/state}"
+STATE_DIR="${DEVC_HOST_STATE:-$HOME/.config/devc-tools/state}"
 mkdir -p "$STATE_DIR"
 PIDFILE="$STATE_DIR/caffeinate"
 case "${1:-status}" in
@@ -125,15 +125,15 @@ as positional `$1…`; the script must quote `"$@"`.
 
 ## Permission flags (bake into `deno desktop`, same as `deno run`)
 
-- Server: `--allow-read=<home>/.devc-host,<repo>/host/commands,<repo>/icons`
-  `--allow-write=<home>/.devc-host` `--allow-run` (runs only allowlisted files)
+- Server: `--allow-read=<home>/.config/devc-tools,<repo>/host/commands,<repo>/icons`
+  `--allow-write=<home>/.config/devc-tools` `--allow-run` (runs only allowlisted files)
   `--allow-env`. Unix listen is gated by read/write on the socket path; if 2.9 still
   gates unix transport behind unstable, add `--unstable-net` (confirm in validation).
 - Client: `--allow-read=<sock> --allow-write=<sock>` (or compiled with these baked in).
 
 ## Checklist
 
-- [ ] `host/core.ts`: **headless** core — unix socket listener
+- [x] `host/core.ts`: **headless** core — unix socket listener
       (`Deno.listen({ transport:"unix", path })`), JSON line framing, accept loop,
       dispatch, and state-watch that emits an active-set change callback. No tray, no
       `deno desktop` — runnable via plain `deno run` so the agent can test it
@@ -146,22 +146,47 @@ as positional `$1…`; the script must quote `"$@"`.
       load icon bytes, `new Deno.Tray()`, `setIcon`/`setTooltip`/`setMenu`,
       `menuclick` for Quit + "Open commands folder", initial idle state. Subscribes to
       core's active-set callback to repaint icon/tooltip/menu.
-- [ ] State watcher lives in `core.ts`: `Deno.watchFs(stateDir)` → recompute active set
+- [x] State watcher lives in `core.ts`: `Deno.watchFs(stateDir)` → recompute active set
       → invoke callback. `mkdir -p` run+state dirs on startup.
-- [ ] `host/commands/echo` and `host/commands/caffeinate` (see exact shapes above).
-- [ ] `client/devc-host.ts`: read socket path from `DEVC_HOST_SOCKET`
+- [x] `host/commands/echo`, `host/commands/caffeinate`, `host/commands/toggle`.
+- [x] `client/devc-host.ts`: read socket path from `DEVC_HOST_SOCKET`
       (default `/run/devc-host/devc.sock`), `Deno.connect({transport:"unix"})`,
       send `{command, args}`, print stdout/stderr, exit with server's exitCode.
-- [ ] `deno.json` tasks: `host:dev` (`deno desktop --hmr host/server.ts <flags>`),
-      `host:build` (`deno desktop --output DevcHost.app --icon icons/app.png …`),
-      `client:build` (`deno compile` → `devc-host` binary).
-- [ ] `.devcontainer/devcontainer.json`: mount
-      `source=${localEnv:HOME}/.devc-host/run,target=/run/devc-host,type=bind`;
+- [x] `deno.json` tasks: host `dev`/`build`/`serve`; client `build` (`deno compile` →
+      `devc-host` binary) / `run`.
+- [x] `.devcontainer/devcontainer.json`: mount
+      `source=${localEnv:HOME}/.config/devc-tools/run,target=/run/devc-host,type=bind`;
       `postCreateCommand` compiles/installs `devc-host` to `/usr/local/bin`.
-- [ ] Icons: three template PNGs at recommended sizes (22×22 tray, app icon).
-- [ ] `README.md`: prerequisites (Deno 2.9+, `~/.devc-host/run` must exist before the
-      container starts), run instructions, trust-boundary warning, example Claude hook
-      snippet calling `devc-host caffeinate start` / `stop`.
+- [x] Icons: three template PNGs (22×22 idle ring / active disc, 256×256 app).
+- [x] `README.md`: prerequisites, run instructions, trust-boundary warning, example
+      Claude hook snippet calling `devc-host caffeinate start` / `stop`.
+- [x] `.gitignore` for build artifacts (`client/devc-host`, `host/DevcHost.app`).
+
+**Deviations from plan (found during validation):**
+- **TRANSPORT PIVOT (the §B1 gate failed as anticipated).** A bind-mounted AF_UNIX
+  socket does **not** cross the Docker Desktop VM boundary: on the host, connecting to
+  the socket works (`nc -U` gets a reply), but from the container `connect()` returns
+  `ECONNREFUSED` — the mount shares the inode, not the listening endpoint. Pivoted to
+  **loopback TCP + shared token**: server listens on `127.0.0.1:48227`, container reaches
+  it via `host.docker.internal`, and a token written to the bind-mounted run dir
+  (regular files cross the mount fine) authorizes requests (`{token,command,args}`;
+  mismatch → `unauthorized`). New file `host/token.ts`. Env: `DEVC_HOST_ADDR`,
+  `DEVC_HOST_TOKEN_FILE`, `DEVC_HOST_HOST`, `DEVC_HOST_PORT`. Everything else (dispatch,
+  scripts, state-watch, tray) unchanged. Re-verified §A over TCP loopback: 12/12 incl. a
+  new bad-token → `unauthorized` check. (OrbStack reportedly forwards unix sockets; we
+  target Docker Desktop.)
+- Deno gates socket `Deno.listen`/`connect` behind **`--allow-net`**, NOT
+  `--allow-read`/`--allow-write` (found while still on unix; applies to TCP too).
+- `deno desktop` runs the entrypoint from a **temp dir**, so paths relative to
+  `import.meta.url` fail (`.../T/…` not found). This bit both icons and commands:
+  - Tray PNGs are **embedded as base64 in `server.ts`** (`icons/*.png` stay the source
+    of truth + the build-time `--icon` app icon; regenerate with `base64 -w0 icons/idle.png`).
+  - Command scripts **can't** be embedded (host-editable by design), so the server reads
+    them from a stable absolute path — default `~/.config/devc-tools/commands`, seeded from the
+    repo (`ln -sfn "$PWD/host/commands" ~/.config/devc-tools/commands`). This was the cause of the
+    observed `unknown command: echo` — the default resolved into the empty temp bundle dir.
+- Container wiring is provided by the repo's **devc tool** in `.devc/` (`devc.json`
+  mount + env, `devc-postcreate.sh` client install), not `.devcontainer/devcontainer.json`.
 
 ## Validation
 
@@ -173,50 +198,48 @@ layer is testable without a host.
 
 ### A. Agent-testable — in-container client+server experiment
 
-Run the server and client **in the same devcontainer** on a plain unix socket
-(no bind mount, no tray, no `deno desktop`). Server is launched as a headless
-`deno run` for these tests (the tray/`deno desktop` layer is skipped here). This
-proves the protocol, dispatch, allowlist, and injection-safety logic:
+Run the server and client **in the same devcontainer** over loopback TCP + token
+(no `host.docker.internal`, no tray, no `deno desktop`). Server is launched as a
+headless `deno run` for these tests. This proves the protocol, token auth, dispatch,
+allowlist, and injection-safety logic:
 
-- [ ] **A1. Round-trip.** Start `deno run … host/server.ts` pointing at a temp socket
-      (e.g. `/tmp/devc.sock`) with the `commands/` dir; run
-      `DEVC_HOST_SOCKET=/tmp/devc.sock devc-host echo hello` → `echo: hello`, exit 0.
-- [ ] **A2. Dispatch + args.** `devc-host echo a b c` → `echo: a b c`; a script's
-      non-zero exit propagates to the client's exit code; stdout/stderr are separated.
-- [ ] **A3. Injection safety.** `devc-host echo '; touch /tmp/pwned; #'` prints the
-      string literally and `/tmp/pwned` is NOT created — proves argv (not shell) exec.
-- [ ] **A4. Allowlist.** `devc-host nope` and `devc-host ../server` → `{"ok":false,…}`,
-      client exits non-zero, nothing runs.
-- [ ] **A5. State watcher.** A dummy `commands/toggle` that touches/removes
-      `$DEVC_HOST_STATE/toggle`; assert the server's watcher recomputes the active set
-      (log it, or expose a `__status` internal). Verifies the tray's data source
-      without needing a GUI.
+All §A checks passed (verified with `deno run` server + both `deno run` and the
+**compiled** `devc-host` binary). 13/13 in the assertion suite green.
+
+- [x] **A1. Round-trip.** `devc-host echo hello` → `echo: hello`, exit 0.
+- [x] **A2. Dispatch + args.** `echo a b c` → `echo: a b c`; `toggle badarg` propagates
+      exit 2; stdout/stderr separated (usage went to stderr, stdout empty).
+- [x] **A3. Injection safety.** `echo '; touch /tmp/pwned; #'` printed literally;
+      `/tmp/pwned` NOT created — confirms argv (not shell) exec.
+- [x] **A4. Allowlist.** `nope` → `unknown command`; `../serve.ts` and `a b` →
+      `invalid command name`; all exit 1, nothing ran.
+- [x] **A5. State watcher.** `toggle on`/`off` drove the server's active set
+      `[]` → `["toggle"]` → `[]` (observed in the `active:` log) — the tray's data source.
 
 ### B. User-only — host verification (macOS, requires GUI + Docker Desktop)
 
-- [ ] **B1. Socket round-trip over bind mount (GATE).** `mkdir -p ~/.devc-host/run`;
-      start the host server; rebuild/reopen the devcontainer; inside the container run
-      `devc-host echo hello` → `echo: hello`. If this fails, STOP — the
-      unix-socket-over-Docker-Desktop assumption is broken; revisit transport (TCP via
-      `host.docker.internal`).
+- [x] **B1. Transport gate.** `devc-host echo hello` in the container → `echo: hello`,
+      over token-authorized TCP via `host.docker.internal`. Confirms the pivot works
+      across the Docker Desktop boundary.
 - [ ] **B2. Caffeinate.** `devc-host caffeinate start` → `pmset -g assertions` shows a
       caffeinate assertion + `state/caffeinate` marker; `status` → `running`; `stop`
       clears both.
-- [ ] **B3. Tray visual.** `deno task host:dev` → menu-bar icon (idle); `caffeinate
-      start` from the container flips it to active with tooltip; `stop` → idle; "Quit"
-      exits cleanly.
-- [ ] **B4. Bundle.** `deno task host:build` produces `DevcHost.app` that behaves the
-      same when double-clicked.
+- [x] **B3. Tray visual + dispatch + state.** `devc-host toggle on` flipped the menu-bar
+      icon ○ → ● (and created `state/toggle`); `toggle off` reverted it. Confirms
+      `Deno.Tray`, dispatch, and the state watcher end to end.
+- [ ] **B4. Bundle.** `deno task build` produces `DevcHost.app` that behaves the same
+      when double-clicked.
 
 ## Relevant Files (all new — greenfield repo)
 
-- `host/core.ts` — headless socket server, dispatch, state watcher (agent-testable)
+- `host/core.ts` — headless TCP server, dispatch, token check, state watcher (agent-testable)
+- `host/token.ts` — generate/persist the shared token
 - `host/serve.ts` — headless entrypoint for the in-container §A experiment
 - `host/server.ts` — desktop entrypoint: wraps core + tray
 - `host/deno.json` — dev/build tasks + `desktop` config block
 - `host/commands/echo`, `host/commands/caffeinate` — example allowlisted scripts
 - `client/devc-host.ts` — container client CLI
 - `client/deno.json` — client build task
-- `.devcontainer/devcontainer.json` — socket bind-mount + client install
+- `.devc/devc.json` + `.devc/devc-postcreate.sh` — socket bind-mount + client install
 - `icons/idle.png`, `icons/active.png`, `icons/app.png` — tray/app icons
 - `README.md` — setup, trust-boundary warning, hook wiring example

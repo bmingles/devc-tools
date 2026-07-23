@@ -1,0 +1,6 @@
+{
+  "tasks": {
+    "build": "deno compile --allow-read --allow-net --allow-env=DEVC_HOST_ADDR,DEVC_HOST_TOKEN_FILE --output devc-host devc-host.ts",
+    "run": "deno run --allow-read --allow-net --allow-env=DEVC_HOST_ADDR,DEVC_HOST_TOKEN_FILE devc-host.ts"
+  }
+}
