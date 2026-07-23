@@ -1,0 +1,5 @@
+# Client build artifact (compiled at devcontainer create time)
+/client/devc-host
+
+# Desktop app bundle
+/host/DevcHost.app/

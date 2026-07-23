@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "dev": "deno desktop --hmr --allow-read --allow-write --allow-run --allow-env --allow-net server.ts",
+    "build": "deno desktop --output DevcHost.app --icon ../icons/app.png --allow-read --allow-write --allow-run --allow-env --allow-net server.ts",
+    "serve": "deno run --allow-read --allow-write --allow-run --allow-env --allow-net serve.ts"
+  },
+  "imports": {
+    "jsr:@std/path": "jsr:@std/path@^1"
+  }
+}

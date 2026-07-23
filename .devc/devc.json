@@ -1,0 +1,9 @@
+{
+  "containerEnv": {
+    "DEVC_HOST_ADDR": "host.docker.internal:48227",
+    "DEVC_HOST_TOKEN_FILE": "/run/devc-host/token"
+  },
+  "mounts": [
+    "type=bind,source=${localEnv:HOME}/.config/devc-tools/run,target=/run/devc-host"
+  ]
+}

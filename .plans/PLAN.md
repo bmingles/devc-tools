@@ -14,4 +14,4 @@ _(none yet)_
 
 | Phase | Plan | Status |
 | ----- | ---- | ------ |
-| Host command bridge (socket server + client + tray) | [host-command-bridge](host-command-bridge.md) | |
+| Host command bridge (socket server + client + tray) | [host-command-bridge](host-command-bridge.md) | in progress |
