@@ -42,37 +42,42 @@ Cleanup: `pkill -f host/serve.ts; rm -rf /tmp/devc-host`.
 
 ## §B — Host verification (macOS)
 
-Requires Deno 2.9+ on the host. Run **in order — stop at the first failure.**
+Requires Deno 2.9+ on the host (only to *build*). Run **in order — stop at the first failure.**
 
 ```sh
-# One-time setup: run dir (mounted) + seed command scripts to a stable path
-mkdir -p ~/.config/devc-tools/run
-ln -sfn "$PWD/host/commands" ~/.config/devc-tools/commands   # from repo root
+# One-time build: self-contained binary with the command scripts embedded.
+cd host && deno task build         # → ./devc-tools
+install devc-tools /usr/local/bin/ # anywhere on PATH
 
-# GATE: does the container reach the host bridge over host.docker.internal?
-cd host && deno task dev            # menu-bar icon appears (idle ○); writes ~/.config/devc-tools/run/token
+# GATE: zero-setup start (no hand-created ~/.config) reaches the container over
+# host.docker.internal?
+rm -rf ~/.config/devc-tools        # prove first-run seeding (optional; destroys existing config)
+devc-tools start                   # seeds config, writes token, menu-bar icon appears (idle ○)
 # → reopen the devcontainer, then INSIDE it:
 devc-host echo hello               # expect: echo: hello
 ```
 
 If the gate fails, check in this order:
 1. **`cannot read token /run/devc-host/token`** → run dir not mounted, or server not
-   started (it writes the token on startup). Confirm `.devc/devc.json` mount + that
-   `deno task dev` is running.
+   started. Confirm `.devc/devc.json` mount + `devc-tools status` shows `running`.
 2. **`cannot connect to host.docker.internal:48227`** → the container can't reach host
-   loopback. Try `DEVC_HOST_HOST=0.0.0.0 deno task dev` on the host.
-3. **`unauthorized`** → stale token in the container's mount; restart the server / reopen.
-4. **`unknown command: echo`** → `~/.config/devc-tools/commands` not seeded (the symlink step).
+   loopback. Try `DEVC_HOST_HOST=0.0.0.0 devc-tools restart` on the host.
+3. **`unauthorized`** → stale token in the container's mount; `devc-tools restart` / reopen.
+4. **`unknown command: echo`** → commands not seeded; check `~/.config/devc-tools/commands/`
+   exists (it is auto-created on `start`).
 
 | Check | Where | Command | Expected |
 | --- | --- | --- | --- |
+| B0 zero-setup | host | `rm -rf ~/.config/devc-tools && devc-tools start` | `started (pid N)`; `~/.config/devc-tools/{run,state,commands}` + token created; `commands/` has `echo`/`caffeinate`/`toggle` |
+| B0 idempotent | host | `devc-tools start` again | `already running (pid N)` |
+| B0 status/stop | host | `devc-tools status` then `devc-tools stop` | `running (pid N)` (icon shown) → `stopped` (icon gone) |
 | B1 gate | container | `devc-host echo hello` | `echo: hello` |
 | B2 caffeinate start | container | `devc-host caffeinate start` | `started` |
 | B2 assertion | host | `pmset -g assertions \| grep -i caffeinate` | assertion present |
 | B2 status | container | `devc-host caffeinate status` | `running` |
 | B2 stop | container | `devc-host caffeinate stop` | `stopped`, assertion gone |
 | B3 tray | host | (watch menu bar) | ○→● on start, ●→○ on stop; "Quit" exits |
-| B4 bundle | host | `cd host && deno task build` | `DevcHost.app` behaves the same double-clicked |
+| B4 no window flash | host | `devc-tools start`/`stop`/`status` | no webview window appears (menu-bar only, `--backend raw`) |
 
 ### Notes / gotchas
 
@@ -83,6 +88,8 @@ If the gate fails, check in this order:
 - **Permissions:** unix/TCP `listen`/`connect` need **`--allow-net`**, not
   `--allow-read/write`. The client also needs `--allow-read` (token file) and
   `--allow-env=DEVC_HOST_ADDR,DEVC_HOST_TOKEN_FILE`. All baked into the `deno.json` tasks.
-- **`deno desktop` runs from a temp dir**, so paths relative to `import.meta.url` break.
-  Tray icons are embedded (base64) in `server.ts`; command scripts can't be embedded
-  (they're host-editable), so the server reads them from `~/.config/devc-tools/commands`.
+- **`deno desktop` runs from a temp dir**, so paths relative to `import.meta.url` point
+  into the bundle, not the CWD. Tray icons are embedded (base64) in `host/tray.ts`; command
+  scripts are embedded via `deno desktop --include commands` and read back through
+  `new URL("./commands", import.meta.url)` in `host/config.ts`, then **seeded** to the
+  editable `~/.config/devc-tools/commands` on first `start` (never overwritten thereafter).
