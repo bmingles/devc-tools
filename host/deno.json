@@ -1,7 +1,7 @@
 {
   "tasks": {
-    "dev": "deno desktop --hmr --allow-read --allow-write --allow-run --allow-env --allow-net server.ts",
-    "build": "deno desktop --output DevcHost.app --icon ../icons/app.png --allow-read --allow-write --allow-run --allow-env --allow-net server.ts",
+    "dev": "deno desktop --hmr --allow-read --allow-write --allow-run --allow-env --allow-net main.ts run",
+    "build": "deno desktop --output DevcTools.app --include commands --icon ../icons/app.png --allow-read --allow-write --allow-run --allow-env --allow-net main.ts",
     "serve": "deno run --allow-read --allow-write --allow-run --allow-env --allow-net serve.ts"
   },
   "imports": {

@@ -10,7 +10,7 @@ currently active (e.g. the Mac is being kept awake) vs. idle.
 ```
 Host (macOS)                                    Devcontainer
 ────────────────────────────                   ───────────────────────
-deno desktop host/server.ts
+devc-tools start   (background menu-bar app)
   ├─ TCP 127.0.0.1:48227 ◄── host.docker.internal ──  devc-host <name> [args…]
   │      (token-authorized)                             │  reads token from
   ├─ runs ~/.config/devc-tools/commands/<name> <args…>          │  /run/devc-host/token
@@ -33,12 +33,13 @@ works; we target Docker Desktop.)
 
 ## How it works
 
-- **Server** (`host/server.ts`, run with `deno desktop`) listens on loopback TCP and
-  watches a state directory. It runs as a **menu-bar-only accessory app** — no dock icon
-  and no window (`deno desktop` always creates an implicit webview window; `server.ts`
-  hides the dock, adopts that window, points it at a blank URL, and hides it).
-  `host/core.ts` holds all the transport/dispatch logic and runs headless too
-  (`host/serve.ts`).
+- **Server** (`devc-tools`, a single `deno desktop` binary built from `host/main.ts`)
+  listens on loopback TCP and watches a state directory. `devc-tools start` launches it
+  **in the background**; `stop`/`status`/`restart` manage it. It runs as a
+  **menu-bar-only accessory app** — no dock icon and no window. `host/tray.ts` holds the
+  tray, `host/core.ts` all the transport/dispatch logic (which also runs headless via
+  `host/serve.ts`), and `host/config.ts` resolves paths + seeds the command scripts on
+  first start.
 - **Client** (`client/devc-host.ts`, compiled to `devc-host`) runs in the container,
   reads the token, sends one JSON request, prints the script's output, and exits with
   its exit code.
@@ -74,19 +75,35 @@ a convenience boundary for a single-user machine, not a hardened multi-tenant co
 
 ## Setup (macOS host)
 
-Requires Deno 2.9+ on the host.
+Build the `devc-tools` binary once (requires Deno 2.9+), then it is self-contained — no
+config dir or command files to create by hand.
 
 ```sh
-# 1. Create the run dir the container mounts (must exist before container start) and
-#    seed the command scripts to a stable host path (symlink keeps the repo authoritative)
-mkdir -p ~/.config/devc-tools/run
-ln -sfn "$PWD/host/commands" ~/.config/devc-tools/commands
+# 1. Build the host tool and put it on PATH (Deno 2.9+ needed only for this step).
+cd host && deno task build         # → ./devc-tools (command scripts embedded)
+install devc-tools /usr/local/bin/ # or move it anywhere on your PATH
 
-# 2. Start the host server (menu-bar app). It writes ~/.config/devc-tools/run/token on startup.
-cd host && deno task dev          # or: deno task build  → DevcHost.app
+# 2. Start it in the background. First run auto-creates ~/.config/devc-tools/ (run/,
+#    state/, commands/), seeds the example command scripts, and writes the token.
+devc-tools start                   # menu-bar icon appears (idle ○)
+devc-tools status                  # -> running (pid N)
 
 # 3. (Re)open the devcontainer. Its post-create step compiles `devc-host` onto PATH.
 ```
+
+Lifecycle:
+
+```sh
+devc-tools start      # seed (first run) + launch the tray in the background
+devc-tools status     # running (pid N) — idle | active: …   /  stopped
+devc-tools stop       # stop the background tray
+devc-tools restart
+```
+
+Command scripts are seeded to `~/.config/devc-tools/commands/` on first start and are
+**yours to edit** — later starts never overwrite them. To pick up new example scripts from
+a rebuilt binary, add them there yourself (or delete the ones you want re-seeded). During
+development you can also run the tray in the foreground with `deno task dev`.
 
 Container wiring lives in `.devc/` for this repo's devcontainer tool: `.devc/devc.json`
 adds the run-dir bind mount and sets `DEVC_HOST_ADDR` / `DEVC_HOST_TOKEN_FILE`, and
@@ -209,11 +226,13 @@ the scripts few and simple.
 
 | Path | Role |
 | --- | --- |
+| `host/main.ts` | `devc-tools` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`) |
+| `host/config.ts` | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start) |
+| `host/tray.ts` | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI) |
 | `host/core.ts` | Headless TCP server + dispatch + state watcher |
 | `host/serve.ts` | Headless entrypoint (no tray) — used for testing |
-| `host/server.ts` | Desktop entrypoint — wraps core + menu-bar tray |
 | `host/token.ts` | Generate/persist the shared token |
-| `host/commands/` | Allowlisted, editable host scripts (seeded to `~/.config/devc-tools/commands`) |
+| `host/commands/` | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-tools/commands` |
 | `client/devc-host.ts` | Container client CLI |
 | `.devc/` | Devcontainer tool config: run-dir bind-mount + env + client install |
 | `icons/` | Source PNGs for the app icon + the tray icons (embedded in `server.ts`) |
