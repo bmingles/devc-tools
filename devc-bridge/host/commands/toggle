@@ -2,7 +2,7 @@
 # Demo command that flips a state marker on/off. Used to exercise the server's
 # state watcher (the tray's data source) without needing a GUI or macOS.
 set -euo pipefail
-STATE_DIR="${DEVC_HOST_STATE:-/tmp/devc-host/state}"
+STATE_DIR="${DEVC_BRIDGE_STATE:-/tmp/devc-bridge/state}"
 mkdir -p "$STATE_DIR"
 MARKER="$STATE_DIR/toggle"
 case "${1:-}" in

@@ -1,9 +1,9 @@
 // Shared configuration: where the bridge keeps its runtime files, and how the
 // self-contained binary seeds its editable command scripts on first start.
 //
-// Everything lives under a single base dir (default ~/.config/devc-tools). The
+// Everything lives under a single base dir (default ~/.config/devc-bridge). The
 // per-dir env overrides that predate this file are still honored so existing
-// setups keep working; DEVC_HOST_BASE relocates the whole tree at once.
+// setups keep working; DEVC_BRIDGE_BASE relocates the whole tree at once.
 //
 // Seeding is what makes a shared binary "just work": the command scripts are
 // embedded at build time (`deno desktop --include commands`) and are readable at
@@ -15,7 +15,7 @@
 import { join } from "jsr:@std/path@^1";
 
 export interface Config {
-  /** Root of the config tree (default ~/.config/devc-tools). */
+  /** Root of the config tree (default ~/.config/devc-bridge). */
   base: string;
   /** Bind-mounted run dir: token + pidfile live here. */
   run: string;
@@ -37,27 +37,51 @@ export interface Config {
 
 export function loadConfig(): Config {
   const home = Deno.env.get("HOME") ?? ".";
-  const base = Deno.env.get("DEVC_HOST_BASE") ?? join(home, ".config", "devc-tools");
+  const base = Deno.env.get("DEVC_BRIDGE_BASE") ?? join(home, ".config", "devc-bridge");
   const run = join(base, "run");
   return {
     base,
     run,
-    state: Deno.env.get("DEVC_HOST_STATE") ?? join(base, "state"),
-    commands: Deno.env.get("DEVC_HOST_COMMANDS") ?? join(base, "commands"),
-    token: Deno.env.get("DEVC_HOST_TOKEN_FILE") ?? join(run, "token"),
+    state: Deno.env.get("DEVC_BRIDGE_STATE") ?? join(base, "state"),
+    commands: Deno.env.get("DEVC_BRIDGE_COMMANDS") ?? join(base, "commands"),
+    token: Deno.env.get("DEVC_BRIDGE_TOKEN_FILE") ?? join(run, "token"),
     pidfile: join(run, "tray.pid"),
-    logfile: join(base, "devc-tools.log"),
-    hostname: Deno.env.get("DEVC_HOST_HOST") ?? "127.0.0.1",
-    port: Number(Deno.env.get("DEVC_HOST_PORT") ?? "48227"),
+    logfile: join(base, "devc-bridge.log"),
+    hostname: Deno.env.get("DEVC_BRIDGE_HOST") ?? "127.0.0.1",
+    port: Number(Deno.env.get("DEVC_BRIDGE_PORT") ?? "48227"),
   };
 }
 
 /** Create the runtime dirs and seed missing command scripts. Idempotent. */
 export async function ensureConfig(cfg: Config): Promise<void> {
-  await Deno.mkdir(cfg.run, { recursive: true });
-  await Deno.mkdir(cfg.state, { recursive: true });
-  await Deno.mkdir(cfg.commands, { recursive: true });
+  await ensureDir(cfg.run);
+  await ensureDir(cfg.state);
+  await ensureDir(cfg.commands);
   await seedCommands(cfg.commands);
+}
+
+/**
+ * `mkdir -p`, but with a legible failure. A recursive mkdir still throws `AlreadyExists`
+ * when the path exists yet doesn't *resolve* to a directory — a dangling symlink (e.g. one
+ * left over from an older layout) or a plain file — so name that case instead of surfacing
+ * a bare os error 17.
+ */
+async function ensureDir(path: string): Promise<void> {
+  try {
+    await Deno.mkdir(path, { recursive: true });
+  } catch (e) {
+    if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
+    let kind = "not a directory";
+    try {
+      if ((await Deno.stat(path)).isDirectory) return; // symlink to a real dir — fine
+    } catch {
+      const link = await Deno.readLink(path).catch(() => null);
+      kind = link === null
+        ? "not a directory"
+        : `a broken symlink → ${link} (retarget or remove it)`;
+    }
+    throw new Error(`devc-bridge: ${path} is ${kind}`);
+  }
 }
 
 /**
@@ -72,7 +96,7 @@ export async function seedCommands(commandsDir: string): Promise<string[]> {
     entries = Deno.readDir(embedded);
   } catch (e) {
     // No embedded commands (shouldn't happen in a proper build) — nothing to seed.
-    console.error(`devc-tools: cannot read embedded commands: ${errMsg(e)}`);
+    console.error(`devc-bridge: cannot read embedded commands: ${errMsg(e)}`);
     return written;
   }
   for await (const entry of entries) {
@@ -98,7 +122,7 @@ export function errMsg(e: unknown): string {
 
 /**
  * Append a line to the log file (best-effort). The tray is launched via `open`, so its
- * console output isn't visible anywhere — this is how `devc-tools start` surfaces why a
+ * console output isn't visible anywhere — this is how `devc-bridge start` surfaces why a
  * launch failed.
  */
 export async function appendLog(logfile: string, msg: string): Promise<void> {

@@ -33,7 +33,7 @@ function decodeIcon(b64: string): Uint8Array {
 /** Run the bridge (+ tray when available) until quit/terminated. Never returns. */
 export async function runTray(cfg: Config): Promise<void> {
   // Launched via `open`, this process has no visible console — mirror startup and any
-  // fatal error into the log file so `devc-tools start` can explain a failed launch.
+  // fatal error into the log file so `devc-bridge start` can explain a failed launch.
   try {
     await runTrayInner(cfg);
   } catch (e) {
@@ -57,7 +57,7 @@ async function runTrayInner(cfg: Config): Promise<void> {
     onActiveChange: (active) => paint(active),
   });
 
-  // Record our PID so `devc-tools stop`/`status` can find us however we were launched
+  // Record our PID so `devc-bridge stop`/`status` can find us however we were launched
   // (backgrounded by `start`, or run/double-clicked directly).
   try {
     await Deno.writeTextFile(cfg.pidfile, `${Deno.pid}\n`);
@@ -72,7 +72,7 @@ async function runTrayInner(cfg: Config): Promise<void> {
     } catch { /* already gone */ }
     Deno.exit(0);
   };
-  // `devc-tools stop` sends SIGTERM; also handle Ctrl-C in the foreground `run`.
+  // `devc-bridge stop` sends SIGTERM; also handle Ctrl-C in the foreground `run`.
   Deno.addSignalListener("SIGINT", shutdown);
   Deno.addSignalListener("SIGTERM", shutdown);
 
@@ -128,7 +128,7 @@ function trySetupTray(
       const awake = active.length > 0;
       tray.setIcon(awake ? activeIcon : idleIcon);
       tray.setTooltip(
-        awake ? `devc-tools: active — ${active.join(", ")}` : "devc-tools: idle",
+        awake ? `devc-bridge: active — ${active.join(", ")}` : "devc-bridge: idle",
       );
       const menu: unknown[] = [];
       if (awake) {
@@ -159,7 +159,7 @@ function trySetupTray(
     render(initialActive);
     return render;
   } catch (e) {
-    console.error(`devc-tools: tray setup failed (${errMsg(e)}); running headless`);
+    console.error(`devc-bridge: tray setup failed (${errMsg(e)}); running headless`);
     return null;
   }
 }

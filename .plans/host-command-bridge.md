@@ -35,10 +35,10 @@ at runtime — perfect for an idle-vs-active visual cue. Confirmed via `deno des
 Host (macOS)                                  Devcontainer (Linux)
 ───────────────────────────────              ──────────────────────────
 deno desktop host/server.ts
-  ├─ listens: ~/.config/devc-tools/run/devc.sock ◄──bind mount──►  /run/devc-host/devc.sock
+  ├─ listens: ~/.config/devc-bridge/run/devc.sock ◄──bind mount──►  /run/devc-bridge/devc.sock
   ├─ dispatch: runs host/commands/<name> <args…>            ▲
   │            (Deno.Command, argv array, NO shell)         │
-  ├─ watches: ~/.config/devc-tools/state/  (Deno.watchFs)     devc-host <name> [args…]
+  ├─ watches: ~/.config/devc-bridge/state/  (Deno.watchFs)     devc-bridge <name> [args…]
   │            → repaints tray icon idle/active            (client CLI)
   └─ tray: menu-bar icon + menu (active list, Quit)
 ```
@@ -57,7 +57,7 @@ Execution: `new Deno.Command(path, { args, env, stdout:"piped", stderr:"piped" }
 children. Each command script owns its own lifecycle and drops a marker file in the
 state dir (`start` → write pidfile, `stop` → remove it). The server `Deno.watchFs`
 the state dir: ≥1 marker → `active.png` + tooltip lists active commands; none →
-`idle.png`. The server passes `DEVC_HOST_STATE` in the script env so scripts know
+`idle.png`. The server passes `DEVC_BRIDGE_STATE` in the script env so scripts know
 where to write.
 
 **Trust boundary (document in README):** anything running in the container can invoke
@@ -68,8 +68,8 @@ socket dir is mounted), so it can invoke scripts but not edit them.
 ## Filesystem layout
 
 Host-only (created once; server `mkdir -p`s state/run on start):
-- `~/.config/devc-tools/run/devc.sock`  ← the only thing bind-mounted
-- `~/.config/devc-tools/state/`         ← markers, watched by tray
+- `~/.config/devc-bridge/run/devc.sock`  ← the only thing bind-mounted
+- `~/.config/devc-bridge/state/`         ← markers, watched by tray
 
 Repo:
 ```
@@ -80,7 +80,7 @@ host/
     echo               # trivial, for the round-trip smoke test
     caffeinate         # example: start|stop|status, writes state marker
 client/
-  devc-host.ts         # container CLI: connect, send JSON, print, propagate exit code
+  devc-bridge.ts         # container CLI: connect, send JSON, print, propagate exit code
   deno.json
 icons/
   idle.png             # 22×22 template (opaque silhouette), tray idle
@@ -103,7 +103,7 @@ echo "echo: $*"
 ```sh
 #!/usr/bin/env bash
 set -euo pipefail
-STATE_DIR="${DEVC_HOST_STATE:-$HOME/.config/devc-tools/state}"
+STATE_DIR="${DEVC_BRIDGE_STATE:-$HOME/.config/devc-bridge/state}"
 mkdir -p "$STATE_DIR"
 PIDFILE="$STATE_DIR/caffeinate"
 case "${1:-status}" in
@@ -125,8 +125,8 @@ as positional `$1…`; the script must quote `"$@"`.
 
 ## Permission flags (bake into `deno desktop`, same as `deno run`)
 
-- Server: `--allow-read=<home>/.config/devc-tools,<repo>/host/commands,<repo>/icons`
-  `--allow-write=<home>/.config/devc-tools` `--allow-run` (runs only allowlisted files)
+- Server: `--allow-read=<home>/.config/devc-bridge,<repo>/host/commands,<repo>/icons`
+  `--allow-write=<home>/.config/devc-bridge` `--allow-run` (runs only allowlisted files)
   `--allow-env`. Unix listen is gated by read/write on the socket path; if 2.9 still
   gates unix transport behind unstable, add `--unstable-net` (confirm in validation).
 - Client: `--allow-read=<sock> --allow-write=<sock>` (or compiled with these baked in).
@@ -149,18 +149,18 @@ as positional `$1…`; the script must quote `"$@"`.
 - [x] State watcher lives in `core.ts`: `Deno.watchFs(stateDir)` → recompute active set
       → invoke callback. `mkdir -p` run+state dirs on startup.
 - [x] `host/commands/echo`, `host/commands/caffeinate`, `host/commands/toggle`.
-- [x] `client/devc-host.ts`: read socket path from `DEVC_HOST_SOCKET`
-      (default `/run/devc-host/devc.sock`), `Deno.connect({transport:"unix"})`,
+- [x] `client/devc-bridge.ts`: read socket path from `DEVC_BRIDGE_SOCKET`
+      (default `/run/devc-bridge/devc.sock`), `Deno.connect({transport:"unix"})`,
       send `{command, args}`, print stdout/stderr, exit with server's exitCode.
 - [x] `deno.json` tasks: host `dev`/`build`/`serve`; client `build` (`deno compile` →
-      `devc-host` binary) / `run`.
+      `devc-bridge` binary) / `run`.
 - [x] `.devcontainer/devcontainer.json`: mount
-      `source=${localEnv:HOME}/.config/devc-tools/run,target=/run/devc-host,type=bind`;
-      `postCreateCommand` compiles/installs `devc-host` to `/usr/local/bin`.
+      `source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,type=bind`;
+      `postCreateCommand` compiles/installs `devc-bridge` to `/usr/local/bin`.
 - [x] Icons: three template PNGs (22×22 idle ring / active disc, 256×256 app).
 - [x] `README.md`: prerequisites, run instructions, trust-boundary warning, example
-      Claude hook snippet calling `devc-host caffeinate start` / `stop`.
-- [x] `.gitignore` for build artifacts (`client/devc-host`, `host/DevcHost.app`).
+      Claude hook snippet calling `devc-bridge caffeinate start` / `stop`.
+- [x] `.gitignore` for build artifacts (`client/devc-bridge`, `host/DevcBridge.app`).
 
 **Deviations from plan (found during validation):**
 - **TRANSPORT PIVOT (the §B1 gate failed as anticipated).** A bind-mounted AF_UNIX
@@ -170,8 +170,8 @@ as positional `$1…`; the script must quote `"$@"`.
   **loopback TCP + shared token**: server listens on `127.0.0.1:48227`, container reaches
   it via `host.docker.internal`, and a token written to the bind-mounted run dir
   (regular files cross the mount fine) authorizes requests (`{token,command,args}`;
-  mismatch → `unauthorized`). New file `host/token.ts`. Env: `DEVC_HOST_ADDR`,
-  `DEVC_HOST_TOKEN_FILE`, `DEVC_HOST_HOST`, `DEVC_HOST_PORT`. Everything else (dispatch,
+  mismatch → `unauthorized`). New file `host/token.ts`. Env: `DEVC_BRIDGE_ADDR`,
+  `DEVC_BRIDGE_TOKEN_FILE`, `DEVC_BRIDGE_HOST`, `DEVC_BRIDGE_PORT`. Everything else (dispatch,
   scripts, state-watch, tray) unchanged. Re-verified §A over TCP loopback: 12/12 incl. a
   new bad-token → `unauthorized` check. (OrbStack reportedly forwards unix sockets; we
   target Docker Desktop.)
@@ -182,8 +182,8 @@ as positional `$1…`; the script must quote `"$@"`.
   - Tray PNGs are **embedded as base64 in `server.ts`** (`icons/*.png` stay the source
     of truth + the build-time `--icon` app icon; regenerate with `base64 -w0 icons/idle.png`).
   - Command scripts **can't** be embedded (host-editable by design), so the server reads
-    them from a stable absolute path — default `~/.config/devc-tools/commands`, seeded from the
-    repo (`ln -sfn "$PWD/host/commands" ~/.config/devc-tools/commands`). This was the cause of the
+    them from a stable absolute path — default `~/.config/devc-bridge/commands`, seeded from the
+    repo (`ln -sfn "$PWD/host/commands" ~/.config/devc-bridge/commands`). This was the cause of the
     observed `unknown command: echo` — the default resolved into the empty temp bundle dir.
 - Container wiring is provided by the repo's **devc tool** in `.devc/` (`devc.json`
   mount + env, `devc-postcreate.sh` client install), not `.devcontainer/devcontainer.json`.
@@ -204,9 +204,9 @@ headless `deno run` for these tests. This proves the protocol, token auth, dispa
 allowlist, and injection-safety logic:
 
 All §A checks passed (verified with `deno run` server + both `deno run` and the
-**compiled** `devc-host` binary). 13/13 in the assertion suite green.
+**compiled** `devc-bridge` binary). 13/13 in the assertion suite green.
 
-- [x] **A1. Round-trip.** `devc-host echo hello` → `echo: hello`, exit 0.
+- [x] **A1. Round-trip.** `devc-bridge echo hello` → `echo: hello`, exit 0.
 - [x] **A2. Dispatch + args.** `echo a b c` → `echo: a b c`; `toggle badarg` propagates
       exit 2; stdout/stderr separated (usage went to stderr, stdout empty).
 - [x] **A3. Injection safety.** `echo '; touch /tmp/pwned; #'` printed literally;
@@ -218,19 +218,22 @@ All §A checks passed (verified with `deno run` server + both `deno run` and the
 
 ### B. User-only — host verification (macOS, requires GUI + Docker Desktop)
 
-- [x] **B1. Transport gate.** `devc-host echo hello` in the container → `echo: hello`,
+- [x] **B1. Transport gate.** `devc-bridge echo hello` in the container → `echo: hello`,
       over token-authorized TCP via `host.docker.internal`. Confirms the pivot works
       across the Docker Desktop boundary.
-- [ ] **B2. Caffeinate.** `devc-host caffeinate start` → `pmset -g assertions` shows a
+- [ ] **B2. Caffeinate.** `devc-bridge caffeinate start` → `pmset -g assertions` shows a
       caffeinate assertion + `state/caffeinate` marker; `status` → `running`; `stop`
       clears both.
-- [x] **B3. Tray visual + dispatch + state.** `devc-host toggle on` flipped the menu-bar
+- [x] **B3. Tray visual + dispatch + state.** `devc-bridge toggle on` flipped the menu-bar
       icon ○ → ● (and created `state/toggle`); `toggle off` reverted it. Confirms
       `Deno.Tray`, dispatch, and the state watcher end to end.
-- [ ] **B4. Bundle.** `deno task build` produces `DevcHost.app` that behaves the same
+- [ ] **B4. Bundle.** `deno task build` produces `DevcBridge.app` that behaves the same
       when double-clicked.
 
 ## Relevant Files (all new — greenfield repo)
+
+Paths are relative to `devc-bridge/` (this tool was later renamed from `devc-tools` and
+moved into that subfolder); `.devc/` lives at the repo root.
 
 - `host/core.ts` — headless TCP server, dispatch, token check, state watcher (agent-testable)
 - `host/token.ts` — generate/persist the shared token
@@ -238,7 +241,7 @@ All §A checks passed (verified with `deno run` server + both `deno run` and the
 - `host/server.ts` — desktop entrypoint: wraps core + tray
 - `host/deno.json` — dev/build tasks + `desktop` config block
 - `host/commands/echo`, `host/commands/caffeinate` — example allowlisted scripts
-- `client/devc-host.ts` — container client CLI
+- `client/devc-bridge.ts` — container client CLI
 - `client/deno.json` — client build task
 - `.devc/devc.json` + `.devc/devc-postcreate.sh` — socket bind-mount + client install
 - `icons/idle.png`, `icons/active.png`, `icons/app.png` — tray/app icons

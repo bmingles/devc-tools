@@ -1,11 +1,10 @@
 # Client build artifact (compiled at devcontainer create time)
-/client/devc-host
+/client/devc-bridge
 
 # Host tool build artifacts
 #   host.app/     — `deno task dev` (deno desktop main.ts) bundle
-#   DevcTools.app — `deno task build` bundle
-# (`devc-tools start` builds into ~/.config/devc-tools/, outside the repo)
-/host/devc-tools
+#   DevcBridge.app — `deno task build` bundle
+# (`devc-bridge start` builds into ~/.config/devc-bridge/, outside the repo)
+/host/devc-bridge
 /host/host.app/
-/host/DevcTools.app/
-/host/DevcHost.app/
+/host/DevcBridge.app/
