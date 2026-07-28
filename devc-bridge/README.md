@@ -1,4 +1,4 @@
-# Devcontainer Tools
+# devc-bridge
 
 A tiny bridge that lets a **devcontainer** invoke allowlisted commands on the **host**
 — so, for example, Claude Code hooks running inside a container can `caffeinate` the
@@ -8,15 +8,15 @@ A Deno Desktop menu-bar icon (Deno 2.9+ `Deno.Tray`) shows whether anything is
 currently active (e.g. the Mac is being kept awake) vs. idle.
 
 ```
-Host (macOS)                                    Devcontainer
-────────────────────────────                   ───────────────────────
-devc-tools start   (background menu-bar app)
-  ├─ TCP 127.0.0.1:48227 ◄── host.docker.internal ──  devc-host <name> [args…]
-  │      (token-authorized)                             │  reads token from
-  ├─ runs ~/.config/devc-tools/commands/<name> <args…>          │  /run/devc-host/token
-  │      (argv, never a shell string)                   ▲  (bind mount)
-  ├─ writes token → ~/.config/devc-tools/run/token ──── bind mount ──┘
-  ├─ watches ~/.config/devc-tools/state/ ──► tray
+Host (macOS)                                             Devcontainer
+──────────────────────────────────────────────           ────────────────────────────
+devc-bridge start   (background menu-bar app)
+  ├─ TCP 127.0.0.1:48227 ◄── host.docker.internal ────── devc-bridge <name> [args…]
+  │      (token-authorized)                           │  reads token from
+  ├─ runs ~/.config/devc-bridge/commands/<name>       │  /run/devc-bridge/token
+  │      (args as argv, never a shell string)         ▲  (bind mount)
+  ├─ writes token → ~/.config/devc-bridge/run/token ──┘
+  ├─ watches ~/.config/devc-bridge/state/ ──► tray
   └─ menu-bar icon: idle ○ / active ●
 ```
 
@@ -33,17 +33,17 @@ works; we target Docker Desktop.)
 
 ## How it works
 
-- **Server** (`devc-tools`, a single `deno desktop` binary built from `host/main.ts`)
-  listens on loopback TCP and watches a state directory. `devc-tools start` launches it
+- **Server** (`devc-bridge`, a single `deno desktop` binary built from `host/main.ts`)
+  listens on loopback TCP and watches a state directory. `devc-bridge start` launches it
   **in the background**; `stop`/`status`/`restart` manage it. It runs as a
   **menu-bar-only accessory app** — no dock icon and no window. `host/tray.ts` holds the
   tray, `host/core.ts` all the transport/dispatch logic (which also runs headless via
   `host/serve.ts`), and `host/config.ts` resolves paths + seeds the command scripts on
   first start.
-- **Client** (`client/devc-host.ts`, compiled to `devc-host`) runs in the container,
+- **Client** (`client/devc-bridge.ts`, compiled to `devc-bridge`) runs in the container,
   reads the token, sends one JSON request, prints the script's output, and exits with
   its exit code.
-- **Commands** are executable files in `~/.config/devc-tools/commands/` (seeded from
+- **Commands** are executable files in `~/.config/devc-bridge/commands/` (seeded from
   `host/commands/`). **The filename is the allowlist** — the container can only invoke
   names that exist there, and it cannot read or edit the scripts (they are not mounted).
 
@@ -68,59 +68,69 @@ never interpolated into a shell — but a malicious or buggy script is still a m
 or buggy script running on your host.
 
 The bridge listens on host **loopback** TCP and requires a **token** (written to
-`~/.config/devc-tools/run/token`, shared with the container via the bind mount). This keeps
+`~/.config/devc-bridge/run/token`, shared with the container via the bind mount). This keeps
 other containers that never mounted the run dir from invoking commands, but anything
 that can read that token file — i.e. anything with access to your home dir — can. It is
 a convenience boundary for a single-user machine, not a hardened multi-tenant control.
 
 ## Setup (macOS host)
 
-Build the `devc-tools` binary once (requires Deno 2.9+), then it is self-contained — no
+Build the `devc-bridge` binary once (requires Deno 2.9+), then it is self-contained — no
 config dir or command files to create by hand.
 
 ```sh
 # 1. Build the host tool and put it on PATH (Deno 2.9+ needed only for this step).
-cd host && deno task build         # → ./devc-tools (command scripts embedded)
-install devc-tools /usr/local/bin/ # or move it anywhere on your PATH
+cd devc-bridge/host && deno task build  # → ./devc-bridge (command scripts embedded)
+install devc-bridge /usr/local/bin/     # or move it anywhere on your PATH
 
-# 2. Start it in the background. First run auto-creates ~/.config/devc-tools/ (run/,
+# 2. Start it in the background. First run auto-creates ~/.config/devc-bridge/ (run/,
 #    state/, commands/), seeds the example command scripts, and writes the token.
-devc-tools start                   # menu-bar icon appears (idle ○)
-devc-tools status                  # -> running (pid N)
+devc-bridge start                   # menu-bar icon appears (idle ○)
+devc-bridge status                  # -> running (pid N)
 
-# 3. (Re)open the devcontainer. Its post-create step compiles `devc-host` onto PATH.
+# 3. (Re)open the devcontainer. Its post-create step compiles `devc-bridge` onto PATH.
 ```
 
 Lifecycle:
 
 ```sh
-devc-tools start      # seed (first run) + launch the tray in the background
-devc-tools status     # running (pid N) — idle | active: …   /  stopped
-devc-tools stop       # stop the background tray
-devc-tools restart
+devc-bridge start      # seed (first run) + launch the tray in the background
+devc-bridge status     # running (pid N) — idle | active: …   /  stopped
+devc-bridge stop       # stop the background tray
+devc-bridge restart
 ```
 
-Command scripts are seeded to `~/.config/devc-tools/commands/` on first start and are
+To skip the build entirely, source the repo's shell integration instead — it defines a
+`devc-bridge` function that runs `host/main.ts` from source via Deno:
+
+```sh
+source /path/to/devc-tools/scripts/bash_aliases.sh   # add this to ~/.bashrc
+```
+
+(`start` still builds the tray `.app` bundle itself, since a menu-bar app must be launched
+via LaunchServices; Deno caches that compile.)
+
+Command scripts are seeded to `~/.config/devc-bridge/commands/` on first start and are
 **yours to edit** — later starts never overwrite them. To pick up new example scripts from
 a rebuilt binary, add them there yourself (or delete the ones you want re-seeded). During
 development you can also run the tray in the foreground with `deno task dev`.
 
-Container wiring lives in `.devc/` for this repo's devcontainer tool: `.devc/devc.json`
-adds the run-dir bind mount and sets `DEVC_HOST_ADDR` / `DEVC_HOST_TOKEN_FILE`, and
-`.devc/devc-postcreate.sh` builds/installs the `devc-host` binary. If you use plain Dev
-Containers instead, put the equivalent `mounts` + `containerEnv` + `postCreateCommand`
-in `.devcontainer/devcontainer.json`.
+Container wiring lives in the repo-root `.devc/` dir for this repo's devcontainer tool:
+`.devc/devc.json` adds the run-dir bind mount and sets `DEVC_BRIDGE_ADDR` /
+`DEVC_BRIDGE_TOKEN_FILE`, and `.devc/devc-postcreate.sh` builds/installs the container-side
+`devc-bridge` binary. If you use plain Dev Containers instead, put the equivalent `mounts`
++ `containerEnv` + `postCreateCommand` in `.devcontainer/devcontainer.json`.
 
-Port and bind host are configurable via `DEVC_HOST_PORT` (default `48227`) and
-`DEVC_HOST_HOST` (default `127.0.0.1`); if `host.docker.internal` can't reach loopback
-in your setup, set `DEVC_HOST_HOST=0.0.0.0` (the token still guards access).
+Port and bind host are configurable via `DEVC_BRIDGE_PORT` (default `48227`) and
+`DEVC_BRIDGE_HOST` (default `127.0.0.1`); if `host.docker.internal` can't reach loopback
+in your setup, set `DEVC_BRIDGE_HOST=0.0.0.0` (the token still guards access).
 
 Then, from inside the container:
 
 ```sh
-devc-host caffeinate start    # keep the Mac awake
-devc-host caffeinate status   # -> running
-devc-host caffeinate stop
+devc-bridge caffeinate start    # keep the Mac awake
+devc-bridge caffeinate status   # -> running
+devc-bridge caffeinate stop
 ```
 
 ## Wiring into Claude Code hooks
@@ -131,10 +141,10 @@ Have hooks call the client. Example `settings.json` (adjust events to taste):
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "devc-host caffeinate start" }] }
+      { "hooks": [{ "type": "command", "command": "devc-bridge caffeinate start" }] }
     ],
     "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "devc-host caffeinate stop" }] }
+      { "hooks": [{ "type": "command", "command": "devc-bridge caffeinate stop" }] }
     ]
   }
 }
@@ -144,7 +154,7 @@ Have hooks call the client. Example `settings.json` (adjust events to taste):
 
 Drop an executable script in `host/commands/`. Its filename becomes the command name.
 For anything long-running that the tray should reflect, create a marker file in
-`$DEVC_HOST_STATE` while active and remove it when done — see `host/commands/caffeinate`
+`$DEVC_BRIDGE_STATE` while active and remove it when done — see `host/commands/caffeinate`
 and `host/commands/toggle` for the pattern.
 
 ### Backgrounding a long-running process
@@ -159,7 +169,7 @@ caffeinate -dimsu </dev/null >/dev/null 2>&1 &   # detached — script returns n
 caffeinate -dimsu &                              # WRONG — client hangs until caffeinate dies
 ```
 
-Record its PID (e.g. in a `$DEVC_HOST_STATE` marker) so a later `stop` can kill it.
+Record its PID (e.g. in a `$DEVC_BRIDGE_STATE` marker) so a later `stop` can kill it.
 
 ### The script's contract
 
@@ -224,15 +234,17 @@ the scripts few and simple.
 
 ## Layout
 
+Paths are relative to `devc-bridge/` unless noted.
+
 | Path | Role |
 | --- | --- |
-| `host/main.ts` | `devc-tools` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`) |
+| `host/main.ts` | `devc-bridge` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`) |
 | `host/config.ts` | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start) |
 | `host/tray.ts` | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI) |
 | `host/core.ts` | Headless TCP server + dispatch + state watcher |
 | `host/serve.ts` | Headless entrypoint (no tray) — used for testing |
 | `host/token.ts` | Generate/persist the shared token |
-| `host/commands/` | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-tools/commands` |
-| `client/devc-host.ts` | Container client CLI |
-| `.devc/` | Devcontainer tool config: run-dir bind-mount + env + client install |
-| `icons/` | Source PNGs for the app icon + the tray icons (embedded in `server.ts`) |
+| `host/commands/` | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands` |
+| `client/devc-bridge.ts` | Container client CLI |
+| `../.devc/` | Devcontainer tool config (repo root): run-dir bind-mount + env + client install |
+| `icons/` | Source PNGs for the app icon + the tray icons (embedded in `tray.ts`) |

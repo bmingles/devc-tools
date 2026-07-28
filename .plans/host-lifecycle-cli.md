@@ -1,10 +1,10 @@
-# Host `devc-tools` lifecycle CLI + zero-setup seeding
+# Host `devc-bridge` lifecycle CLI + zero-setup seeding
 
 ## Context
 
 The host bridge is a `deno desktop` app (`host/server.ts`) that runs only in the foreground
-and requires manual setup (`mkdir ~/.config/devc-tools/run` + symlink `commands`). We want a
-single self-contained `devc-tools` executable that: (1) supports `devc-tools start` /`stop`
+and requires manual setup (`mkdir ~/.config/devc-bridge/run` + symlink `commands`). We want a
+single self-contained `devc-bridge` executable that: (1) supports `devc-bridge start` /`stop`
 /`status`/`restart` to manage a **background** tray, and (2) auto-creates its config dir and
 seeds command scripts on first start, so a shared binary "just works" on PATH.
 
@@ -18,7 +18,7 @@ commands dir if absent.
 ## Checklist
 
 - [x] `host/config.ts`: path resolution (`base`/`run`/`state`/`commands`/`token`/`pidfile`/
-      `logfile`) honoring existing env overrides + new `DEVC_HOST_BASE`; `ensureConfig()`
+      `logfile`) honoring existing env overrides + new `DEVC_BRIDGE_BASE`; `ensureConfig()`
       (mkdir run/state/commands + seed); `seedCommands()` reads embedded `./commands`, writes
       any missing target file `0755`, never overwrites.
 - [x] `host/tray.ts`: `runTray(cfg)` — the tray wiring moved out of `server.ts` (no top-level
@@ -29,12 +29,12 @@ commands dir if absent.
       Detached spawn via `/bin/sh -c 'exec "$@" >>LOG 2>&1 </dev/null'` (stable PID) + `unref()`;
       compiled → `["run"]`, dev → `["desktop","-A",<script>,"run"]`; post-spawn liveness poll.
 - [x] Remove `host/server.ts` (body relocated to `tray.ts`).
-- [x] `host/deno.json`: `dev` (`main.ts run`), `build` (`--output devc-tools --backend raw
+- [x] `host/deno.json`: `dev` (`main.ts run`), `build` (`--output devc-bridge --backend raw
       --include commands --icon ../icons/app.png … main.ts`), `start`/`stop`/`status` tasks, keep `serve`.
-- [x] `README.md`: replace manual setup with `devc-tools start`/`stop`/`status`; document
+- [x] `README.md`: replace manual setup with `devc-bridge start`/`stop`/`status`; document
       auto-seed + build → PATH; update Layout table.
 - [x] `docs/testing.md`: drop symlink from §B; add lifecycle + auto-seed checks.
-- [x] `.gitignore`: add `/host/devc-tools`.
+- [x] `.gitignore`: add `/host/devc-bridge`.
 
 ## Validation
 
@@ -46,12 +46,15 @@ commands dir if absent.
       round-tripped `echo`/`toggle` through the backgrounded server; `toggle on` → `status`
       shows `active: toggle`; port released after `stop`.
 - [x] `deno check host/*.ts` clean (lint `no-import-prefix` is a pre-existing repo-wide style).
-- [ ] (host, user) `deno task build` → `devc-tools` on PATH; clean-machine `start` shows tray
-      with no window flash, seeds config; `devc-host echo hello` works; `status`/`stop` behave.
+- [ ] (host, user) `deno task build` → `devc-bridge` on PATH; clean-machine `start` shows tray
+      with no window flash, seeds config; `devc-bridge echo hello` works; `status`/`stop` behave.
       Confirm `--backend raw` still shows `Deno.Tray`; if not, drop to the default webview
       backend (the tray layer already keeps the window-hiding hack).
 
 ## Relevant Files
+
+Paths are relative to `devc-bridge/` (this tool was later renamed from `devc-tools` and
+moved into that subfolder); `.devc/` lives at the repo root.
 
 - `host/config.ts` — new: paths + ensureConfig + seedCommands
 - `host/tray.ts` — new: `runTray()` (from `server.ts`)

@@ -11,20 +11,20 @@ cross the Docker Desktop VM boundary — see the README). §A exercises this ove
 ## §A — In-container (client + server, no host)
 
 Proves the protocol, token auth, dispatch, allowlist, and injection-safety without a
-Mac. Run from the repo root inside the devcontainer.
+Mac. Run from `devc-bridge/` inside the devcontainer.
 
 ```sh
 # 1. Start the headless server on loopback
-export DEVC_HOST_HOST=127.0.0.1 DEVC_HOST_PORT=48227
-export DEVC_HOST_COMMANDS="$PWD/host/commands"
-export DEVC_HOST_STATE=/tmp/devc-host/state
-export DEVC_HOST_TOKEN_FILE=/tmp/devc-host/token
-rm -rf /tmp/devc-host
+export DEVC_BRIDGE_HOST=127.0.0.1 DEVC_BRIDGE_PORT=48227
+export DEVC_BRIDGE_COMMANDS="$PWD/host/commands"
+export DEVC_BRIDGE_STATE=/tmp/devc-bridge/state
+export DEVC_BRIDGE_TOKEN_FILE=/tmp/devc-bridge/token
+rm -rf /tmp/devc-bridge
 deno run --allow-read --allow-write --allow-run --allow-env --allow-net host/serve.ts &
 
 # 2. Client helper (points at the same loopback + token)
-export DEVC_HOST_ADDR=127.0.0.1:48227
-client() { deno run --allow-read --allow-net --allow-env=DEVC_HOST_ADDR,DEVC_HOST_TOKEN_FILE client/devc-host.ts "$@"; }
+export DEVC_BRIDGE_ADDR=127.0.0.1:48227
+client() { deno run --allow-read --allow-net --allow-env=DEVC_BRIDGE_ADDR,DEVC_BRIDGE_TOKEN_FILE client/devc-bridge.ts "$@"; }
 ```
 
 | Check | Command | Expected |
@@ -35,10 +35,10 @@ client() { deno run --allow-read --allow-net --allow-env=DEVC_HOST_ADDR,DEVC_HOS
 | A3 injection safety | `client echo '; touch /tmp/pwned; #'` | printed literally; `/tmp/pwned` NOT created |
 | A4 unknown command | `client nope; echo $?` | `unknown command: nope`, exit 1 |
 | A4 traversal | `client ../serve.ts; echo $?` | `invalid command name`, exit 1 |
-| AUTH bad token | `DEVC_HOST_TOKEN_FILE=<file with wrong token> client echo hi` | `unauthorized`, exit 1 |
+| AUTH bad token | `DEVC_BRIDGE_TOKEN_FILE=<file with wrong token> client echo hi` | `unauthorized`, exit 1 |
 | A5 state watcher | `client toggle on` then `client toggle off` | server log shows `active: []` → `["toggle"]` → `[]` |
 
-Cleanup: `pkill -f host/serve.ts; rm -rf /tmp/devc-host`.
+Cleanup: `pkill -f host/serve.ts; rm -rf /tmp/devc-bridge`.
 
 ## §B — Host verification (macOS)
 
@@ -46,38 +46,38 @@ Requires Deno 2.9+ on the host (only to *build*). Run **in order — stop at the
 
 ```sh
 # One-time build: self-contained binary with the command scripts embedded.
-cd host && deno task build         # → ./devc-tools
-install devc-tools /usr/local/bin/ # anywhere on PATH
+cd devc-bridge/host && deno task build  # → ./devc-bridge
+install devc-bridge /usr/local/bin/     # anywhere on PATH
 
 # GATE: zero-setup start (no hand-created ~/.config) reaches the container over
 # host.docker.internal?
-rm -rf ~/.config/devc-tools        # prove first-run seeding (optional; destroys existing config)
-devc-tools start                   # seeds config, writes token, menu-bar icon appears (idle ○)
+rm -rf ~/.config/devc-bridge        # prove first-run seeding (optional; destroys existing config)
+devc-bridge start                   # seeds config, writes token, menu-bar icon appears (idle ○)
 # → reopen the devcontainer, then INSIDE it:
-devc-host echo hello               # expect: echo: hello
+devc-bridge echo hello              # expect: echo: hello
 ```
 
 If the gate fails, check in this order:
-1. **`cannot read token /run/devc-host/token`** → run dir not mounted, or server not
-   started. Confirm `.devc/devc.json` mount + `devc-tools status` shows `running`.
+1. **`cannot read token /run/devc-bridge/token`** → run dir not mounted, or server not
+   started. Confirm the repo-root `.devc/devc.json` mount + `devc-bridge status` shows `running`.
 2. **`cannot connect to host.docker.internal:48227`** → the container can't reach host
-   loopback. Try `DEVC_HOST_HOST=0.0.0.0 devc-tools restart` on the host.
-3. **`unauthorized`** → stale token in the container's mount; `devc-tools restart` / reopen.
-4. **`unknown command: echo`** → commands not seeded; check `~/.config/devc-tools/commands/`
+   loopback. Try `DEVC_BRIDGE_HOST=0.0.0.0 devc-bridge restart` on the host.
+3. **`unauthorized`** → stale token in the container's mount; `devc-bridge restart` / reopen.
+4. **`unknown command: echo`** → commands not seeded; check `~/.config/devc-bridge/commands/`
    exists (it is auto-created on `start`).
 
 | Check | Where | Command | Expected |
 | --- | --- | --- | --- |
-| B0 zero-setup | host | `rm -rf ~/.config/devc-tools && devc-tools start` | `started (pid N)`; `~/.config/devc-tools/{run,state,commands}` + token created; `commands/` has `echo`/`caffeinate`/`toggle` |
-| B0 idempotent | host | `devc-tools start` again | `already running (pid N)` |
-| B0 status/stop | host | `devc-tools status` then `devc-tools stop` | `running (pid N)` (icon shown) → `stopped` (icon gone) |
-| B1 gate | container | `devc-host echo hello` | `echo: hello` |
-| B2 caffeinate start | container | `devc-host caffeinate start` | `started` |
+| B0 zero-setup | host | `rm -rf ~/.config/devc-bridge && devc-bridge start` | `started (pid N)`; `~/.config/devc-bridge/{run,state,commands}` + token created; `commands/` has `echo`/`caffeinate`/`toggle` |
+| B0 idempotent | host | `devc-bridge start` again | `already running (pid N)` |
+| B0 status/stop | host | `devc-bridge status` then `devc-bridge stop` | `running (pid N)` (icon shown) → `stopped` (icon gone) |
+| B1 gate | container | `devc-bridge echo hello` | `echo: hello` |
+| B2 caffeinate start | container | `devc-bridge caffeinate start` | `started` |
 | B2 assertion | host | `pmset -g assertions \| grep -i caffeinate` | assertion present |
-| B2 status | container | `devc-host caffeinate status` | `running` |
-| B2 stop | container | `devc-host caffeinate stop` | `stopped`, assertion gone |
+| B2 status | container | `devc-bridge caffeinate status` | `running` |
+| B2 stop | container | `devc-bridge caffeinate stop` | `stopped`, assertion gone |
 | B3 tray | host | (watch menu bar) | ○→● on start, ●→○ on stop; "Quit" exits |
-| B4 no window flash | host | `devc-tools start`/`stop`/`status` | no webview window appears (menu-bar only, `--backend raw`) |
+| B4 no window flash | host | `devc-bridge start`/`stop`/`status` | no webview window appears (menu-bar only, `--backend raw`) |
 
 ### Notes / gotchas
 
@@ -87,9 +87,9 @@ If the gate fails, check in this order:
   mount, since regular files cross fine) authorizes requests.
 - **Permissions:** unix/TCP `listen`/`connect` need **`--allow-net`**, not
   `--allow-read/write`. The client also needs `--allow-read` (token file) and
-  `--allow-env=DEVC_HOST_ADDR,DEVC_HOST_TOKEN_FILE`. All baked into the `deno.json` tasks.
+  `--allow-env=DEVC_BRIDGE_ADDR,DEVC_BRIDGE_TOKEN_FILE`. All baked into the `deno.json` tasks.
 - **`deno desktop` runs from a temp dir**, so paths relative to `import.meta.url` point
   into the bundle, not the CWD. Tray icons are embedded (base64) in `host/tray.ts`; command
   scripts are embedded via `deno desktop --include commands` and read back through
   `new URL("./commands", import.meta.url)` in `host/config.ts`, then **seeded** to the
-  editable `~/.config/devc-tools/commands` on first `start` (never overwritten thereafter).
+  editable `~/.config/devc-bridge/commands` on first `start` (never overwritten thereafter).

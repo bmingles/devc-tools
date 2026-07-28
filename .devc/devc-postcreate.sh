@@ -1,4 +1,4 @@
 #!/bin/bash
 set -e
 
-cd client && deno task build && sudo mv devc-host /usr/local/bin/devc-host
+cd devc-bridge/client && deno task build && sudo mv devc-bridge /usr/local/bin/devc-bridge

@@ -1,10 +1,10 @@
-// devc-tools — host-side control CLI for the devcontainer command bridge.
+// devc-bridge — host-side control CLI for the devcontainer command bridge.
 //
-//   devc-tools start     seed config (first run) + build & launch the tray in the background
-//   devc-tools stop      stop the background tray
-//   devc-tools status    report whether the tray is running
-//   devc-tools restart    stop then start
-//   devc-tools run       run the tray (this file, launched inside the built .app)
+//   devc-bridge start     seed config (first run) + build & launch the tray in the background
+//   devc-bridge stop      stop the background tray
+//   devc-bridge status    report whether the tray is running
+//   devc-bridge restart    stop then start
+//   devc-bridge run       run the tray (this file, launched inside the built .app)
 //
 // main.ts plays two roles from one file:
 //   • As a plain `deno run` CLI (start/stop/status) it's the *controller* — fast, no
@@ -18,7 +18,7 @@ import { dirname, fromFileUrl, join } from "jsr:@std/path@^1";
 import { type Config, ensureConfig, errMsg, loadConfig } from "./config.ts";
 import { runTray } from "./tray.ts";
 
-const USAGE = "usage: devc-tools {start|stop|status|restart|run}";
+const USAGE = "usage: devc-bridge {start|stop|status|restart|run}";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
       await runTray(cfg); // never returns
       break;
     default:
-      console.error(`devc-tools: unknown command ${JSON.stringify(sub)}`);
+      console.error(`devc-bridge: unknown command ${JSON.stringify(sub)}`);
       console.error(USAGE);
       Deno.exit(2);
   }
@@ -62,9 +62,9 @@ async function start(cfg: Config): Promise<void> {
   // Build the tray bundle from this source. Deno caches the compile, so rebuilding on
   // every start is cheap and always reflects the current source. --include embeds the
   // command scripts; paths are relative to the host/ dir (where main.ts lives).
-  const appPath = join(cfg.base, "DevcTools.app");
+  const appPath = join(cfg.base, "DevcBridge.app");
   const hostDir = dirname(fromFileUrl(Deno.mainModule));
-  console.error("devc-tools: building tray app…");
+  console.error("devc-bridge: building tray app…");
   const build = await new Deno.Command("deno", {
     args: [
       "desktop",
@@ -79,17 +79,17 @@ async function start(cfg: Config): Promise<void> {
     stderr: "piped",
   }).output();
   if (!build.success) {
-    console.error("devc-tools: failed to build the tray app:");
+    console.error("devc-bridge: failed to build the tray app:");
     await Deno.stderr.write(build.stderr);
     Deno.exit(1);
   }
 
   // Launch it via LaunchServices (`-g` = don't steal focus). A GUI app can only be put
   // in the background this way — a detached terminal process never brings the tray up.
-  console.error("devc-tools: launching…");
+  console.error("devc-bridge: launching…");
   const opened = await new Deno.Command("open", { args: ["-g", appPath] }).output();
   if (!opened.success) {
-    console.error(`devc-tools: 'open -g ${appPath}' failed:`);
+    console.error(`devc-bridge: 'open -g ${appPath}' failed:`);
     await Deno.stderr.write(opened.stderr);
     Deno.exit(1);
   }
@@ -101,9 +101,9 @@ async function start(cfg: Config): Promise<void> {
   }, 30_000);
 
   if (!ok) {
-    console.error(`devc-tools: tray launched but never reported ready — see ${cfg.logfile}`);
+    console.error(`devc-bridge: tray launched but never reported ready — see ${cfg.logfile}`);
     await printLogTail(cfg.logfile);
-    console.error(`devc-tools: (to see its errors directly, run: open ${appPath})`);
+    console.error(`devc-bridge: (to see its errors directly, run: open ${appPath})`);
     Deno.exit(1);
   }
 
@@ -199,8 +199,20 @@ async function printLogTail(logfile: string, lines = 20): Promise<void> {
     const tail = text.split("\n").slice(-lines).join("\n");
     if (tail.trim().length > 0) console.error(tail);
   } catch (e) {
-    console.error(`devc-tools: (no log at ${logfile}: ${errMsg(e)})`);
+    console.error(`devc-bridge: (no log at ${logfile}: ${errMsg(e)})`);
   }
 }
 
-await main();
+try {
+  await main();
+} catch (e) {
+  // Our own failures carry a "devc-bridge: …" message and are worth reading on their own;
+  // anything else is a bug, so keep its stack.
+  if (e instanceof Error && e.message.startsWith("devc-bridge:")) {
+    console.error(e.message);
+  } else {
+    console.error("devc-bridge: unexpected failure");
+    console.error(e);
+  }
+  Deno.exit(1);
+}

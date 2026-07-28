@@ -4,7 +4,7 @@
 # Backgrounds the real `caffeinate(8)` and records its pid as the state marker so
 # the tray reflects awake-vs-idle. Host-only — needs macOS `caffeinate`.
 set -euo pipefail
-STATE_DIR="${DEVC_HOST_STATE:-$HOME/.config/devc-tools/state}"
+STATE_DIR="${DEVC_BRIDGE_STATE:-$HOME/.config/devc-bridge/state}"
 mkdir -p "$STATE_DIR"
 PIDFILE="$STATE_DIR/caffeinate"
 

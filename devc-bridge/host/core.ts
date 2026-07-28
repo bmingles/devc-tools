@@ -109,7 +109,7 @@ async function dispatch(
     // client sends can be interpreted as a shell metacharacter.
     const cmd = new Deno.Command(scriptPath, {
       args,
-      env: { ...Deno.env.toObject(), DEVC_HOST_STATE: stateDir },
+      env: { ...Deno.env.toObject(), DEVC_BRIDGE_STATE: stateDir },
       stdout: "piped",
       stderr: "piped",
     });

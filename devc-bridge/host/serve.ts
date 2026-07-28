@@ -4,21 +4,21 @@
 //   deno run --allow-read --allow-write --allow-run --allow-env --allow-net host/serve.ts
 //
 // Config via env:
-//   DEVC_HOST_HOST        bind host              (default 127.0.0.1)
-//   DEVC_HOST_PORT        bind port              (default 48227)
-//   DEVC_HOST_COMMANDS    command scripts dir    (default ./commands next to this file)
-//   DEVC_HOST_STATE       active-marker dir      (default /tmp/devc-host/state)
-//   DEVC_HOST_TOKEN_FILE  shared token path      (default /tmp/devc-host/token)
+//   DEVC_BRIDGE_HOST        bind host              (default 127.0.0.1)
+//   DEVC_BRIDGE_PORT        bind port              (default 48227)
+//   DEVC_BRIDGE_COMMANDS    command scripts dir    (default ./commands next to this file)
+//   DEVC_BRIDGE_STATE       active-marker dir      (default /tmp/devc-bridge/state)
+//   DEVC_BRIDGE_TOKEN_FILE  shared token path      (default /tmp/devc-bridge/token)
 
 import { startServer } from "./core.ts";
 import { ensureToken } from "./token.ts";
 
-const hostname = Deno.env.get("DEVC_HOST_HOST") ?? "127.0.0.1";
-const port = Number(Deno.env.get("DEVC_HOST_PORT") ?? "48227");
-const commandsDir = Deno.env.get("DEVC_HOST_COMMANDS") ??
+const hostname = Deno.env.get("DEVC_BRIDGE_HOST") ?? "127.0.0.1";
+const port = Number(Deno.env.get("DEVC_BRIDGE_PORT") ?? "48227");
+const commandsDir = Deno.env.get("DEVC_BRIDGE_COMMANDS") ??
   new URL("./commands", import.meta.url).pathname;
-const stateDir = Deno.env.get("DEVC_HOST_STATE") ?? "/tmp/devc-host/state";
-const tokenFile = Deno.env.get("DEVC_HOST_TOKEN_FILE") ?? "/tmp/devc-host/token";
+const stateDir = Deno.env.get("DEVC_BRIDGE_STATE") ?? "/tmp/devc-bridge/state";
+const tokenFile = Deno.env.get("DEVC_BRIDGE_TOKEN_FILE") ?? "/tmp/devc-bridge/token";
 
 const token = await ensureToken(tokenFile);
 
