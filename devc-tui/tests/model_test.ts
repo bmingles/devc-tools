@@ -47,8 +47,10 @@ Deno.test("model: selecting a worktree force-includes its primary as an auto mou
         join(root, "projectb.worktrees", "some-other")
       },target=/workspaces/projectb.worktrees/some-other"`,
     ]);
+    // Folder paths are host paths relative to the workspace file — here the workspace dir is
+    // the root itself, so the path is just the id. The mount above keeps the container target.
     assertEquals(folderLines(deriveFolders(tree, selection, cfg)), [
-      '{ "path": "/workspaces/projectb.worktrees/some-other", "name": "projectb.worktrees/some-other" }',
+      '{ "path": "projectb.worktrees/some-other", "name": "projectb.worktrees/some-other" }',
     ]);
   });
 });
@@ -90,15 +92,62 @@ Deno.test("model: deriveFolders round-trips through readSelection", async () => 
     assertEquals([...read.selection].sort(), [...selection].sort());
     assertEquals(read.warnings, []);
 
-    // An entry that maps to nothing under root is dropped with a warning.
+    // A host path landing outside root is dropped with a warning — that is how a folder the
+    // user added by hand, pointing somewhere else entirely, is left alone.
     const stale = applyWorkspace(
       WORKSPACE_TEMPLATE,
-      ['{ "path": "/workspaces/gone", "name": "gone" }'],
+      ['{ "path": "../../elsewhere/gone", "name": "gone" }'],
       "ws",
     );
     const staleRead = readSelection(null, stale, tree, cfg);
     assertEquals([...staleRead.selection], []);
     assertEquals(staleRead.warnings.length, 1);
+  });
+});
+
+Deno.test("model: workspace folders are host paths relative to the workspace file", async () => {
+  await withTemp(async (tmp) => {
+    const root = join(tmp, "root");
+    await Deno.mkdir(root, { recursive: true });
+    await makeExampleRoot(root);
+    const selection = new Set(["projecta"]);
+
+    // The three shapes of workspace dir, and where each puts the same project.
+    const cases: Array<{ what: string; workspaceDir: string; cfg: Config; expected: string }> = [
+      {
+        what: "beside root",
+        workspaceDir: join(tmp, "ws"),
+        cfg: config(root),
+        expected: "../root/projecta",
+      },
+      {
+        what: "inside root",
+        workspaceDir: join(root, "here"),
+        cfg: config(root),
+        expected: "../projecta",
+      },
+      {
+        what: "workspace file in a subdirectory",
+        workspaceDir: join(tmp, "ws"),
+        cfg: config(root, { workspaceFile: "sub/ws.code-workspace" }),
+        expected: "../../root/projecta",
+      },
+    ];
+
+    for (const c of cases) {
+      await Deno.mkdir(c.workspaceDir, { recursive: true });
+      const tree = await scanRoot(root, 3, { workspaceDir: c.workspaceDir });
+      const folders = deriveFolders(tree, selection, c.cfg);
+      assertEquals(folders.map((f) => f.path), [c.expected], c.what);
+      // The name stays the id — the thing the CLI and the fences round-trip on.
+      assertEquals(folders.map((f) => f.name), ["projecta"], c.what);
+
+      // And it reads straight back to the id it was written from.
+      const src = applyWorkspace(WORKSPACE_TEMPLATE, folderLines(folders), "ws");
+      const read = readSelection(null, src, tree, c.cfg);
+      assertEquals([...read.selection], ["projecta"], c.what);
+      assertEquals(read.warnings, [], c.what);
+    }
   });
 });
 
