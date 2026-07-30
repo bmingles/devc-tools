@@ -36,17 +36,20 @@ same work headlessly, through the same write path.
 
 ## The interactive tree
 
+The tree mirrors the directory layout under the scanned root: every folder sits where it does
+on disk, and folders open and close.
+
 ```
  devc-tui  ~/src -> /workspaces               5 mounts  4 folders  1 skills   *unsaved
  PROJECTS
-  v [x] org
+        myapp  (workspace)
+  v [-] org
 >     [x] lib
-      [x] tools
-  v [x] projecta
-      [ ] some-feature
-  v [~] projectb  (required by worktree)
-      [x] some-other
-      [ ] yet-another  ! absolute gitdir
+      [ ] tools
+    [~] projecta  (required by worktree)
+  v [x] projecta.worktrees
+      [x] some-feature
+  > [ ] projectb.worktrees
 
  SKILLS  ~/.claude/skills -> /home/vscode/.claude/skills
       [x] deephaven-docs
@@ -55,6 +58,10 @@ same work headlessly, through the same write path.
  wrote .devcontainer/devcontainer.json, myapp.code-workspace
  arrows move  space toggle  / filter  a/n all/none  w write  ? help  q quit
 ```
+
+Folders **start collapsed** — except along the path to whatever is already mounted, so the
+current selection is on screen from the first frame. `right`/`l` opens one, `left`/`h` closes
+it.
 
 The header names the scanned root, where it lands in the container, live counts derived from
 the current selection, and `*unsaved` when the selection differs from what is on disk. The
@@ -67,9 +74,9 @@ until you press `w`.
 | `[ ]` | not selected |
 | `[x]` | selected |
 | `[~]` | mounted only because a selected worktree needs its primary repo |
-| `[-]` | group with some, but not all, of its projects selected |
-| `v` / `>` | expanded / collapsed |
-| `x` | not selectable — an orphaned worktree, or the current workspace |
+| `[-]` | folder with some, but not all, of its projects selected |
+| no checkbox | not selectable — a plain folder with nothing selectable in it, an orphaned worktree, or the current workspace. The note or warning on the row says which |
+| `v` / `>` | folder open / closed — fold state only, nothing else |
 | `>` in the first column | the cursor (also drawn in reverse video, unless colour is off) |
 | `! ...` | a warning: `absolute gitdir`, `primary repo not found`, ... |
 
@@ -90,9 +97,13 @@ until you press `w`.
 | `q` | quit (asks first when there are unsaved changes) |
 | `Ctrl-C` | quit immediately, writing nothing |
 
-Toggling a **group** selects all of its projects, or clears them if they were all selected.
-Toggling a `[~]` primary makes it explicit (`[x]`); toggling it again returns it to `[~]`
-rather than `[ ]`, because a selected worktree still needs its mount.
+Toggling a **folder** selects all of the projects inside it, or clears them if they were all
+selected — including a `.worktrees` folder, which toggles every worktree in it. Toggling a
+`[~]` primary makes it explicit (`[x]`); toggling it again returns it to `[~]` rather than
+`[ ]`, because a selected worktree still needs its mount.
+
+`a` / `n` only reach rows that are actually on screen, so a fold is also a way to keep a bulk
+select off the parts of the root you are not interested in.
 
 The tree needs at least a 40x10 window and a real terminal: with stdin redirected it exits 2
 and points you at `devc-tui list` / `devc-tui select` instead. `--no-color` and `NO_COLOR`
@@ -128,8 +139,9 @@ git -C <worktree> worktree repair --relative-paths      # for worktrees you alre
 Then `<worktree>/.git` reads `gitdir: ../../projecta/.git/worktrees/feat`, and devc-tui keeps
 that offset intact in the container by mounting each project at
 `containerRoot + "/" + <path relative to root>` — never a flattened basename. That is also
-why **selecting a worktree automatically mounts its primary repo** (shown as `[~]`, and left
-out of the workspace folder list).
+why **selecting a worktree automatically mounts its primary repo**, shown as `[~]` on the
+primary's own row and left out of the workspace folder list. The two stay where they are in
+the tree; the `[~]` is the only thing that links them on screen.
 
 `devc-tui list --json` reports `relativeGitdir` per worktree, so you can spot the ones that
 still need `worktree repair`.
@@ -138,20 +150,24 @@ still need `worktree repair`.
 
 ```
 <root>/projecta/.git                     → projecta
-<root>/projecta.worktrees/some-feature   → projecta.worktrees/some-feature   (child of projecta)
+<root>/projecta.worktrees/                → projecta.worktrees               (folder, beside projecta)
+<root>/projecta.worktrees/some-feature   → projecta.worktrees/some-feature
 <root>/projectb/.git                     → projectb
 <root>/projectb.worktrees/some-other     → projectb.worktrees/some-other
-<root>/org/tools/.git                    → org/tools                        (under group "org")
+<root>/org/tools/.git                    → org/tools                        (under folder "org")
 <root>/noise/                            → pruned: nothing selectable beneath it
 ```
 
 - A directory containing `.git` (file or dir) is a **project**; devc-tui does not descend
-  into it.
-- `<base>.worktrees/` is a **worktree group** bound to the sibling `<base>` project; each
-  immediate subdirectory is a worktree, displayed under `<base>`.
-- Anything else is a **group** — not selectable, pruned when nothing selectable is beneath it.
-- A `<base>.worktrees` with no sibling `<base>` shows as `<base> (missing primary)` and its
-  worktrees are not selectable: without the primary's mount, git inside them would not work.
+  into it, so a project is always a leaf.
+- `<base>.worktrees/` is a **worktree folder** whose immediate subdirectories are worktrees.
+  It is drawn beside `<base>`, not inside it — the tree matches the filesystem. What binds the
+  two is the mount, not the layout: selecting a worktree mounts `<base>` as well.
+- Anything else is a plain **folder** — not selectable itself, and pruned when nothing
+  selectable is beneath it.
+- A `<base>.worktrees` with no sibling `<base>` is still shown, marked
+  `! primary repo not found`, and its worktrees are not selectable: without the primary's
+  mount, git inside them would not work.
 - The **id** of a project or worktree is its path relative to `root`. Ids are what the CLI
   takes and what the fences round-trip.
 
@@ -211,8 +227,8 @@ Global flags: `--workspace-dir <path>`, `--root <path>`, `--config <path>`, `--c
 `--dry-run`, `--json`, `--no-color`.
 
 `list` markers: `[x]` selected, `[ ]` selectable, `[~]` mounted only because a selected
-worktree needs it, and blank for nodes you cannot select (groups, the current workspace, an
-orphaned worktree).
+worktree needs it, and blank for nodes you cannot select (plain folders, the current
+workspace, an orphaned worktree). `list` shows the whole tree — it has no folds.
 
 Exit codes: **0** success, **1** runtime error, **2** usage/config error.
 

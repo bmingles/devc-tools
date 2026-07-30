@@ -129,8 +129,9 @@ async function readOrNull(path: string): Promise<string | null> {
 
 Deno.test("app: the UI writes exactly what the CLI writes", async () => {
   await setup(async (env) => {
-    // `down down` from the first row (`org`) lands on `projecta`; space checks it, `w` writes.
-    const session = await tui(env, [DOWN, DOWN, SPACE, "w", "q"]);
+    // The tree opens collapsed, so `down` from the first row (`org`) lands straight on
+    // `projecta` without stepping through `org`'s contents; space checks it, `w` writes.
+    const session = await tui(env, [DOWN, SPACE, "w", "q"]);
     assertEquals(session.code, 0, session.stderr);
     const uiDevcontainer = await Deno.readTextFile(env.devcontainer);
     const uiWorkspace = await Deno.readTextFile(env.workspaceFile);
@@ -178,7 +179,7 @@ Deno.test("app: writing twice is a no-op, and skills go through the same path", 
 
 Deno.test("app: Ctrl-C after a toggle writes nothing at all", async () => {
   await setup(async (env) => {
-    const session = await tui(env, [DOWN, DOWN, SPACE, CTRL_C]);
+    const session = await tui(env, [DOWN, SPACE, CTRL_C]);
     assertEquals(session.code, 0, session.stderr);
     assertStringIncludes(session.frames, "*unsaved");
     assertEquals(await Deno.readTextFile(env.devcontainer), env.original);
@@ -188,7 +189,7 @@ Deno.test("app: Ctrl-C after a toggle writes nothing at all", async () => {
 
 Deno.test("app: quitting dirty and answering y saves on the way out", async () => {
   await setup(async (env) => {
-    const session = await tui(env, [DOWN, DOWN, SPACE, "q", "y"]);
+    const session = await tui(env, [DOWN, SPACE, "q", "y"]);
     assertEquals(session.code, 0, session.stderr);
     assertStringIncludes(session.frames, "save before quitting? [y/n/c]");
     assertEquals(fenceEntries(await Deno.readTextFile(env.devcontainer), "mounts", "projects").length, 1);
@@ -196,7 +197,7 @@ Deno.test("app: quitting dirty and answering y saves on the way out", async () =
     // ... and answering n does not.
     await Deno.writeTextFile(env.devcontainer, env.original);
     await Deno.remove(env.workspaceFile);
-    const discarded = await tui(env, [DOWN, DOWN, SPACE, "q", "n"]);
+    const discarded = await tui(env, [DOWN, SPACE, "q", "n"]);
     assertEquals(discarded.code, 0, discarded.stderr);
     assertEquals(await Deno.readTextFile(env.devcontainer), env.original);
     assertEquals(await readOrNull(env.workspaceFile), null);
@@ -206,7 +207,6 @@ Deno.test("app: quitting dirty and answering y saves on the way out", async () =
 Deno.test("app: r rescans and keeps the selection by id", async () => {
   await setup(async (env) => {
     const session = await tui(env, [
-      DOWN,
       DOWN,
       SPACE, // projecta selected
       async () => await repo(join(env.root, "zeta")),
@@ -228,13 +228,13 @@ Deno.test("app: a missing devcontainer asks before creating it", async () => {
   await setup(async (env) => {
     await Deno.remove(env.devcontainer);
     // `w` opens the prompt; anything but `y` cancels.
-    const cancelled = await tui(env, [DOWN, DOWN, SPACE, "w", "n"]);
+    const cancelled = await tui(env, [DOWN, SPACE, "w", "n"]);
     assertEquals(cancelled.code, 0, cancelled.stderr);
     assertStringIncludes(cancelled.frames, "create .devcontainer/devcontainer.json? [y/n]");
     assertStringIncludes(cancelled.frames, "cancelled");
     assertEquals(await readOrNull(env.devcontainer), null);
 
-    const created = await tui(env, [DOWN, DOWN, SPACE, "w", "y", "q"]);
+    const created = await tui(env, [DOWN, SPACE, "w", "y", "q"]);
     assertEquals(created.code, 0, created.stderr);
     const dev = await Deno.readTextFile(env.devcontainer);
     assertEquals(fenceEntries(dev, "mounts", "projects").length, 1);

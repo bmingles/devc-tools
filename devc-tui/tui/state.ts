@@ -18,11 +18,14 @@ import type { Key } from "./keys.ts";
 
 export type Mode = "nav" | "filter" | "confirm" | "help";
 
-/** Checkbox state of a row. `auto` is `[~]`, `partial` is `[-]`, `none` prints blanks. */
+/**
+ * Checkbox state of a row. `auto` is `[~]`, `partial` is `[-]`, and `none` prints blanks —
+ * which is how a row says "you cannot check me"; the reason follows in its notes or warnings.
+ */
 export type Marker = "none" | "off" | "on" | "auto" | "partial";
 
-/** Fold column: `v`, `>`, `x` (not selectable), or blank. */
-export type Fold = "none" | "expanded" | "collapsed" | "blocked";
+/** Fold column: `v`, `>`, or blank. Fold state only — selectability lives in the checkbox. */
+export type Fold = "none" | "expanded" | "collapsed";
 
 export type RowKind = "section" | "blank" | "note" | "node" | "skill";
 
@@ -109,12 +112,12 @@ export interface InitOptions {
   bodyHeight?: number;
 }
 
-/** Everything starts expanded: the tree is small and a hidden checkbox is a surprise. */
+/**
+ * Folders start collapsed, like any file tree — except along the path to something already
+ * selected, so what the container currently mounts is visible on the first frame.
+ */
 export function initialState(init: InitOptions): UiState {
-  const expanded = new Set<string>();
-  for (const n of flatten(init.tree.nodes)) {
-    if (n.children.length > 0) expanded.add(n.id);
-  }
+  const expanded = ancestorsOf(init.tree, init.selection);
   const state: UiState = {
     cfg: init.cfg,
     tree: init.tree,
@@ -139,6 +142,22 @@ export function initialState(init: InitOptions): UiState {
     paths: init.paths,
   };
   return normalizeCursor(state);
+}
+
+/** Ids of every node with a selected node somewhere beneath it — the folds to open. */
+function ancestorsOf(tree: Tree, selection: Set<string>): Set<string> {
+  const out = new Set<string>();
+  const walk = (nodes: Node[]): boolean => {
+    let hit = false;
+    for (const n of nodes) {
+      const below = walk(n.children);
+      if (below) out.add(n.id);
+      if (below || selection.has(n.id)) hit = true;
+    }
+    return hit;
+  };
+  walk(tree.nodes);
+  return out;
 }
 
 // --- rows ------------------------------------------------------------------------
@@ -181,8 +200,8 @@ export function visibleRows(state: UiState): Row[] {
         depth: 1,
         focusable: true,
         matched: filter === "" || matches(s.name, filter),
-        marker: state.skillSelection.has(s.name) ? "on" : "off",
-        fold: s.warnings.length > 0 ? "blocked" : "none",
+        marker: s.warnings.length > 0 ? "none" : state.skillSelection.has(s.name) ? "on" : "off",
+        fold: "none",
         notes: [],
         warnings: s.warnings,
         section: "skills",
@@ -236,22 +255,24 @@ function subtreeMatches(node: Node, filter: string): boolean {
   return false;
 }
 
+/** No checkbox at all is how a row says it cannot be checked. */
 function markerFor(state: UiState, n: Node, d: Derived): Marker {
   if (n.kind === "group") {
     const ids = selectableDescendants(n);
-    if (ids.length === 0) return "off";
+    if (ids.length === 0) return "none";
     const on = ids.filter((id) => state.selection.has(id)).length;
     if (on === 0) return "off";
     return on === ids.length ? "on" : "partial";
   }
   if (state.selection.has(n.id)) return "on";
+  // `[~]` outranks unselectable: the node really is mounted, whoever asked for it.
   if (d.auto.has(n.id)) return "auto";
-  return "off";
+  return n.selectable ? "off" : "none";
 }
 
 function foldFor(n: Node, open: boolean): Fold {
-  if (n.children.length > 0) return open ? "expanded" : "collapsed";
-  return n.kind !== "group" && n.selectable ? "none" : "blocked";
+  if (n.children.length === 0) return "none";
+  return open ? "expanded" : "collapsed";
 }
 
 function notesFor(state: UiState, n: Node, d: Derived): string[] {
@@ -362,7 +383,11 @@ export function withMessage(state: UiState, message: string): UiState {
   return { ...state, message };
 }
 
-/** Swap in a freshly scanned tree, keeping the selection (which is keyed by id). */
+/**
+ * Swap in a freshly scanned tree, keeping the selection (which is keyed by id). Folds survive
+ * a rescan untouched — a directory that appeared since the last scan stays collapsed, like
+ * every other one.
+ */
 export function rescanned(
   state: UiState,
   tree: Tree,
@@ -371,16 +396,9 @@ export function rescanned(
 ): UiState {
   const expanded = new Set<string>();
   for (const n of flatten(tree.nodes)) {
-    // Keep what the user had folded; expand nodes they have not seen before.
-    if (n.children.length > 0 && (state.expanded.has(n.id) || !hadNode(state, n.id))) {
-      expanded.add(n.id);
-    }
+    if (n.children.length > 0 && state.expanded.has(n.id)) expanded.add(n.id);
   }
   return normalizeCursor({ ...state, tree, skills, expanded, message });
-}
-
-function hadNode(state: UiState, id: string): boolean {
-  return flatten(state.tree.nodes).some((n) => n.id === id);
 }
 
 // --- reduce ----------------------------------------------------------------------

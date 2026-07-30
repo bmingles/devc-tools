@@ -15,8 +15,10 @@ Deno.test("scan: the example layout yields exactly the expected ids", async () =
       "org",
       "org/tools",
       "projecta",
+      "projecta.worktrees",
       "projecta.worktrees/some-feature",
       "projectb",
+      "projectb.worktrees",
       "projectb.worktrees/some-other",
       "projectb.worktrees/yet-another",
     ]);
@@ -24,16 +26,29 @@ Deno.test("scan: the example layout yields exactly the expected ids", async () =
     // `noise/` is pruned: no project or worktree beneath it.
     assert(!nodes.some((n) => n.id === "noise"));
 
-    // Worktrees are nested under their primaries and know which mount they need.
+    // The tree mirrors the filesystem: a project is a leaf, and its worktree directory is a
+    // sibling group — not a child. `primaryId` is what still ties the two together.
     const projecta = tree.nodes.find((n) => n.id === "projecta")!;
     assertEquals(projecta.kind, "project");
-    assertEquals(projecta.children.map((c) => c.id), ["projecta.worktrees/some-feature"]);
-    assertEquals(projecta.children[0].kind, "worktree");
-    assertEquals(projecta.children[0].primaryId, "projecta");
-    assertEquals(projecta.children[0].selectable, true);
+    assertEquals(projecta.children, []);
 
-    const projectb = tree.nodes.find((n) => n.id === "projectb")!;
-    assertEquals(projectb.children.map((c) => c.id), [
+    const groupa = tree.nodes.find((n) => n.id === "projecta.worktrees")!;
+    assertEquals(groupa.kind, "group");
+    assertEquals(groupa.name, "projecta.worktrees");
+    assertEquals(groupa.selectable, false);
+    assertEquals(groupa.warnings, []);
+    assertEquals(groupa.children.map((c) => c.id), ["projecta.worktrees/some-feature"]);
+    assertEquals(groupa.children[0].kind, "worktree");
+    assertEquals(groupa.children[0].primaryId, "projecta");
+    assertEquals(groupa.children[0].selectable, true);
+
+    // Depth is filesystem nesting: siblings on disk are siblings here.
+    assertEquals(projecta.depth, 0);
+    assertEquals(groupa.depth, 0);
+    assertEquals(groupa.children[0].depth, 1);
+
+    const groupb = tree.nodes.find((n) => n.id === "projectb.worktrees")!;
+    assertEquals(groupb.children.map((c) => c.id), [
       "projectb.worktrees/some-other",
       "projectb.worktrees/yet-another",
     ]);
@@ -65,10 +80,12 @@ Deno.test("scan: orphan worktrees are not selectable and say why", async () => {
     await worktree(join(root, "orphan.worktrees", "x"), "../../orphan/.git/worktrees/x");
     const tree = await scanRoot(root, 3, { workspaceDir: root });
 
-    const group = tree.nodes.find((n) => n.name === "orphan (missing primary)")!;
+    const group = tree.nodes.find((n) => n.id === "orphan.worktrees")!;
     assert(group !== undefined);
     assertEquals(group.kind, "group");
+    assertEquals(group.name, "orphan.worktrees");
     assertEquals(group.selectable, false);
+    assertEquals(group.warnings, [MISSING_PRIMARY_WARNING]);
     assertEquals(group.children.length, 1);
 
     const node = group.children[0];

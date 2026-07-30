@@ -16,7 +16,7 @@ import {
   TOO_SMALL,
 } from "../tui/render.ts";
 import { initialState, reduce, setSize, type UiState } from "../tui/state.ts";
-import { makeExampleRoot, withTemp } from "./helpers.ts";
+import { makeExampleRoot, repo, withTemp, worktree } from "./helpers.ts";
 
 async function withUi(fn: (state: UiState) => Promise<void> | void): Promise<void> {
   await withTemp(async (tmp) => {
@@ -123,9 +123,62 @@ Deno.test("render: the cursor row is the only reverse-video row", async () => {
     assertStringIncludes(stripAnsi(cursorLine), ">");
     assertStringIncludes(stripAnsi(cursorLine), "org");
 
-    const moved = render(reduce(sized, key("down")).state, size);
+    // `org` starts folded, so open it before stepping into it.
+    const opened = reduce(sized, key("right")).state;
+    const moved = render(reduce(opened, key("down")).state, size);
     assertEquals(moved.filter((l) => l.includes("\x1b[7m")).length, 1);
     assertStringIncludes(stripAnsi(moved.find((l) => l.includes("\x1b[7m"))!), "tools");
+  });
+});
+
+Deno.test("render: the fold column is fold state only, and no checkbox means not selectable", async () => {
+  await withTemp(async (tmp) => {
+    // A root holding the workspace dir itself, a normal worktree group, and an orphaned one —
+    // every reason a row can be unselectable, in one frame.
+    const root = join(tmp, "root");
+    const workspaceDir = join(root, "here");
+    await repo(workspaceDir);
+    await repo(join(root, "projecta"));
+    await worktree(join(root, "projecta.worktrees", "feat"), "../../projecta/.git/worktrees/feat");
+    await worktree(join(root, "orphan.worktrees", "stray"), "../../orphan/.git/worktrees/stray");
+
+    const cfg: Config = { ...DEFAULT_CONFIG, root };
+    const state = initialState({
+      cfg,
+      tree: await scanRoot(root, cfg.maxDepth, { workspaceDir }),
+      skills: [],
+      skillsRoot: "",
+      selection: new Set(),
+      skillSelection: new Set(),
+      paths: { devcontainer: "d", workspaceFile: "w" },
+      needsCreate: false,
+      color: false,
+    });
+
+    const size = { columns: 80, rows: 24 };
+    // Rows sort by name: here, orphan.worktrees, projecta, projecta.worktrees. Open the
+    // orphan group so one of each fold state is on screen.
+    const expanded = reduce(reduce(setSize(state, size), key("down")).state, key("right")).state;
+    const body = render(expanded, size).slice(1, size.rows - 2);
+    const row = (text: string) => body.find((l) => l.includes(text))!;
+
+    // Fold column: `>` closed, `v` open, blank for a leaf — and nothing else. The old `x`
+    // (which meant "not selectable") is gone, so no row starts with one.
+    assertStringIncludes(row("orphan.worktrees"), "v");
+    assertStringIncludes(row("projecta.worktrees"), ">");
+    for (const line of body) {
+      assertEquals(/^.\s*x/.test(line), false, `fold-column x in ${JSON.stringify(line)}`);
+    }
+
+    // No checkbox at all is how a row says it cannot be checked; the text says why.
+    assertStringIncludes(row("here"), "(workspace)");
+    assertEquals(row("here").includes("["), false, "the workspace dir has no checkbox");
+    assertStringIncludes(row("stray"), "! primary repo not found");
+    assertEquals(row("stray").includes("["), false, "an orphaned worktree has no checkbox");
+    assertEquals(row("orphan.worktrees").includes("["), false, "nothing selectable beneath it");
+
+    // A group with something selectable under it does get one.
+    assertStringIncludes(row("projecta.worktrees"), "[ ]");
   });
 });
 
