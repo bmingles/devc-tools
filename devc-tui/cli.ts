@@ -73,7 +73,7 @@ export const DEFAULT_OPTIONS: Options = {
   create: false,
 };
 
-interface Ctx {
+export interface Ctx {
   opts: Options;
   io: Io;
   loaded: LoadedConfig;
@@ -82,7 +82,7 @@ interface Ctx {
   targets: Targets;
 }
 
-interface State {
+export interface State {
   tree: Tree;
   /** Explicit selection recovered from the files. */
   selection: Set<string>;
@@ -93,7 +93,7 @@ interface State {
   warnings: string[];
 }
 
-async function loadContext(opts: Options, io: Io): Promise<Ctx> {
+export async function loadContext(opts: Options, io: Io): Promise<Ctx> {
   const loaded = await loadConfig(opts.config);
   const cfg: Config = { ...loaded.cfg };
   if (opts.root !== undefined && opts.root !== "") cfg.root = opts.root;
@@ -102,7 +102,7 @@ async function loadContext(opts: Options, io: Io): Promise<Ctx> {
   return { opts, io, loaded, cfg, workspaceDir, targets };
 }
 
-async function loadState(ctx: Ctx): Promise<State> {
+export async function loadState(ctx: Ctx): Promise<State> {
   const root = requireRoot(ctx.cfg, ctx.loaded.path);
   const tree = await scanRoot(root, ctx.cfg.maxDepth, { workspaceDir: ctx.workspaceDir });
   const devcontainerSrc = await readFileOrNull(ctx.targets.devcontainer);
@@ -281,15 +281,29 @@ export async function cmdApply(opts: Options, io: Io): Promise<number> {
   return await applyAll(ctx, state);
 }
 
+export interface Change {
+  path: string;
+  before: string;
+  after: string;
+}
+
+export interface Planned {
+  changes: Change[];
+  warnings: string[];
+}
+
 /**
- * The single write path: derive both fences from `state`, splice them into (possibly
- * freshly templated) sources, then either diff or write. Files whose content is unchanged
- * are not rewritten, which is what makes repeated `apply` byte-identical.
+ * Derive both files from `state` and diff them against what is on disk. This is the single
+ * place a devc-tui fence is ever computed — `apply`, `select`, `skills enable` and the TUI's
+ * `w` all come through here, so they cannot drift apart.
+ *
+ * Files whose content is unchanged are left out entirely, which is what makes a repeated
+ * `apply` byte-identical.
  */
-async function applyAll(ctx: Ctx, state: State): Promise<number> {
+export async function planChanges(ctx: Ctx, state: State): Promise<Planned> {
   const derived = derive(state.tree, state.selection, ctx.cfg);
   const skills = await skillFenceLines(ctx, state);
-  warn(ctx.io, [...state.warnings, ...derived.warnings, ...skills.warnings]);
+  const warnings = [...state.warnings, ...derived.warnings, ...skills.warnings];
 
   if (state.devcontainerSrc === null && !ctx.opts.create) {
     throw new RuntimeError(
@@ -311,13 +325,43 @@ async function applyAll(ctx: Ctx, state: State): Promise<number> {
     ctx.targets.workspaceFile,
   );
 
-  const changes: Array<{ path: string; before: string; after: string }> = [];
+  const changes: Change[] = [];
   if (devNext !== state.devcontainerSrc) {
     changes.push({ path: ctx.targets.devcontainer, before: state.devcontainerSrc ?? "", after: devNext });
   }
   if (wsNext !== state.workspaceSrc) {
     changes.push({ path: ctx.targets.workspaceFile, before: state.workspaceSrc ?? "", after: wsNext });
   }
+  return { changes, warnings };
+}
+
+/** Write planned changes, creating parent dirs. Returns the paths written, in order. */
+export async function writeChanges(changes: Change[]): Promise<string[]> {
+  for (const c of changes) {
+    await Deno.mkdir(dirOf(c.path), { recursive: true }).catch((e) => {
+      if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
+    });
+    await Deno.writeTextFile(c.path, c.after);
+  }
+  return changes.map((c) => c.path);
+}
+
+/**
+ * Plan and write in one call — the entry point the interactive UI uses for `w`, so the UI
+ * introduces no file-writing logic of its own.
+ */
+export async function applySelection(
+  ctx: Ctx,
+  state: State,
+): Promise<{ changed: string[]; warnings: string[] }> {
+  const planned = await planChanges(ctx, state);
+  return { changed: await writeChanges(planned.changes), warnings: planned.warnings };
+}
+
+/** `select` / `deselect` / `apply` / `skills`: plan, then diff or write, then report. */
+async function applyAll(ctx: Ctx, state: State): Promise<number> {
+  const { changes, warnings } = await planChanges(ctx, state);
+  warn(ctx.io, warnings);
 
   if (ctx.opts.dryRun) {
     for (const c of changes) ctx.io.out(unifiedDiff(c.before, c.after, c.path).trimEnd());
@@ -326,15 +370,10 @@ async function applyAll(ctx: Ctx, state: State): Promise<number> {
     return 0;
   }
 
-  for (const c of changes) {
-    await Deno.mkdir(dirOf(c.path), { recursive: true }).catch((e) => {
-      if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
-    });
-    await Deno.writeTextFile(c.path, c.after);
-  }
-  if (ctx.opts.json) ctx.io.out(JSON.stringify({ changed: changes.map((c) => c.path) }));
-  else if (changes.length === 0) ctx.io.out("no changes");
-  else for (const c of changes) ctx.io.out(`wrote ${c.path}`);
+  const written = await writeChanges(changes);
+  if (ctx.opts.json) ctx.io.out(JSON.stringify({ changed: written }));
+  else if (written.length === 0) ctx.io.out("no changes");
+  else for (const path of written) ctx.io.out(`wrote ${path}`);
   return 0;
 }
 

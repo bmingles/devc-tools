@@ -1,7 +1,7 @@
 {
   "tasks": {
     "run": "deno run --allow-read --allow-write --allow-env main.ts",
-    "check": "deno check main.ts cli.ts config.ts scan.ts model.ts jsonc_edit.ts devcontainer.ts workspace.ts skills.ts diff.ts",
+    "check": "deno check main.ts cli.ts config.ts scan.ts model.ts jsonc_edit.ts devcontainer.ts workspace.ts skills.ts diff.ts tui/state.ts tui/render.ts tui/keys.ts tui/term.ts tui/app.ts",
     "test": "deno test --allow-read --allow-write --allow-env",
     "build": "deno compile --allow-read --allow-write --allow-env --output devc-tui main.ts"
   },

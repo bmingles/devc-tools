@@ -31,8 +31,72 @@ file and the `.code-workspace`. Everything outside its fences (comments, formatt
 knows nothing about) is preserved byte-for-byte, and `--dry-run` shows the exact diff before
 you commit to it. It never touches anything under the scanned root.
 
-This phase is headless: a CLI plus tests. The interactive checkbox tree comes next and drives
-the same apply path.
+Run `devc-tui` with no arguments for the interactive tree; every subcommand below does the
+same work headlessly, through the same write path.
+
+## The interactive tree
+
+```
+ devc-tui  ~/src -> /workspaces               5 mounts  4 folders  1 skills   *unsaved
+ PROJECTS
+  v [x] org
+>     [x] lib
+      [x] tools
+  v [x] projecta
+      [ ] some-feature
+  v [~] projectb  (required by worktree)
+      [x] some-other
+      [ ] yet-another  ! absolute gitdir
+
+ SKILLS  ~/.claude/skills -> /home/vscode/.claude/skills
+      [x] deephaven-docs
+      [ ] marp-writing
+
+ wrote .devcontainer/devcontainer.json, myapp.code-workspace
+ arrows move  space toggle  / filter  a/n all/none  w write  ? help  q quit
+```
+
+The header names the scanned root, where it lands in the container, live counts derived from
+the current selection, and `*unsaved` when the selection differs from what is on disk. The
+last two lines are the result of the last action and the keys. When the list is taller than the
+window the right-hand column becomes a scrollbar (`|` track, `#` thumb). Nothing is written
+until you press `w`.
+
+| Marker | Meaning |
+| --- | --- |
+| `[ ]` | not selected |
+| `[x]` | selected |
+| `[~]` | mounted only because a selected worktree needs its primary repo |
+| `[-]` | group with some, but not all, of its projects selected |
+| `v` / `>` | expanded / collapsed |
+| `x` | not selectable — an orphaned worktree, or the current workspace |
+| `>` in the first column | the cursor (also drawn in reverse video, unless colour is off) |
+| `! ...` | a warning: `absolute gitdir`, `primary repo not found`, ... |
+
+| Key | Action |
+| --- | --- |
+| `up`/`down`, `k`/`j` | move the cursor (headings are skipped) |
+| `PgUp`/`PgDn` | move one screen |
+| `Home`/`End`, `g`/`G` | first / last row |
+| `space`, `Enter` | toggle the row under the cursor |
+| `right`/`l` | expand |
+| `left`/`h` | collapse, or jump to the parent |
+| `Tab` | jump to the next section |
+| `/` | filter by id; `Enter` keeps the filter, `Esc` clears it |
+| `a` / `n` | select / deselect what is on screen — with a filter, its matches only |
+| `r` | rescan the root, keeping the selection |
+| `w` | write both files |
+| `?` | keybindings |
+| `q` | quit (asks first when there are unsaved changes) |
+| `Ctrl-C` | quit immediately, writing nothing |
+
+Toggling a **group** selects all of its projects, or clears them if they were all selected.
+Toggling a `[~]` primary makes it explicit (`[x]`); toggling it again returns it to `[~]`
+rather than `[ ]`, because a selected worktree still needs its mount.
+
+The tree needs at least a 40x10 window and a real terminal: with stdin redirected it exits 2
+and points you at `devc-tui list` / `devc-tui select` instead. `--no-color` and `NO_COLOR`
+drop every escape sequence without changing the layout.
 
 ## Install
 
@@ -131,6 +195,7 @@ ambiguous — devc-tui exits 2 and asks you to set the key.
 ## CLI
 
 ```
+devc-tui                             open the interactive tree (see above)
 devc-tui list                        show the projects under the configured root
 devc-tui status                      resolved config, target files, fence entry counts
 devc-tui select <id>...              add projects/worktrees to the selection, then apply
@@ -184,7 +249,7 @@ warning on stderr.
 ```sh
 cd devc-tui
 deno task check   # type-check
-deno task test    # unit + CLI tests (no terminal, no host needed)
+deno task test    # unit, CLI and TUI tests (no terminal, no host needed)
 deno task run --  # e.g. deno task run list
 deno task build   # standalone ./devc-tui binary
 ```
@@ -205,3 +270,13 @@ literal, an unterminated fence) that pin the file-surgery behavior.
 | `devcontainer.ts` / `workspace.ts` | per-file read/create/write |
 | `skills.ts` | skills discovery and toggle |
 | `diff.ts` | unified diff for `--dry-run` |
+| `tui/state.ts` | `UiState`, `visibleRows`, `reduce` — the whole UI as a pure state machine |
+| `tui/render.ts` | `render(state, size)` → exactly `size.rows` lines |
+| `tui/keys.ts` | bytes → keys, buffering across reads |
+| `tui/term.ts` | raw mode, alternate screen, size, paint, guaranteed restore |
+| `tui/app.ts` | `runApp(deps)`: injectable IO, the input loop, and the three effects |
+
+The UI splits into a pure core (`state.ts`, `render.ts`, `keys.ts`) and a thin shell
+(`term.ts`, `app.ts`), so navigation, toggling, filtering and layout are all covered by
+`deno test` — `tests/tui_app_test.ts` even scripts a whole session and asserts the files come
+out byte-identical to the equivalent `devc-tui select`. Only the visual polish needs a human.

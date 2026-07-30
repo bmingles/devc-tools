@@ -13,8 +13,8 @@
 // `devc-tui:folders` in the workspace file's `folders`. Everything else in those files —
 // comments, formatting, keys it knows nothing about — is preserved byte-for-byte.
 //
-// This file owns argv only; the work lives in cli.ts (and the interactive TUI will replace
-// the no-argument case).
+// This file owns argv only: the subcommands live in cli.ts and the interactive tree — what
+// you get with no subcommand at all — lives in tui/.
 
 import {
   cmdApply,
@@ -32,10 +32,12 @@ import {
   type Options,
 } from "./cli.ts";
 import { RuntimeError, UsageError } from "./config.ts";
+import { startTui } from "./tui/app.ts";
 
-export const USAGE = `usage: devc-tui <command> [options]
+export const USAGE = `usage: devc-tui [command] [options]
 
 commands:
+  (none)                      open the interactive project tree
   list                        show the projects under the configured root
   status                      show resolved config, target files, and fence entry counts
   select <id>...              add projects (or worktrees) to the selection, then apply
@@ -113,8 +115,20 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return { opts, args, help };
 }
 
+export interface RunDeps {
+  /**
+   * Launches the interactive tree (no subcommand). Injectable so tests can drive the
+   * non-TTY refusal deterministically, whatever stdin happens to be.
+   */
+  tui?: (opts: Options, io: Io) => Promise<number>;
+}
+
 /** Dispatch one invocation. Returns the process exit code; never throws for known errors. */
-export async function run(argv: string[], io: Io = consoleIo): Promise<number> {
+export async function run(
+  argv: string[],
+  io: Io = consoleIo,
+  deps: RunDeps = {},
+): Promise<number> {
   let parsed: ParsedArgs;
   try {
     parsed = parseArgs(argv);
@@ -127,8 +141,11 @@ export async function run(argv: string[], io: Io = consoleIo): Promise<number> {
     return 0;
   }
   if (args.length === 0) {
-    io.err(USAGE);
-    return 2;
+    try {
+      return await (deps.tui ?? startTui)(opts, io);
+    } catch (e) {
+      return fail(e, io);
+    }
   }
   try {
     return await dispatch(args, opts, io);
