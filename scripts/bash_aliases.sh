@@ -5,6 +5,7 @@
 #
 # Each function runs its tool straight from source via Deno — no compile step:
 #   devc-bridge start | stop | status | restart
+#   devc-tui list | status | select <id> | deselect <id> | apply | skills | config
 #
 # Requires Deno 2.9+ on PATH. devc-bridge's tray also needs `deno desktop` (macOS GUI);
 # its `start` builds the app bundle, so the first one takes ~10-30s (it says so).
@@ -14,6 +15,7 @@
 if _devc_tools_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd)"; then
   export DEVC_TOOLS_ROOT="$_devc_tools_root"
   export DEVC_BRIDGE_MAIN="$DEVC_TOOLS_ROOT/devc-bridge/host/main.ts"
+  export DEVC_TUI_MAIN="$DEVC_TOOLS_ROOT/devc-tui/main.ts"
   unset _devc_tools_root
 else
   echo "devc-tools: could not locate the repo root above ${BASH_SOURCE[0]:-$0}" >&2
@@ -34,5 +36,8 @@ _devc_tools_run() {
 
 devc-bridge() { _devc_tools_run devc-bridge "${DEVC_BRIDGE_MAIN:-}" "$@"; }
 
-# Adding a tool: export its <TOOL>_MAIN above, then one function line here, e.g.
-#   devc-tui() { _devc_tools_run devc-tui "${DEVC_TUI_MAIN:-}" "$@"; }
+# devc-tui edits the devcontainer.json / .code-workspace of whatever repo you run it in,
+# so run it from that repo (it uses the cwd as the workspace dir unless --workspace-dir).
+devc-tui() { _devc_tools_run devc-tui "${DEVC_TUI_MAIN:-}" "$@"; }
+
+# Adding a tool: export its <TOOL>_MAIN above, then one function line here.

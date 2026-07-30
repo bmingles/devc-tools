@@ -1,0 +1,17 @@
+{
+  // Hand-written mounts, as objects spanning several lines each.
+  "name": "example",
+  "mounts": [
+    {
+      "type": "bind",
+      "source": "/host/one",
+      "target": "/container/one"
+    },
+    {
+      "type": "bind",
+      "source": "/host/two",
+      "target": "/container/two"
+    }
+  ],
+  "remoteUser": "vscode"
+}
