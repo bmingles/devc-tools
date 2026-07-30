@@ -244,110 +244,110 @@ Exit codes: `0` success, `1` runtime error, `2` usage/config error.
 
 ## Checklist
 
-- [ ] `devc-tui/deno.json` — `tasks`: `run` (`deno run --allow-read --allow-write --allow-env
+- [x] `devc-tui/deno.json` — `tasks`: `run` (`deno run --allow-read --allow-write --allow-env
       main.ts`), `check`, `test` (`deno test --allow-read --allow-write --allow-env`),
       `build` (`deno compile --output devc-tui … main.ts`); `imports` for
       `jsr:@std/path@^1` and `jsr:@std/assert@^1`, matching devc-bridge's import-map style.
-- [ ] `devc-tui/config.ts` — `Config` interface, `loadConfig()` (defaults + `DEVC_TUI_CONFIG`
+- [x] `devc-tui/config.ts` — `Config` interface, `loadConfig()` (defaults + `DEVC_TUI_CONFIG`
       + `--config`), `initConfig()` writing the default file, `resolveTargets()` returning the
       devcontainer + workspace file paths per the auto-detect rules.
-- [ ] `devc-tui/scan.ts` — `scanRoot(root, maxDepth)` → tree of group/project/worktree nodes
+- [x] `devc-tui/scan.ts` — `scanRoot(root, maxDepth)` → tree of group/project/worktree nodes
       with stable ids, `isWorkspace` flag, `relativeGitdir` on worktrees, and per-node
       warnings (missing primary, comma in path).
-- [ ] `devc-tui/model.ts` — `deriveMounts(tree, selection, cfg)` and
+- [x] `devc-tui/model.ts` — `deriveMounts(tree, selection, cfg)` and
       `deriveFolders(tree, selection, cfg)`; worktree→primary closure with the `auto` flag;
       `readSelection(devcontainerSrc, workspaceSrc, tree, cfg)` implementing the
       read-back-from-fences rules.
-- [ ] `devc-tui/jsonc_edit.ts` — the scanner plus `findArraySpan`, `splitElements`,
+- [x] `devc-tui/jsonc_edit.ts` — the scanner plus `findArraySpan`, `splitElements`,
       `spliceBlock`, `normalizeArrayCommas`, `ensureArray`, and `parseFenceEntries` (returns
       the raw text of each element inside a fence).
-- [ ] `devc-tui/devcontainer.ts` — read/create the devcontainer file; write the
+- [x] `devc-tui/devcontainer.ts` — read/create the devcontainer file; write the
       `devc-tui:projects` and `devc-tui:skills` fences into `mounts`.
-- [ ] `devc-tui/workspace.ts` — read/create the workspace file; write the `devc-tui:folders`
+- [x] `devc-tui/workspace.ts` — read/create the workspace file; write the `devc-tui:folders`
       fence into `folders`.
-- [ ] `devc-tui/skills.ts` — list immediate subdirectories of `skillsRoot`; enable/disable.
-- [ ] `devc-tui/cli.ts` — subcommand implementations, text and `--json` output, `--dry-run`
+- [x] `devc-tui/skills.ts` — list immediate subdirectories of `skillsRoot`; enable/disable.
+- [x] `devc-tui/cli.ts` — subcommand implementations, text and `--json` output, `--dry-run`
       unified diff, exit-code discipline.
-- [ ] `devc-tui/main.ts` — argv parsing, global flags, dispatch, usage text.
-- [ ] `devc-tui/tests/` — `jsonc_edit_test.ts`, `scan_test.ts`, `model_test.ts`,
+- [x] `devc-tui/main.ts` — argv parsing, global flags, dispatch, usage text.
+- [x] `devc-tui/tests/` — `jsonc_edit_test.ts`, `scan_test.ts`, `model_test.ts`,
       `cli_test.ts`, plus `fixtures/` holding the hand-written JSONC cases below.
-- [ ] `scripts/bash_aliases.sh` — export `DEVC_TUI_MAIN="$DEVC_TOOLS_ROOT/devc-tui/main.ts"`
+- [x] `scripts/bash_aliases.sh` — export `DEVC_TUI_MAIN="$DEVC_TOOLS_ROOT/devc-tui/main.ts"`
       and add `devc-tui() { _devc_tools_run devc-tui "${DEVC_TUI_MAIN:-}" "$@"; }`, replacing
       the "Adding a tool" example comment at the bottom.
-- [ ] `devc-tui/README.md` — what it does, config reference, the relative-worktrees
+- [x] `devc-tui/README.md` — what it does, config reference, the relative-worktrees
       prerequisite (`git config --global worktree.useRelativePaths true`, and
       `git worktree repair --relative-paths` for existing worktrees), fence contract, CLI
       reference, trust note that it edits files in the current workspace.
-- [ ] `devc-tui/.gitignore` — `/devc-tui` (the compiled binary).
-- [ ] Root `README.md` — add a `devc-tui/` row to the Tools table and to the Repo layout table.
+- [x] `devc-tui/.gitignore` — `/devc-tui` (the compiled binary).
+- [x] Root `README.md` — add a `devc-tui/` row to the Tools table and to the Repo layout table.
 
 ## Validation
 
-- [ ] `deno check devc-tui/*.ts` is clean (the repo-wide `no-import-prefix` lint note in
+- [x] `deno check devc-tui/*.ts` is clean (the repo-wide `no-import-prefix` lint note in
       devc-bridge is pre-existing style, not a failure).
-- [ ] `deno task test` in `devc-tui/` — all green, covering at minimum:
-  - [ ] **jsonc_edit, no-fence insert.** A `mounts` array with two existing multi-line object
+- [x] `deno task test` in `devc-tui/` — all green, covering at minimum:
+  - [x] **jsonc_edit, no-fence insert.** A `mounts` array with two existing multi-line object
         elements gains both fences at the end; the two originals are byte-identical; comment
         stripping + `JSON.parse` succeeds; `mounts.length === 2`.
-  - [ ] **jsonc_edit, in-place rewrite.** A fence placed *between* two user elements is
+  - [x] **jsonc_edit, in-place rewrite.** A fence placed *between* two user elements is
         rewritten in place with new entries; commas around it are correct; user elements and
         their attached `//` comments survive byte-for-byte.
-  - [ ] **jsonc_edit, empty fence.** Emptying a fence that was the last element removes the
+  - [x] **jsonc_edit, empty fence.** Emptying a fence that was the last element removes the
         now-trailing comma from the preceding element; result is strict-JSON parseable.
-  - [ ] **jsonc_edit, comma-hostile input.** Input with a pre-existing trailing comma, a
+  - [x] **jsonc_edit, comma-hostile input.** Input with a pre-existing trailing comma, a
         `/* */` comment inside the array, and a string element containing `],` and `//`
         round-trips without corruption.
-  - [ ] **jsonc_edit, missing array.** `ensureArray` on a root object with existing members
+  - [x] **jsonc_edit, missing array.** `ensureArray` on a root object with existing members
         inserts `"mounts": []` and a correct comma; on an empty `{}` it inserts without one.
-  - [ ] **jsonc_edit, unterminated fence.** Open fence with no close → throws; caller writes
+  - [x] **jsonc_edit, unterminated fence.** Open fence with no close → throws; caller writes
         nothing.
-  - [ ] **scan.** A temp tree matching the prompt's example (`projecta/.git`,
+  - [x] **scan.** A temp tree matching the prompt's example (`projecta/.git`,
         `projecta.worktrees/some-feature`, `projectb/.git`, `projectb.worktrees/some-other`,
         `projectb.worktrees/yet-another`, plus `org/tools/.git` at depth 2 and an empty
         `noise/` dir) yields exactly those ids, `noise/` pruned, worktrees nested under their
         primaries, and `org` a non-selectable group.
-  - [ ] **scan, orphan worktrees.** `orphan.worktrees/x` with no `orphan/` yields a
+  - [x] **scan, orphan worktrees.** `orphan.worktrees/x` with no `orphan/` yields a
         non-selectable node carrying the `primary repo not found` warning.
-  - [ ] **scan, relativeGitdir.** A worktree whose `.git` reads `gitdir: ../../projecta/...`
+  - [x] **scan, relativeGitdir.** A worktree whose `.git` reads `gitdir: ../../projecta/...`
         → `true`; one reading `gitdir: /abs/...` → `false`.
-  - [ ] **model, closure.** Selecting only `projectb.worktrees/some-other` produces mounts for
+  - [x] **model, closure.** Selecting only `projectb.worktrees/some-other` produces mounts for
         both it and `projectb` (the latter flagged `auto`) and workspace folders for only the
         worktree.
-  - [ ] **model, targets.** With `containerRoot: "/workspaces"`, ids `projecta` and
+  - [x] **model, targets.** With `containerRoot: "/workspaces"`, ids `projecta` and
         `projecta.worktrees/some-feature` map to `/workspaces/projecta` and
         `/workspaces/projecta.worktrees/some-feature` — i.e. `relative()` from the worktree
         target to the primary target is `../projecta`, matching the host, which is what keeps
         a relative `gitdir` resolvable.
-  - [ ] **model, read-back.** `deriveFolders` output fed back through `readSelection`
+  - [x] **model, read-back.** `deriveFolders` output fed back through `readSelection`
         reproduces the original selection set exactly.
-  - [ ] **model, workspace dir inside root.** With the workspace dir set to `<root>/projecta`,
+  - [x] **model, workspace dir inside root.** With the workspace dir set to `<root>/projecta`,
         that node is flagged `isWorkspace`, is not selectable, and never appears in either
         derived list — while `projecta.worktrees/some-feature` remains selectable and still
         force-includes `projecta` as an `auto` **mount** (needed for its relative gitdir).
-  - [ ] **model, workspace dir outside root.** With the workspace dir in an unrelated temp
+  - [x] **model, workspace dir outside root.** With the workspace dir in an unrelated temp
         dir, no node is flagged and every project is selectable.
-  - [ ] **model, self-mount collision.** Workspace dir named `projecta` but located outside
+  - [x] **model, self-mount collision.** Workspace dir named `projecta` but located outside
         `root`, with `containerRoot: "/workspaces"` and a scanned `projecta` — the scanned one
         is skipped with the collision warning and emitted in neither array; changing
         `containerRoot` to `/mnt/src` emits it normally.
-- [ ] **CLI round-trip** against a temp workspace dir with a hand-written devcontainer.json
+- [x] **CLI round-trip** against a temp workspace dir with a hand-written devcontainer.json
       that already has an unrelated mount, an unrelated top-level key, and comments:
-  - [ ] `devc-tui select projectb.worktrees/some-other` → both files written; devcontainer
+  - [x] `devc-tui select projectb.worktrees/some-other` → both files written; devcontainer
         `mounts` gains 2 entries inside `devc-tui:projects`; workspace `folders` gains 1.
-  - [ ] Running the same `apply` again produces a **byte-identical** file (idempotence).
-  - [ ] `devc-tui deselect projectb.worktrees/some-other` → both fences empty again and the
+  - [x] Running the same `apply` again produces a **byte-identical** file (idempotence).
+  - [x] `devc-tui deselect projectb.worktrees/some-other` → both fences empty again and the
         file is byte-identical to the pre-`select` original.
-  - [ ] `devc-tui list` marks `projectb` `[~]` while its worktree is selected.
-  - [ ] `devc-tui skills enable <name>` adds exactly one entry to `devc-tui:skills` and leaves
+  - [x] `devc-tui list` marks `projectb` `[~]` while its worktree is selected.
+  - [x] `devc-tui skills enable <name>` adds exactly one entry to `devc-tui:skills` and leaves
         `devc-tui:projects` untouched.
-  - [ ] `--dry-run` on a would-change command prints a diff and leaves both files unmodified.
-  - [ ] Unknown id exits 2 and writes nothing; missing devcontainer file exits 1 without
+  - [x] `--dry-run` on a would-change command prints a diff and leaves both files unmodified.
+  - [x] Unknown id exits 2 and writes nothing; missing devcontainer file exits 1 without
         `--create` and is created with it.
-  - [ ] Two `*.code-workspace` files in the workspace dir with `workspaceFile` unset exits 2.
-- [ ] **Tests are self-contained.** Every test builds its root, workspace dir, and skills dir
+  - [x] Two `*.code-workspace` files in the workspace dir with `workspaceFile` unset exits 2.
+- [x] **Tests are self-contained.** Every test builds its root, workspace dir, and skills dir
       under `Deno.makeTempDir()` and removes them afterwards; `git status` in this repo is
       clean after `deno task test`.
-- [ ] `source scripts/bash_aliases.sh && devc-tui status` runs from an arbitrary cwd and
+- [x] `source scripts/bash_aliases.sh && devc-tui status` runs from an arbitrary cwd and
       prints the resolved paths.
 - [ ] (user, host) With a real root configured, `devc-tui select <a worktree>` then rebuilding
       the devcontainer: `git -C <mounted worktree> status` and a commit both work inside the

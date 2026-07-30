@@ -1,0 +1,6 @@
+{
+  "mounts": [
+    // >>> devc-tui:projects (managed - do not edit)
+    "type=bind,source=/host/a,target=/workspaces/a"
+  ]
+}

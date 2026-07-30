@@ -1,0 +1,19 @@
+{
+  // Hand-written by a human: devc-tui must not touch anything outside its fences.
+  "name": "demo",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "mounts": [
+    // my ssh agent, nothing to do with devc-tui
+    "type=bind,source=/run/host-services/ssh-auth.sock,target=/ssh-agent"
+    // >>> devc-tui:projects (managed - do not edit)
+    // <<< devc-tui:projects
+    // >>> devc-tui:skills (managed - do not edit)
+    // <<< devc-tui:skills
+  ],
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-azuretools.vscode-docker"]
+    }
+  }
+}
