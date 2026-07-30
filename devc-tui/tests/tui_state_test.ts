@@ -4,7 +4,7 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@^1";
 import { join } from "jsr:@std/path@^1";
 import { type Config, DEFAULT_CONFIG } from "../config.ts";
-import { scanRoot } from "../scan.ts";
+import { flatten, scanRoot } from "../scan.ts";
 import { listSkills } from "../skills.ts";
 import { charKey, key, type Key } from "../tui/keys.ts";
 import {
@@ -12,6 +12,7 @@ import {
   initialState,
   isDirty,
   markSaved,
+  normalizeCursor,
   reduce,
   setSize,
   type UiState,
@@ -75,6 +76,20 @@ function press(state: UiState, ...keys: Key[]): { state: UiState; effects: Effec
 
 const SPACE = charKey(" ");
 
+/** What the example root looks like on the first frame: top-level folders, nothing opened. */
+const COLLAPSED_ROWS = [
+  "section:projects",
+  "node:org",
+  "node:projecta",
+  "node:projecta.worktrees",
+  "node:projectb",
+  "node:projectb.worktrees",
+  "blank",
+  "section:skills",
+  "skill:alpha",
+  "skill:beta",
+];
+
 function chars(text: string): Key[] {
   return [...text].map(charKey);
 }
@@ -89,6 +104,17 @@ function markerOf(state: UiState, rowKey: string): string {
   return row.marker;
 }
 
+/**
+ * Open every fold. The tree opens collapsed, so most of these tests — which are about
+ * toggling and navigating, not about folding — start from here.
+ */
+function expandAll(state: UiState): UiState {
+  const expanded = new Set(
+    flatten(state.tree.nodes).filter((n) => n.children.length > 0).map((n) => n.id),
+  );
+  return normalizeCursor({ ...state, expanded });
+}
+
 /** Move the cursor onto a row by key, without caring how many `down`s that takes. */
 function focus(state: UiState, rowKey: string): UiState {
   let next = press(state, key("home")).state;
@@ -99,16 +125,34 @@ function focus(state: UiState, rowKey: string): UiState {
   return next;
 }
 
-Deno.test("state: rows are the tree plus the skills section, in scan order", async () => {
+Deno.test("state: the tree opens collapsed, showing top-level folders only", async () => {
   await withUi(({ state }) => {
-    assertEquals(rowKeys(state), [
+    assertEquals(rowKeys(state), COLLAPSED_ROWS);
+    // The cursor starts on the first focusable row, never on a heading.
+    assertEquals(state.cursor, "node:org");
+
+    // A worktree directory is a folder of its own, beside the project it belongs to — not
+    // folded into it. Both are collapsed folds, nothing more.
+    for (const k of ["node:org", "node:projecta.worktrees", "node:projectb.worktrees"]) {
+      assertEquals(visibleRows(state).find((r) => r.key === k)!.fold, "collapsed");
+    }
+    // A project is a leaf: its worktrees are not hiding inside it.
+    assertEquals(visibleRows(state).find((r) => r.key === "node:projecta")!.fold, "none");
+  });
+});
+
+Deno.test("state: expanded, rows are the tree plus the skills section, in scan order", async () => {
+  await withUi(({ state }) => {
+    assertEquals(rowKeys(expandAll(state)), [
       "section:projects",
       "node:org",
       "node:org/extra",
       "node:org/tools",
       "node:projecta",
+      "node:projecta.worktrees",
       "node:projecta.worktrees/some-feature",
       "node:projectb",
+      "node:projectb.worktrees",
       "node:projectb.worktrees/some-other",
       "node:projectb.worktrees/yet-another",
       "blank",
@@ -116,15 +160,43 @@ Deno.test("state: rows are the tree plus the skills section, in scan order", asy
       "skill:alpha",
       "skill:beta",
     ]);
-    // The cursor starts on the first focusable row, never on a heading.
-    assertEquals(state.cursor, "node:org");
-    const worktree = visibleRows(state).find((r) => r.key === "node:projectb.worktrees/yet-another")!;
-    assertEquals(worktree.warnings, ["absolute gitdir"]);
+    const rows = visibleRows(expandAll(state));
+    assertEquals(rows.find((r) => r.key === "node:projectb.worktrees/yet-another")!.warnings, [
+      "absolute gitdir",
+    ]);
+  });
+});
+
+Deno.test("state: a selection already on disk is revealed, everything else stays folded", async () => {
+  await withUi(async ({ cfg, root }) => {
+    const tree = await scanRoot(root, cfg.maxDepth, { workspaceDir: root });
+    const state = initialState({
+      cfg,
+      tree,
+      skills: [],
+      skillsRoot: "",
+      selection: new Set(["projectb.worktrees/some-other"]),
+      skillSelection: new Set(),
+      paths: { devcontainer: "d", workspaceFile: "w" },
+      needsCreate: false,
+      color: false,
+    });
+    const keys = rowKeys(state);
+    // The path down to the selected worktree is open...
+    assert(keys.includes("node:projectb.worktrees/some-other"));
+    assertEquals(
+      visibleRows(state).find((r) => r.key === "node:projectb.worktrees")!.fold,
+      "expanded",
+    );
+    // ...and nothing else is.
+    assert(!keys.includes("node:projecta.worktrees/some-feature"));
+    assert(!keys.includes("node:org/tools"));
   });
 });
 
 Deno.test("state: navigation skips headings, End lands last, left folds then walks up", async () => {
-  await withUi(({ state }) => {
+  await withUi(({ state: collapsed }) => {
+    const state = expandAll(collapsed);
     // `down` many more times than there are rows: never a heading, never past the end.
     let cursor = state;
     const visited: string[] = [cursor.cursor];
@@ -167,7 +239,8 @@ Deno.test("state: navigation skips headings, End lands last, left folds then wal
 });
 
 Deno.test("state: toggling a worktree makes its primary [~], and [~] never becomes [ ]", async () => {
-  await withUi(({ state }) => {
+  await withUi(({ state: collapsed }) => {
+    const state = expandAll(collapsed);
     const onWorktree = focus(state, "node:projectb.worktrees/some-other");
     const selected = press(onWorktree, SPACE).state;
     assertEquals([...selected.selection], ["projectb.worktrees/some-other"]);
@@ -197,7 +270,8 @@ Deno.test("state: toggling a worktree makes its primary [~], and [~] never becom
 });
 
 Deno.test("state: toggling a group selects all its descendants, then none", async () => {
-  await withUi(({ state }) => {
+  await withUi(({ state: collapsed }) => {
+    const state = expandAll(collapsed);
     const onGroup = focus(state, "node:org");
     const all = press(onGroup, SPACE).state;
     assertEquals([...all.selection].sort(), ["org/extra", "org/tools"]);
@@ -210,6 +284,16 @@ Deno.test("state: toggling a group selects all its descendants, then none", asyn
     // One of two selected: the group reports `[-]`.
     const partial = press(focus(none, "node:org/tools"), SPACE).state;
     assertEquals(markerOf(partial, "node:org"), "partial");
+
+    // A worktree directory is a group like any other, so it bulk-toggles its worktrees.
+    const wt = press(focus(none, "node:projectb.worktrees"), SPACE).state;
+    assertEquals([...wt.selection].sort(), [
+      "projectb.worktrees/some-other",
+      "projectb.worktrees/yet-another",
+    ]);
+    assertEquals(markerOf(wt, "node:projectb.worktrees"), "on");
+    // ...and the primary they need comes along as `[~]`.
+    assertEquals(markerOf(wt, "node:projectb"), "auto");
   });
 });
 
@@ -217,11 +301,12 @@ Deno.test("state: a filter narrows the rows, and a/n act on the matches only", a
   await withUi(({ state }) => {
     const filtered = press(state, charKey("/"), ...chars("some"), key("enter")).state;
     assertEquals(filtered.mode, "nav");
+    // A filter ignores folds entirely: matches surface wherever they live.
     assertEquals(rowKeys(filtered), [
       "section:projects",
-      "node:projecta",
+      "node:projecta.worktrees",
       "node:projecta.worktrees/some-feature",
-      "node:projectb",
+      "node:projectb.worktrees",
       "node:projectb.worktrees/some-other",
       "blank",
       "section:skills",
@@ -229,7 +314,7 @@ Deno.test("state: a filter narrows the rows, and a/n act on the matches only", a
     ]);
     // Ancestors are shown for context but are not themselves matches.
     const rows = visibleRows(filtered);
-    assertEquals(rows.find((r) => r.key === "node:projecta")!.matched, false);
+    assertEquals(rows.find((r) => r.key === "node:projecta.worktrees")!.matched, false);
     assertEquals(rows.find((r) => r.key === "node:projecta.worktrees/some-feature")!.matched, true);
 
     const selected = press(filtered, charKey("a")).state;
@@ -239,10 +324,11 @@ Deno.test("state: a filter narrows the rows, and a/n act on the matches only", a
     ]);
     assertEquals(selected.skillSelection.size, 0);
 
-    // Esc clears the filter without touching the selection.
+    // Esc clears the filter without touching the selection, returning to the folds as they
+    // were — which, here, is the collapsed default.
     const cleared = press(selected, key("escape")).state;
     assertEquals(cleared.filter, "");
-    assertEquals(rowKeys(cleared).length, 13);
+    assertEquals(rowKeys(cleared), COLLAPSED_ROWS);
     assertEquals([...cleared.selection].sort(), [
       "projecta.worktrees/some-feature",
       "projectb.worktrees/some-other",
@@ -260,7 +346,13 @@ Deno.test("state: a filter narrows the rows, and a/n act on the matches only", a
 });
 
 Deno.test("state: unfiltered a/n act on every visible selectable row", async () => {
-  await withUi(({ state }) => {
+  await withUi(({ state: collapsed }) => {
+    // Collapsed, `a` reaches only what is on screen — the top-level projects. Anything still
+    // folded away is left alone, which is what makes `a` safe on a big root.
+    const shallow = press(collapsed, charKey("a")).state;
+    assertEquals([...shallow.selection].sort(), ["projecta", "projectb"]);
+
+    const state = expandAll(collapsed);
     const all = press(state, charKey("a")).state;
     assertEquals([...all.selection].sort(), [
       "org/extra",
@@ -342,25 +434,26 @@ Deno.test("state: q and w prompt when they need to, Ctrl-C never does", async ()
 
 Deno.test("state: scrolling keeps a margin around the cursor", async () => {
   await withUi(({ state }) => {
-    // 13 rows in a 6-row body.
+    // 10 collapsed rows in a 6-row body.
+    assertEquals(rowKeys(state).length, 10);
     const small = setSize(state, { rows: 9 });
     assertEquals(small.bodyHeight, 6);
     assertEquals(small.offset, 0);
 
     const down = press(small, key("down"), key("down"), key("down")).state;
-    assertEquals(down.cursor, "node:projecta");
+    assertEquals(down.cursor, "node:projectb");
     assertEquals(down.offset, 1); // pushed by the 2-row bottom margin
 
     const end = press(small, key("end")).state;
     assertEquals(end.cursor, "skill:beta");
-    assertEquals(end.offset, 13 - 6);
+    assertEquals(end.offset, 10 - 6);
 
     const home = press(end, key("home")).state;
     assertEquals(home.offset, 0);
 
     // Paging moves about a screen at a time and stops at the ends.
     const paged = press(small, key("pagedown")).state;
-    assertEquals(paged.cursor, "node:projectb");
+    assertEquals(paged.cursor, "skill:alpha");
     assertEquals(press(paged, key("pageup")).state.cursor, "node:org");
 
     // A body taller than the list never scrolls.

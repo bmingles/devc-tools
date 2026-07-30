@@ -153,7 +153,6 @@ const FOLDS: Record<Fold, string> = {
   none: " ",
   expanded: "v",
   collapsed: ">",
-  blocked: "x",
 };
 
 function markerStyle(marker: Marker): string | undefined {

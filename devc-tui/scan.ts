@@ -1,15 +1,19 @@
 // Turn the configured root into a tree of group / project / worktree nodes.
 //
-// Layout the scan understands (the `.worktrees` convention):
+// The tree mirrors the directory layout — every node sits where it does on disk, at its real
+// depth. Layout the scan understands (the `.worktrees` convention):
 //
 //   <root>/projecta/.git                     → project  id "projecta"
+//   <root>/projecta.worktrees                → group    id "projecta.worktrees"
 //   <root>/projecta.worktrees/some-feature   → worktree  id "projecta.worktrees/some-feature"
 //   <root>/org/tools/.git                    → project  id "org/tools", under group "org"
 //
-// A worktree is displayed as a child of its primary project, but its **id keeps its real
-// path relative to root**. That is load-bearing: with Git ≥ 2.48 relative worktrees, the
-// worktree's `.git` file says `gitdir: ../../projecta/.git/worktrees/feat`, so the container
-// must reproduce the same host-relative offset between the two mounts.
+// A worktree group is *not* folded into its primary project: the two are siblings, exactly as
+// they are on disk. The link between them survives as `primaryId`, which `model.ts` uses for
+// the worktree closure. Ids are paths relative to root, and that is load-bearing: with
+// Git ≥ 2.48 relative worktrees, the worktree's `.git` file says
+// `gitdir: ../../projecta/.git/worktrees/feat`, so the container must reproduce the same
+// host-relative offset between the two mounts.
 
 import { basename, join, relative, resolve, SEPARATOR } from "jsr:@std/path@^1";
 
@@ -70,18 +74,19 @@ export async function scanRoot(
 ): Promise<Tree> {
   const absRoot = await realPathOr(resolve(root));
   const workspaceDir = await realPathOr(resolve(opts.workspaceDir ?? Deno.cwd()));
-  const nodes = await scanDir(absRoot, absRoot, 1, maxDepth, workspaceDir, 0);
+  const nodes = await scanDir(absRoot, absRoot, 1, maxDepth, workspaceDir);
   return { root: absRoot, workspaceDir, nodes };
 }
 
+/** `depth` counts levels descended below root, so nodes here display at `depth - 1`. */
 async function scanDir(
   absRoot: string,
   dir: string,
   depth: number,
   maxDepth: number,
   workspaceDir: string,
-  displayDepth: number,
 ): Promise<Node[]> {
+  const displayDepth = depth - 1;
   const dirs = await readDirs(absRoot, dir);
   const projects = new Map<string, Node>();
   const worktreeGroups = new Map<string, string>(); // base name → abs path
@@ -100,8 +105,9 @@ async function scanDir(
     }
   }
 
-  // Attach each worktree group to its sibling primary project; orphans get their own group.
-  const orphanGroups: Node[] = [];
+  // A worktree group is a group node of its own, sibling to the primary it belongs to. It is
+  // exempt from the maxDepth prune: it sits beside a primary that is already in range.
+  const worktreeNodes: Node[] = [];
   for (const [base, groupPath] of worktreeGroups) {
     const primary = projects.get(base);
     const worktrees = await readWorktrees(
@@ -112,24 +118,23 @@ async function scanDir(
       displayDepth + 1,
     );
     if (worktrees.length === 0) continue;
-    if (primary !== undefined) {
-      primary.children.push(...worktrees);
-      continue;
+    // Without the primary's mount, git inside these worktrees would not resolve its gitdir.
+    if (primary === undefined) {
+      for (const w of worktrees) {
+        w.selectable = false;
+        w.warnings.push(MISSING_PRIMARY_WARNING);
+      }
     }
-    for (const w of worktrees) {
-      w.selectable = false;
-      w.warnings.push(MISSING_PRIMARY_WARNING);
-    }
-    orphanGroups.push({
+    worktreeNodes.push({
       kind: "group",
       id: toId(absRoot, groupPath),
-      name: `${base} (missing primary)`,
+      name: `${base}${WORKTREE_SUFFIX}`,
       path: groupPath,
       depth: displayDepth,
       children: worktrees,
       selectable: false,
       isWorkspace: false,
-      warnings: [],
+      warnings: primary === undefined ? [MISSING_PRIMARY_WARNING] : [],
     });
   }
 
@@ -138,7 +143,7 @@ async function scanDir(
   for (const name of plain) {
     if (depth >= maxDepth) continue;
     const abs = join(dir, name);
-    const children = await scanDir(absRoot, abs, depth + 1, maxDepth, workspaceDir, displayDepth + 1);
+    const children = await scanDir(absRoot, abs, depth + 1, maxDepth, workspaceDir);
     if (children.length === 0) continue;
     groups.push({
       kind: "group",
@@ -153,7 +158,7 @@ async function scanDir(
     });
   }
 
-  return [...projects.values(), ...orphanGroups, ...groups].sort((a, b) =>
+  return [...projects.values(), ...worktreeNodes, ...groups].sort((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   );
 }
