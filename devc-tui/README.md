@@ -7,11 +7,11 @@ You keep all your repos and worktrees under one directory. devc-tui scans that d
 lets you pick what the current container should see, and rewrites exactly three
 comment-fenced blocks:
 
-| Fence | File | Array |
-| --- | --- | --- |
-| `devc-tui:projects` | `.devcontainer/devcontainer.json` | `mounts` |
-| `devc-tui:skills` | `.devcontainer/devcontainer.json` | `mounts` |
-| `devc-tui:folders` | `<name>.code-workspace` | `folders` |
+| Fence | File | Array | Paths |
+| --- | --- | --- | --- |
+| `devc-tui:projects` | `.devcontainer/devcontainer.json` | `mounts` | `source=` host, `target=` container |
+| `devc-tui:skills` | `.devcontainer/devcontainer.json` | `mounts` | `source=` host, `target=` container |
+| `devc-tui:folders` | `<name>.code-workspace` | `folders` | host, relative to the workspace file |
 
 ```jsonc
 {
@@ -25,6 +25,24 @@ comment-fenced blocks:
   ]
 }
 ```
+
+The `.code-workspace` is opened by VS Code **on the host**, so its `folders` entries are host
+paths — written relative to the workspace file, the same way you would write them by hand:
+
+```jsonc
+{
+  "folders": [
+    { "path": "." },                          // ← yours, untouched
+    // >>> devc-tui:folders (managed - do not edit)
+    { "path": "../projectb.worktrees/some-other", "name": "projectb.worktrees/some-other" }
+    // <<< devc-tui:folders
+  ]
+}
+```
+
+The `name` is the id (the path relative to `root`), which is what survives the round-trip;
+only the `path` is relative. An entry that does not resolve to something under `root` is left
+for you and dropped from the selection with a warning.
 
 **Trust note.** devc-tui writes to files in the current workspace dir — the devcontainer
 file and the `.code-workspace`. Everything outside its fences (comments, formatting, keys it
@@ -121,10 +139,11 @@ $EDITOR "$(devc-tui config path)"   # set "root" (and "skillsRoot", if you want 
 
 Or compile a standalone binary: `cd devc-tui && deno task build` → `./devc-tui`.
 
-**It runs on the host, not inside the container.** Mount `source` paths are host paths and
-the scanned root is a host directory, so invoke devc-tui from the same shell where you
+**It runs on the host, not inside the container.** Mount `source` paths, workspace folder
+paths and the scanned root are all host-side, so invoke devc-tui from the same shell where you
 `source scripts/bash_aliases.sh`. `containerRoot` and `skillsContainerRoot` are strings it
-writes, not paths it resolves.
+writes into mount targets, not paths it resolves — they are the only container-side values it
+deals in.
 
 ## Prerequisite: relative worktrees
 

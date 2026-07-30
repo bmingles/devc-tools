@@ -1,17 +1,21 @@
 // Selection → mounts and workspace folders, and the read-back that recovers the selection
 // from the files (there is no state file, so the tool and the repo can never drift).
 //
-// Two rules carry all the subtlety:
+// Three rules carry all the subtlety:
 //
 // 1. **Worktree closure.** Selecting a worktree also mounts its primary repo, because the
 //    worktree's `.git` file points into `<primary>/.git/worktrees/<name>`. The primary is
 //    flagged `auto`: mounted, but not added to the workspace folders.
-// 2. **Target = containerRoot + id.** Because ids are paths relative to root, the offset
+// 2. **Mount target = containerRoot + id.** Because ids are paths relative to root, the offset
 //    between a worktree and its primary is identical on the host and in the container —
 //    which is exactly what makes a *relative* gitdir resolve inside the container.
+// 3. **Workspace folders are host paths.** The `.code-workspace` is opened by VS Code on the
+//    host, so its `folders` entries are host paths, written relative to the file itself to
+//    match the entries a user writes by hand (`"."`, `"../../elsewhere"`). Only `source=` in
+//    a mount and these folder paths are host-side; every `target=` is container-side.
 
-import { type Config, WORKSPACE_MOUNT_ROOT } from "./config.ts";
-import { basename } from "jsr:@std/path@^1";
+import { type Config, workspaceFileDir, WORKSPACE_MOUNT_ROOT } from "./config.ts";
+import { basename, isAbsolute, join, relative, resolve, SEPARATOR } from "jsr:@std/path@^1";
 import { COMMA_WARNING, flatten, type Node, nodeIndex, pathIsExpressible, type Tree } from "./scan.ts";
 import { findArraySpan, findFence, parseFenceEntries, parseJsonc } from "./jsonc_edit.ts";
 
@@ -44,6 +48,22 @@ export function targetFor(cfg: Config, id: string): string {
 /** Container path for a skill directory name. */
 export function skillTargetFor(cfg: Config, name: string): string {
   return joinPosix(cfg.skillsContainerRoot, name);
+}
+
+/**
+ * A node's host path as the workspace file should spell it: relative to the file's own
+ * directory, POSIX separators. Absolute is the fallback for the case where no relative path
+ * exists at all (different Windows drives, where `relative()` hands back an absolute path).
+ */
+export function folderPathFor(base: string, hostPath: string): string {
+  const rel = relative(base, hostPath);
+  if (rel === "" || isAbsolute(rel)) return hostPath;
+  return rel.split(SEPARATOR).join("/");
+}
+
+/** The inverse of `folderPathFor`: a workspace folder entry back to an absolute host path. */
+function hostPathForFolder(base: string, entry: string): string {
+  return isAbsolute(entry) ? resolve(entry) : resolve(join(base, entry));
 }
 
 function joinPosix(a: string, b: string): string {
@@ -93,6 +113,7 @@ export function derive(tree: Tree, selection: Set<string>, cfg: Config): Derived
   const mounts: Mount[] = [];
   const folders: Folder[] = [];
   const auto = new Set<string>();
+  const folderBase = workspaceFileDir(cfg, tree.workspaceDir);
 
   for (const node of flatten(tree.nodes)) {
     if (node.kind === "group") continue;
@@ -114,7 +135,7 @@ export function derive(tree: Tree, selection: Set<string>, cfg: Config): Derived
       mounts.push({ id: node.id, source: node.path, target, auto: isAuto });
       if (isAuto) auto.add(node.id);
     }
-    if (wantFolder) folders.push({ path: target, name: node.id });
+    if (wantFolder) folders.push({ path: folderPathFor(folderBase, node.path), name: node.id });
   }
 
   return { mounts, folders, auto, warnings };
@@ -185,9 +206,12 @@ export function readSelection(
       .map(mountTarget)
       .filter((t): t is string => t !== null);
 
+  // The two fences speak different languages: folder entries are host paths relative to the
+  // workspace file, mount targets are container paths under `containerRoot`.
   const fromFolders = workspaceSrc !== null && hasFence(workspaceSrc, "folders", "folders");
+  const folderBase = workspaceFileDir(cfg, tree.workspaceDir);
   for (const path of fromFolders ? folderPaths : projectTargets) {
-    const id = idForTarget(cfg, path);
+    const id = fromFolders ? idForHostPath(tree.root, folderBase, path) : idForTarget(cfg, path);
     if (id === null || !index.has(id)) {
       warnings.push(`dropping unknown entry ${path} (no matching project under root)`);
       continue;
@@ -268,6 +292,20 @@ function mountTarget(entry: string): string | null {
 
 function mountSource(entry: string): string | null {
   return mountField(entry, "source");
+}
+
+/**
+ * Map a workspace folder entry back to a scanned id, or null when it does not land under
+ * `root` — which is how a hand-added folder elsewhere on the host is left alone rather than
+ * mistaken for a managed one.
+ */
+export function idForHostPath(root: string, base: string, entry: string): string | null {
+  const abs = hostPathForFolder(base, entry);
+  const rel = relative(resolve(root), abs);
+  if (rel === "" || rel === ".." || rel.startsWith(".." + SEPARATOR) || isAbsolute(rel)) {
+    return null;
+  }
+  return rel.split(SEPARATOR).join("/");
 }
 
 /** Map a container target back to a scanned id, or null when it is outside containerRoot. */

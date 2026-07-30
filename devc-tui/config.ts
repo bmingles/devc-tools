@@ -175,6 +175,20 @@ export function requireSkillsRoot(cfg: Config, path: string): string {
   return resolve(cfg.skillsRoot);
 }
 
+/**
+ * The directory the workspace file sits in — what the paths inside its `folders` array are
+ * relative to. Pure: it mirrors `resolveTargets`' choice without touching the disk, which is
+ * what lets `model.ts` write relative folder paths without being handed the resolved path.
+ *
+ * With `workspaceFile: null` the auto-detected file is always directly in the workspace dir,
+ * so that is the answer; otherwise it is the configured path's parent.
+ */
+export function workspaceFileDir(cfg: Config, workspaceDir: string): string {
+  const dir = resolve(workspaceDir);
+  if (cfg.workspaceFile === null) return dir;
+  return dirname(isAbsolute(cfg.workspaceFile) ? cfg.workspaceFile : join(dir, cfg.workspaceFile));
+}
+
 export interface Targets {
   /** Absolute path of the devcontainer file. */
   devcontainer: string;

@@ -106,9 +106,14 @@ Deno.test("cli: select writes both files, apply is idempotent, deselect restores
 
     const ws = await Deno.readTextFile(env.workspaceFile);
     assertEquals(fenceEntries(ws, "folders", "folders").length, 1);
+    // Host paths, relative to the workspace file: VS Code opens this file on the host, and
+    // the root sits next to the workspace dir (`<tmp>/root` vs `<tmp>/ws`).
     assertEquals((parseJsonc(ws) as { folders: unknown[] }).folders, [
       { path: "." },
-      { path: "/workspaces/projectb.worktrees/some-other", name: "projectb.worktrees/some-other" },
+      {
+        path: "../root/projectb.worktrees/some-other",
+        name: "projectb.worktrees/some-other",
+      },
     ]);
 
     // Idempotence: applying the same derived state changes nothing at all.
@@ -400,7 +405,7 @@ Deno.test("cli: the workspace dir may be the configured root itself", async () =
     const ws = await Deno.readTextFile(join(tmp, `${basename(tmp)}.code-workspace`));
     assertEquals((parseJsonc(ws) as { folders: unknown[] }).folders, [
       { path: "." },
-      { path: "/workspaces/projecta", name: "projecta" },
+      { path: "projecta", name: "projecta" },
     ]);
     assert(JSON.parse(cap.stdout()).changed.length === 2);
   });
