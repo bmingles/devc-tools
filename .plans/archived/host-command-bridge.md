@@ -138,11 +138,12 @@ as positional `$1…`; the script must quote `"$@"`.
       dispatch, and state-watch that emits an active-set change callback. No tray, no
       `deno desktop` — runnable via plain `deno run` so the agent can test it
       in-container (§A). Config (socket path, commands dir, state dir) via args/env.
-- [ ] `host/serve.ts`: thin headless entrypoint that runs `core.ts` and logs
+- [x] `host/serve.ts`: thin headless entrypoint that runs `core.ts` and logs
       active-set changes to stdout — the target for the §A in-container experiment.
-- [ ] Dispatch: name validation + allowlist-by-file-existence + `Deno.Command` with
+- [x] Dispatch: name validation + allowlist-by-file-existence + `Deno.Command` with
       `argv` (no shell), capture stdout/stderr/exitCode into response.
-- [ ] `host/server.ts`: Deno **desktop** entrypoint — imports `core.ts`, adds the tray:
+- [x] `host/server.ts` → **superseded by `host/tray.ts`** (see `host-lifecycle-cli`): Deno
+      **desktop** entrypoint — imports `core.ts`, adds the tray:
       load icon bytes, `new Deno.Tray()`, `setIcon`/`setTooltip`/`setMenu`,
       `menuclick` for Quit + "Open commands folder", initial idle state. Subscribes to
       core's active-set callback to repaint icon/tooltip/menu.
@@ -221,14 +222,15 @@ All §A checks passed (verified with `deno run` server + both `deno run` and the
 - [x] **B1. Transport gate.** `devc-bridge echo hello` in the container → `echo: hello`,
       over token-authorized TCP via `host.docker.internal`. Confirms the pivot works
       across the Docker Desktop boundary.
-- [ ] **B2. Caffeinate.** `devc-bridge caffeinate start` → `pmset -g assertions` shows a
+- [x] **B2. Caffeinate.** `devc-bridge caffeinate start` → `pmset -g assertions` shows a
       caffeinate assertion + `state/caffeinate` marker; `status` → `running`; `stop`
       clears both.
 - [x] **B3. Tray visual + dispatch + state.** `devc-bridge toggle on` flipped the menu-bar
       icon ○ → ● (and created `state/toggle`); `toggle off` reverted it. Confirms
       `Deno.Tray`, dispatch, and the state watcher end to end.
-- [ ] **B4. Bundle.** `deno task build` produces `DevcBridge.app` that behaves the same
-      when double-clicked.
+- [x] **B4. Bundle.** Superseded: `deno task build` now produces the single `devc-bridge`
+      executable (not `DevcBridge.app`) — verified via the final `host-lifecycle-cli`
+      validation item (build → PATH → `start` shows the tray, seeds config).
 
 ## Relevant Files (all new — greenfield repo)
 

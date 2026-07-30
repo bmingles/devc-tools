@@ -46,7 +46,7 @@ commands dir if absent.
       round-tripped `echo`/`toggle` through the backgrounded server; `toggle on` → `status`
       shows `active: toggle`; port released after `stop`.
 - [x] `deno check host/*.ts` clean (lint `no-import-prefix` is a pre-existing repo-wide style).
-- [ ] (host, user) `deno task build` → `devc-bridge` on PATH; clean-machine `start` shows tray
+- [x] (host, user) `deno task build` → `devc-bridge` on PATH; clean-machine `start` shows tray
       with no window flash, seeds config; `devc-bridge echo hello` works; `status`/`stop` behave.
       Confirm `--backend raw` still shows `Deno.Tray`; if not, drop to the default webview
       backend (the tray layer already keeps the window-hiding hack).
