@@ -164,59 +164,59 @@ the changed paths on the message line.
 
 ## Checklist
 
-- [ ] `devc-tui/tui/state.ts` — `UiState`, `initialState()`, `visibleRows()`, `reduce()`,
+- [x] `devc-tui/tui/state.ts` — `UiState`, `initialState()`, `visibleRows()`, `reduce()`,
       toggle semantics (leaf / group / `[~]` primary), scroll-offset recomputation, filter and
       confirm modes.
-- [ ] `devc-tui/tui/render.ts` — `render(state, size)` → `string[]`; header, sections, rows,
+- [x] `devc-tui/tui/render.ts` — `render(state, size)` → `string[]`; header, sections, rows,
       markers, warnings, scrollbar, message line, keys line, help overlay,
       too-small fallback; `NO_COLOR` / `--no-color` honored.
-- [ ] `devc-tui/tui/keys.ts` — chunk-buffering byte→`Key` decoder covering the sequences
+- [x] `devc-tui/tui/keys.ts` — chunk-buffering byte→`Key` decoder covering the sequences
       listed above, including the lone-`\x1b` disambiguation.
-- [ ] `devc-tui/tui/term.ts` — raw mode, alt screen, cursor hide/show, size + `SIGWINCH`,
+- [x] `devc-tui/tui/term.ts` — raw mode, alt screen, cursor hide/show, size + `SIGWINCH`,
       paint helper, guaranteed restore on throw and on `SIGINT`/`SIGTERM`.
-- [ ] `devc-tui/tui/app.ts` — `runApp(deps)` with injectable IO; input loop, effect handling
+- [x] `devc-tui/tui/app.ts` — `runApp(deps)` with injectable IO; input loop, effect handling
       (`write` → `applySelection()`, `rescan` → re-scan preserving selection by id, `quit`),
       non-TTY refusal.
-- [ ] `devc-tui/cli.ts` / `devc-tui/main.ts` — export `applySelection()` for reuse; no-args
+- [x] `devc-tui/cli.ts` / `devc-tui/main.ts` — export `applySelection()` for reuse; no-args
       now launches the TUI; usage text lists the TUI as the default.
-- [ ] `devc-tui/tests/tui_state_test.ts`, `tests/tui_render_test.ts`,
+- [x] `devc-tui/tests/tui_state_test.ts`, `tests/tui_render_test.ts`,
       `tests/tui_keys_test.ts`, `tests/tui_app_test.ts` — new.
-- [ ] `devc-tui/README.md` — add a keybindings table and a screen-layout sample.
+- [x] `devc-tui/README.md` — add a keybindings table and a screen-layout sample.
 
 ## Validation
 
-- [ ] `deno check devc-tui/tui/*.ts` clean; `deno task test` all green.
-- [ ] **keys.** Decoder tests: each arrow, `PgUp`/`PgDn`, `Home`/`End`, `Enter`, `Tab`,
+- [x] `deno check devc-tui/tui/*.ts` clean; `deno task test` all green.
+- [x] **keys.** Decoder tests: each arrow, `PgUp`/`PgDn`, `Home`/`End`, `Enter`, `Tab`,
       backspace, `Ctrl-C`, and printable chars. An escape sequence delivered **split across
       two chunks** (`\x1b[` then `A`) decodes as one `up`. A lone `\x1b` with no continuation
       decodes as `Escape`.
-- [ ] **state, navigation.** From the fixture tree of
+- [x] **state, navigation.** From the fixture tree of
       [devc-tui-core](devc-tui-core.md#validation): `down`×N never lands on a section header;
       `End` lands on the last focusable row; `left` on a leaf moves to its parent; `right` on
       a collapsed node expands it.
-- [ ] **state, toggle.** `space` on `projectb.worktrees/some-other` selects it and makes
+- [x] **state, toggle.** `space` on `projectb.worktrees/some-other` selects it and makes
       `projectb` report `[~]`; `space` on `projectb` makes it `[x]`; `space` again returns it
       to `[~]` (not `[ ]`) and sets the explanatory message.
-- [ ] **state, group toggle.** `space` on the `org` group selects all its selectable
+- [x] **state, group toggle.** `space` on the `org` group selects all its selectable
       descendants; again deselects all; with one descendant selected the group renders `[-]`.
-- [ ] **state, filter.** `/` + `some` shows only matching worktrees plus their ancestors,
+- [x] **state, filter.** `/` + `some` shows only matching worktrees plus their ancestors,
       auto-expanded; `a` selects exactly the filtered matches and nothing else; `Esc` clears
       the filter and the selection is unchanged.
-- [ ] **state, dirty.** Dirty is false at start, true after a toggle, false again after a
+- [x] **state, dirty.** Dirty is false at start, true after a toggle, false again after a
       `write` effect, and false after toggling back to the baseline selection.
-- [ ] **render.** `render()` returns exactly `size.rows` lines, none exceeding `size.columns`
+- [x] **render.** `render()` returns exactly `size.rows` lines, none exceeding `size.columns`
       (measured with ANSI stripped), for 80×24, 120×40, and 40×10. At 39 columns it returns
       the too-small message. The scrollbar thumb appears only when rows exceed the body
       height, and the cursor row is the only reverse-video row.
-- [ ] **render, no-color.** With `NO_COLOR=1` the output contains no `\x1b[` sequences other
+- [x] **render, no-color.** With `NO_COLOR=1` the output contains no `\x1b[` sequences other
       than the ones the paint helper adds, and line content matches the colored variant with
       ANSI stripped.
-- [ ] **app, scripted end-to-end** (no TTY): `runApp` over a temp workspace dir with injected
+- [x] **app, scripted end-to-end** (no TTY): `runApp` over a temp workspace dir with injected
       input `down down space w q`, and assert that the devcontainer and workspace files end up
       **byte-identical** to running `devc-tui select <that id>` from the CLI — proving the UI
       and CLI share one write path.
-- [ ] **app, abort.** Injected `space` then `Ctrl-C` leaves both target files unmodified.
-- [ ] **app, non-TTY.** Launching the TUI with a non-terminal stdin exits 2 with the
+- [x] **app, abort.** Injected `space` then `Ctrl-C` leaves both target files unmodified.
+- [x] **app, non-TTY.** Launching the TUI with a non-terminal stdin exits 2 with the
       documented message.
 - [ ] (user, host) Real terminal: tree renders correctly, arrows/space/`/`/`w`/`q` behave,
       resizing repaints cleanly, and the terminal is fully restored after `q`, after

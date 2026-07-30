@@ -3,6 +3,7 @@
 
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@^1";
 import { basename, join } from "jsr:@std/path@^1";
+import type { Options } from "../cli.ts";
 import { run } from "../main.ts";
 import { fenceEntries } from "../model.ts";
 import { parseJsonc } from "../jsonc_edit.ts";
@@ -354,10 +355,21 @@ Deno.test("cli: unknown keys in the config survive a rewrite", async () => {
   });
 });
 
-Deno.test("cli: no args prints usage and exits 2; --help exits 0", async () => {
+Deno.test("cli: no args opens the interactive tree; --help exits 0", async () => {
+  // No subcommand is the TUI, not a usage error. The launcher is injected here; the real
+  // non-TTY refusal is covered in tui_app_test.ts.
   const none = capture();
-  assertEquals(await run([], none.io), 2);
-  assertStringIncludes(none.stderr(), "usage: devc-tui");
+  const seen: Options[] = [];
+  const code = await run(["--no-color"], none.io, {
+    tui: (opts) => {
+      seen.push(opts);
+      return Promise.resolve(0);
+    },
+  });
+  assertEquals(code, 0);
+  assertEquals(seen.length, 1);
+  assertEquals(seen[0].noColor, true);
+  assertEquals(none.stderr(), "");
 
   const help = capture();
   assertEquals(await run(["--help"], help.io), 0);
