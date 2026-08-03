@@ -53,19 +53,24 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
 }
 
 /**
- * Copies the embedded `devc/default/` tree into a `.devcontainer/` folder under
- * `cacheDir` (default `~/.cache/devc/default`), overwriting any existing copy,
- * and returns the path to the materialized `devcontainer.json`, suitable for
- * `devcontainer up --config <path>`. There is no user-editable global template
- * override dir — customization happens per-project via `devc config`.
+ * Copies the embedded `devc/default/` tree flat into `cacheDir` (default
+ * `~/.cache/devc/default`), overwriting any existing copy, then rewrites the
+ * copied `devcontainer.json` for zero-config use and returns its path — suitable
+ * for `devcontainer up --config <path>`. There is no user-editable global
+ * template override dir — customization happens per-project via `devc config`.
  *
- * The tree lands in a `.devcontainer/` subfolder (not `cacheDir` directly)
- * because `@devcontainers/cli` only accepts a relative-path ("local") Feature —
- * the bundled default references `"./features/devc"` — when the referencing
- * `devcontainer.json` lives inside a folder literally named `.devcontainer` and
- * the Feature resolves to a child of it. Materializing flat into `cacheDir`
- * makes the CLI reject the Feature ("Resolved path must be a child of the
- * .devcontainer/ folder").
+ * **Zero-config transform.** The bundled default references the devc baseline as
+ * a local Feature (`"./features/devc"`), but `@devcontainers/cli` validates a
+ * local Feature against `<workspaceRoot>/.devcontainer` (the user's repo), not
+ * the config's own directory. Since `devc up` loads this config out-of-tree via
+ * `--config`, the Feature can never resolve here (no path form reaches the cache;
+ * absolute paths are rejected outright). So the Feature reference is stripped and
+ * the same baseline is delivered another way: build-time bits are baked by the
+ * bundled `Dockerfile`, and the runtime bits run via a top-level
+ * `postCreateCommand` pointing at the script the Dockerfile installed. The
+ * `features/` subtree is still materialized (the Dockerfile `COPY`s scripts from
+ * it) — it is simply not referenced by the transformed config. The cache copy is
+ * machine-only, so rewriting it as comment-free JSON is fine.
  *
  * `cacheDir` defaults to the real `~/.cache/devc/default` and only needs
  * overriding in tests.
@@ -73,11 +78,21 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
 export async function materializeDefaultConfig(
   cacheDir: string = `${homeDir()}/.cache/devc/default`,
 ): Promise<string> {
-  const devcontainerDir = `${cacheDir}/.devcontainer`;
   // Remove any prior copy so files dropped between versions don't linger.
-  await Deno.remove(devcontainerDir, { recursive: true }).catch(() => {});
-  await copyDir(DEFAULT_DIR_URL, devcontainerDir);
-  return `${devcontainerDir}/devcontainer.json`;
+  await Deno.remove(cacheDir, { recursive: true }).catch(() => {});
+  await copyDir(DEFAULT_DIR_URL, cacheDir);
+
+  const configPath = `${cacheDir}/devcontainer.json`;
+  const raw = await Deno.readTextFile(configPath);
+  // deno-lint-ignore no-explicit-any
+  const config: any = JSON.parse(stripLineComments(raw));
+  if (config.features && typeof config.features === "object") {
+    delete config.features["./features/devc"];
+  }
+  config.postCreateCommand = "/usr/local/share/devc/post-create.sh";
+  await Deno.writeTextFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  return configPath;
 }
 
 /**

@@ -64,6 +64,18 @@ Deno.test("first creation: populated fences, infra intact, Dockerfile + features
       "CLAUDE.md bind missing",
     );
 
+    // Project base keeps the composable Feature and leaves the top-level
+    // postCreateCommand free (the Feature runs devc's runtime setup).
+    const dc = parseJsonc(text) as {
+      features?: Record<string, unknown>;
+      postCreateCommand?: unknown;
+    };
+    assert(
+      Object.hasOwn(dc.features ?? {}, "./features/devc"),
+      "devc Feature reference missing",
+    );
+    assertEquals(Object.hasOwn(dc, "postCreateCommand"), false);
+
     // Dockerfile + features subtree copied.
     assert((await Deno.stat(`${dir}/.devcontainer/Dockerfile`)).isFile);
     assert((await Deno.stat(`${dir}/.devcontainer/features/devc`)).isDirectory);
