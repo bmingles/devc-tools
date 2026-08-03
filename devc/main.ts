@@ -15,13 +15,16 @@ import {
   runGlobalConfigWizard,
   runProjectConfigWizard,
 } from "./tui/wizard.ts";
-
-const USAGE =
-  "Usage: devc config | devc attach [path] [--build] [--no-clear] | devc claude [path] [...] | " +
-  "devc up [path] [--json] | devc exec [path] [--cwd <dir>] [--env K=V]... -- <cmd...> | " +
-  "devc mounts [path] [--json] | devc stop [path] | devc down [path] | devc status [path]";
+import {
+  COMMAND_HELP,
+  COMMANDS,
+  helpRequested,
+  topLevelHelp,
+  VERSION,
+} from "./help.ts";
 
 const subcommand = Deno.args[0];
+const KNOWN_COMMANDS = new Set(COMMANDS.map((c) => c.name));
 
 /** Prints a `devc:`-prefixed error to stderr and exits 1 (never returns). */
 function fail(e: unknown): never {
@@ -65,9 +68,25 @@ async function attach(rawArgs: string[], command?: string): Promise<void> {
   Deno.exit(0);
 }
 
-if (subcommand === "-h" || subcommand === "--help") {
-  console.log(USAGE);
+// Help / version / unknown-command dispatch. Runs before the first-run global-config hook and
+// before any folder resolution or Docker call, so `devc up --help` (etc.) prints help and exits
+// without launching the wizard or requiring Docker.
+if (subcommand === "-V" || subcommand === "--version") {
+  console.log(`devc ${VERSION}`);
   Deno.exit(0);
+}
+if (subcommand === undefined || subcommand === "-h" || subcommand === "--help") {
+  console.log(topLevelHelp());
+  Deno.exit(0);
+}
+if (KNOWN_COMMANDS.has(subcommand) && helpRequested(subcommand, Deno.args.slice(1))) {
+  console.log(COMMAND_HELP[subcommand]);
+  Deno.exit(0);
+}
+if (!KNOWN_COMMANDS.has(subcommand)) {
+  console.error(`devc: unknown command '${subcommand}'`);
+  console.error('Run "devc --help" for a list of commands.');
+  Deno.exit(1);
 }
 
 // `devc config [PATH]`: open the full four-step project wizard for PATH (default cwd). The
@@ -205,6 +224,7 @@ if (subcommand === "mounts") {
   Deno.exit(0);
 }
 
-console.error(`Unknown subcommand: ${subcommand ?? "(none)"}`);
-console.error(USAGE);
-Deno.exit(1);
+// Any subcommand reaching here is known (unknown/help/version exited above) but did not match a
+// dispatch arm — this is a devc bug rather than user error.
+console.error(`devc: command '${subcommand}' is not wired up`);
+Deno.exit(70);
