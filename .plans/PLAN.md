@@ -4,12 +4,12 @@
 
 ### Pending
 
-- [devc-container-feature](devc-container-feature.md) — Repackage the baseline setup (Claude CLI, `.claude` volume/symlink, shell additions) as a custom devcontainer Feature so a project's own top-level `postCreateCommand` composes instead of clobbering it; make skills opt-in in the zero-config default.
 - [devc-global-config](devc-global-config.md) — Global user config (`codeRoots`/`skillsRoots` at `~/.config/devc-tui/config.json`), first-run flow, and the reusable step-based wizard TUI shell (reusing `tui/term.ts`+`tui/keys.ts`) with the Global config step.
 - [devc-config-wizard](devc-config-wizard.md) — The four-step `devc config` project wizard writing `.devcontainer/` via two comment-fenced mount blocks (`devc:source`/`devc:skills`) over the kept `jsonc_edit.ts`; opt-in per-folder skills with a remembered last-selection seed.
 
 ### Completed
 
+- [devc-container-feature](archived/devc-container-feature.md) — Repackage the baseline setup (Claude CLI, `.claude` volume/symlink, shell additions) as a custom devcontainer Feature so a project's own top-level `postCreateCommand` composes instead of clobbering it; make skills opt-in in the zero-config default.
 - [devc-lifecycle-core](archived/devc-lifecycle-core.md) — Replace the fence-based tool with the container-lifecycle CLI (`up`/`attach`/`claude`/`exec`/`mounts`/`stop`/`down`/`status`) + bundled default, ported from the reference `@devcontainers/cli`+`docker` implementation (tmux-attach and `.devc` overlay dropped).
 - [devc-tui-home-paths](archived/devc-tui-home-paths.md) — Home directory support: expand `~`/`$HOME` in host-side config values, and write mount `source=` paths under home as `${localEnv:HOME}/...`.
 - [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md) — Fix the `devc-tui:folders` fence, which writes container paths into a workspace file VS Code opens on the host: write host paths relative to the workspace file, and move the selection read-back with them.
@@ -31,6 +31,6 @@
 | devc-tui workspace folders — host paths, not container paths | [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md) | complete |
 | devc-tui home directory support — `$HOME` in config, `${localEnv:HOME}` in mounts | [devc-tui-home-paths](archived/devc-tui-home-paths.md) | complete |
 | devc lifecycle core — container commands + bundled default (ported) | [devc-lifecycle-core](archived/devc-lifecycle-core.md) | complete |
-| devc baseline as a devcontainer Feature — composable postCreate | [devc-container-feature](devc-container-feature.md) | |
+| devc baseline as a devcontainer Feature — composable postCreate | [devc-container-feature](archived/devc-container-feature.md) | complete |
 | devc global config + wizard TUI foundation | [devc-global-config](devc-global-config.md) | |
 | devc config wizard — project `.devcontainer/` via managed fences | [devc-config-wizard](devc-config-wizard.md) | |

@@ -1,0 +1,11 @@
+{
+  "id": "devc",
+  "version": "1.0.0",
+  "name": "devc baseline",
+  "description": "devc's baseline container setup: Claude CLI, shell additions (prompt, terminal title, nvm auto-use, first-prompt clear), tmux config, and the isolated ~/.claude volume + per-workspace ~/.claude.json symlink.",
+  "options": {},
+  "installsAfter": [
+    "ghcr.io/devcontainers/features/node"
+  ],
+  "postCreateCommand": "/usr/local/share/devc/post-create.sh"
+}

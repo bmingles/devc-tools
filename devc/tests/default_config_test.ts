@@ -147,12 +147,55 @@ Deno.test("materializeDefaultConfig copies the embedded tree to cacheDir and ret
       const file of [
         "devcontainer.json",
         "Dockerfile",
-        "post-create.sh",
-        "bashrc-additions.sh",
+        "features/devc/devcontainer-feature.json",
+        "features/devc/install.sh",
+        "features/devc/post-create.sh",
+        "features/devc/bashrc-additions.sh",
+        "features/devc/tmux.conf",
       ]
     ) {
       assertEquals((await Deno.stat(`${cacheDir}/${file}`)).isFile, true);
     }
+  });
+});
+
+Deno.test("materializeDefaultConfig materializes the devc Feature subtree", async () => {
+  await withTempDir(async (cacheDir) => {
+    await materializeDefaultConfig(cacheDir);
+    for (
+      const file of [
+        "features/devc/devcontainer-feature.json",
+        "features/devc/install.sh",
+        "features/devc/post-create.sh",
+      ]
+    ) {
+      assertEquals((await Deno.stat(`${cacheDir}/${file}`)).isFile, true);
+    }
+  });
+});
+
+Deno.test("materialized devcontainer.json and devcontainer-feature.json parse as valid JSON/JSONC", async () => {
+  await withTempDir(async (cacheDir) => {
+    await materializeDefaultConfig(cacheDir);
+
+    // devcontainer.json is JSONC (has // comments); strip them before parsing.
+    const dcText = await Deno.readTextFile(`${cacheDir}/devcontainer.json`);
+    const dcNoComments = dcText
+      .split("\n")
+      .filter((line) => !/^\s*\/\//.test(line))
+      .join("\n");
+    const dc = JSON.parse(dcNoComments);
+    // The devc Feature is referenced by relative path; the top-level
+    // postCreateCommand is left free for the developer.
+    assertEquals(Object.hasOwn(dc.features, "./features/devc"), true);
+    assertEquals(Object.hasOwn(dc, "postCreateCommand"), false);
+
+    // devcontainer-feature.json is plain JSON.
+    const featText = await Deno.readTextFile(
+      `${cacheDir}/features/devc/devcontainer-feature.json`,
+    );
+    const feat = JSON.parse(featText);
+    assertEquals(feat.id, "devc");
   });
 });
 
@@ -180,7 +223,12 @@ Deno.test("materializeDefaultConfig writes the embedded tree to real disk (defau
 
   const dir = path.slice(0, -"/devcontainer.json".length);
   for (
-    const sibling of ["Dockerfile", "post-create.sh", "bashrc-additions.sh"]
+    const sibling of [
+      "Dockerfile",
+      "features/devc/install.sh",
+      "features/devc/post-create.sh",
+      "features/devc/bashrc-additions.sh",
+    ]
   ) {
     const siblingStat = await Deno.stat(`${dir}/${sibling}`);
     assertEquals(siblingStat.isFile, true);
