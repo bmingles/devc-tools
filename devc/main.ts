@@ -10,7 +10,11 @@ import {
   stopContainer,
 } from "./container.ts";
 import { parseAttachArgs } from "./args.ts";
-import { globalConfigExists, runGlobalConfigWizard } from "./tui/wizard.ts";
+import {
+  globalConfigExists,
+  runGlobalConfigWizard,
+  runProjectConfigWizard,
+} from "./tui/wizard.ts";
 
 const USAGE =
   "Usage: devc config | devc attach [path] [--build] [--no-clear] | devc claude [path] [...] | " +
@@ -66,9 +70,20 @@ if (subcommand === "-h" || subcommand === "--help") {
   Deno.exit(0);
 }
 
-// `devc config`: (re-)open the global-config editor even when the file exists.
+// `devc config [PATH]`: open the full four-step project wizard for PATH (default cwd). The
+// Global config step is prepended (as the first step) when the global config is missing and
+// stdin is a TTY, so the very first run configures roots then continues into the project steps.
 if (subcommand === "config") {
-  await runGlobalConfigWizard({ err: (m) => console.error(m) });
+  const target = resolveLocalFolder(
+    Deno.args.find((a, i) => i > 0 && !a.startsWith("--")),
+  );
+  const includeGlobalStep = !(await globalConfigExists()) &&
+    Deno.stdin.isTerminal();
+  await runProjectConfigWizard(
+    target,
+    { err: (m) => console.error(m) },
+    includeGlobalStep,
+  );
   Deno.exit(0);
 }
 

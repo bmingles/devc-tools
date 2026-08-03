@@ -3,10 +3,20 @@ import { decodeAll, type Key } from "../tui/keys.ts";
 import {
   currentStep,
   type Effect,
+  type GlobalStep,
   initialGlobalState,
   reduce,
   type WizardState,
 } from "../tui/wizard_state.ts";
+
+/** Narrow the current step to a GlobalStep (the only kind in the single-step wizard). */
+function global(state: WizardState): GlobalStep {
+  const step = currentStep(state);
+  if (step.kind !== "global") {
+    throw new Error(`expected global step, got ${step.kind}`);
+  }
+  return step;
+}
 
 /** Drive a key script through `reduce`, returning the final state and the last non-none effect. */
 function run(keys: Key[]): { state: WizardState; effect: Effect } {
@@ -26,7 +36,7 @@ function run(keys: Key[]): { state: WizardState; effect: Effect } {
 Deno.test("add two entries via text input, focus lands on the new entry", () => {
   // Enter opens Add on the focused control (Code roots header). Type a path, Enter.
   const { state } = run(decodeAll("\r~/code\r"));
-  const step = currentStep(state);
+  const step = global(state);
   assertEquals(step.controls[0].items, ["~/code"]);
   assertEquals(state.focus, { control: 0, item: 0 });
 });
@@ -77,9 +87,9 @@ Deno.test("Backspace removes the focused entry", () => {
   for (const k of decodeAll("\r~/a\r")) state = reduce(state, k).state;
   for (const k of decodeAll("\r~/b\r")) state = reduce(state, k).state;
   // focus on the last added entry (~/b at item 1).
-  assertEquals(currentStep(state).controls[0].items, ["~/a", "~/b"]);
+  assertEquals(global(state).controls[0].items, ["~/a", "~/b"]);
   state = reduce(state, { name: "backspace" }).state;
-  assertEquals(currentStep(state).controls[0].items, ["~/a"]);
+  assertEquals(global(state).controls[0].items, ["~/a"]);
 });
 
 Deno.test("Esc cancels the Add input without adding", () => {
@@ -88,7 +98,7 @@ Deno.test("Esc cancels the Add input without adding", () => {
   assertEquals(state.input?.value, "~/x");
   state = reduce(state, { name: "escape" }).state;
   assertEquals(state.input, null);
-  assertEquals(currentStep(state).controls[0].items, []);
+  assertEquals(global(state).controls[0].items, []);
 });
 
 Deno.test("ctrl-c quits from any mode", () => {
