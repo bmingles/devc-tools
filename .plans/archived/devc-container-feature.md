@@ -64,33 +64,33 @@ subtree into project `.devcontainer/` dirs; that is `devc-config-wizard`'s conce
 
 ## Checklist
 
-- [ ] `devc/default/features/devc/devcontainer-feature.json` — id `devc`, name/version, empty
+- [x] `devc/default/features/devc/devcontainer-feature.json` — id `devc`, name/version, empty
       `options`, `installsAfter` node, and `postCreateCommand` running the runtime setup script.
-- [ ] `devc/default/features/devc/install.sh` — build-time: Claude CLI install, `.bashrc`
+- [x] `devc/default/features/devc/install.sh` — build-time: Claude CLI install, `.bashrc`
       additions (marker-guarded), tmux.conf install. Executable.
-- [ ] `devc/default/features/devc/post-create.sh` — create-time: `.claude` volume chown,
+- [x] `devc/default/features/devc/post-create.sh` — create-time: `.claude` volume chown,
       `.claude.json` seed+symlink, conditional `nvm install`. Executable. (No project hook.)
-- [ ] `devc/default/features/devc/bashrc-additions.sh` — moved from `default/`, unchanged content.
-- [ ] Slim `devc/default/Dockerfile` to base image (+ image-level `tmux` if retained).
-- [ ] Edit `devc/default/devcontainer.json` — drop top-level `postCreateCommand`; add
+- [x] `devc/default/features/devc/bashrc-additions.sh` — moved from `default/`, unchanged content.
+- [x] Slim `devc/default/Dockerfile` to base image (+ image-level `tmux` if retained).
+- [x] Edit `devc/default/devcontainer.json` — drop top-level `postCreateCommand`; add
       `"./features/devc": {}` to `features`; keep everything else.
-- [ ] Delete top-level `devc/default/post-create.sh`; relocate `tmux.conf` under the Feature (or
+- [x] Delete top-level `devc/default/post-create.sh`; relocate `tmux.conf` under the Feature (or
       keep image-level, matching wherever it is installed).
-- [ ] Confirm `materializeDefaultConfig` copies the `features/` subtree (it already recurses; add a
+- [x] Confirm `materializeDefaultConfig` copies the `features/` subtree (it already recurses; add a
       test asserting `features/devc/install.sh` lands in the cache dir).
 
 ## Validation
 
-- [ ] `cd devc && deno task test` — including a new assertion that `materializeDefaultConfig`
+- [x] `cd devc && deno task test` — including a new assertion that `materializeDefaultConfig`
       materializes `features/devc/{devcontainer-feature.json,install.sh,post-create.sh}`.
-- [ ] `devcontainer-feature.json` and `devcontainer.json` are valid JSON/JSONC (parse in a test).
+- [x] `devcontainer-feature.json` and `devcontainer.json` are valid JSON/JSONC (parse in a test).
 - [ ] (user) `devc up` in a clean repo builds successfully; inside: `which claude` resolves; the
       custom prompt/title works; `ls -l ~/.claude.json` is a symlink into the volume; `~/.claude`
       is owned by `vscode`.
 - [ ] (user) In a repo whose **own** `.devcontainer/devcontainer.json` sets a top-level
       `postCreateCommand` (e.g. `touch /tmp/mine`), `devc up` runs both: `/tmp/mine` exists **and**
       devc's `.claude` setup ran — proving the Feature composes rather than being clobbered.
-- [ ] `grep -rn "devc-postcreate\|\.devc/" devc/default/` returns nothing (project hook removed).
+- [x] `grep -rn "devc-postcreate\|\.devc/" devc/default/` returns nothing (project hook removed).
 
 ## Relevant Files
 

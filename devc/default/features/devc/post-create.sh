@@ -1,4 +1,11 @@
 #!/bin/bash
+# devc Feature — create-time runtime setup.
+#
+# Declared as the Feature's postCreateCommand, so it runs *in addition to* any
+# top-level postCreateCommand a project defines (Feature lifecycle hooks are
+# additive; the top-level command is single-valued). Handles the volume-
+# dependent steps that cannot run at build time because volumes are not mounted
+# until the container is created.
 set -e
 
 # The isolated .claude volume mounts root-owned on first creation.
@@ -27,15 +34,4 @@ export NVM_DIR="/usr/local/share/nvm"
 if [ -f .nvmrc ]; then
   sudo chown -R vscode:vscode "$PWD/node_modules" 2>/dev/null || true
   nvm install
-fi
-
-# if [ -f package.json ]; then
-#   npm install
-#   npx playwright install --with-deps
-# fi
-
-if [ -x "$PROJECT_PATH/.devc/devc-postcreate.sh" ]; then
-  "$PROJECT_PATH/.devc/devc-postcreate.sh"
-elif [ -x "$PROJECT_PATH/.devcontainer/devc-postcreate.sh" ]; then
-  "$PROJECT_PATH/.devcontainer/devc-postcreate.sh"
 fi

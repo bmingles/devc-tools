@@ -5,6 +5,7 @@
     "context": "."
   },
   "features": {
+    "./features/devc": {},
     "ghcr.io/devcontainers-community/features/deno:1": {},
     "ghcr.io/devcontainers/features/go:1": { "version": "latest" },
     "ghcr.io/devcontainers/features/node:1": {
@@ -26,17 +27,14 @@
     // task, so the project-name title set in bashrc-additions.sh persists.
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
   },
-  "postCreateCommand": "/usr/local/share/devc/post-create.sh",
   "mounts": [
     // ~/.claude folder
     "type=volume,source=claude-code-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
     "type=bind,source=${localEnv:HOME}/.claude/CLAUDE.md,target=/home/vscode/.claude/CLAUDE.md,consistency=cached,readonly",
     "type=bind,source=${localEnv:HOME}/.claude/settings.devc.json,target=/home/vscode/.claude/settings.json,consistency=cached,readonly",
     "type=bind,source=${localEnv:HOME}/.claude/statusline.sh,target=/home/vscode/.claude/statusline.sh,consistency=cached,readonly",
-    "type=bind,source=${localEnv:HOME}/.agents/skills,target=/home/vscode/.claude/skills,consistency=cached",
-    // "type=bind,source=${localEnv:HOME}/.agents/skills,target=${containerWorkspaceFolder}/.claude/skills,consistency=cached,readonly",
 
-    // ~/.claude.json (auth) persisted per-workspace via volume; see post-create.sh for symlink setup
+    // ~/.claude.json (auth) persisted per-workspace via volume; the devc Feature's postCreateCommand sets up the symlink
     "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/home/vscode/.claude-json-vol",
 
     "type=volume,source=go-cache-${localWorkspaceFolderBasename},target=/home/vscode/go/pkg",
