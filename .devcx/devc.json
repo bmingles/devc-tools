@@ -1,0 +1,10 @@
+{
+  "containerEnv": {
+    "DEVC_BRIDGE_ADDR": "host.docker.internal:48227",
+    "DEVC_BRIDGE_TOKEN_FILE": "/run/devc-bridge/token"
+  },
+  "mounts": [
+    "type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge",
+    "type=bind,source=${localEnv:HOME}/code/thirdparty/agent-tools,target=/workspaces/agent-tools"
+  ]
+}
