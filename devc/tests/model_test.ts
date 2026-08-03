@@ -219,9 +219,9 @@ Deno.test("model: with no folders fence, the projects fence is the selection", a
     const dev = [
       "{",
       '  "mounts": [',
-      "    // >>> devc-tui:projects (managed - do not edit)",
+      "    // >>> devc:projects (managed - do not edit)",
       ...mountLines(deriveMounts(tree, selection, cfg)).map((l) => `    ${l}`),
-      "    // <<< devc-tui:projects",
+      "    // <<< devc:projects",
       "  ]",
       "}",
     ].join("\n");
@@ -240,10 +240,10 @@ Deno.test("model: skills selection comes back from the skills fence", async () =
     const dev = [
       "{",
       '  "mounts": [',
-      "    // >>> devc-tui:skills (managed - do not edit)",
+      "    // >>> devc:skills (managed - do not edit)",
       '    "type=bind,source=/host/skills/alpha,target=/home/vscode/.claude/skills/alpha",',
       '    "type=bind,source=/host/skills/beta,target=/home/vscode/.claude/skills/beta"',
-      "    // <<< devc-tui:skills",
+      "    // <<< devc:skills",
       "  ]",
       "}",
     ].join("\n");

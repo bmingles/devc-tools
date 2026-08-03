@@ -1,4 +1,4 @@
-// Subcommand implementations: the headless half of devc-tui.
+// Subcommand implementations: the headless half of devc.
 //
 // Every command funnels through `loadContext` (config + target files) and, for anything that
 // touches the selection, `loadState` (scan + read the selection back out of the files). Write
@@ -134,7 +134,7 @@ function checkFences(src: string | null, key: string, ids: string[], path: strin
 }
 
 function warn(io: Io, warnings: string[]): void {
-  for (const w of warnings) io.err(`devc-tui: warning: ${w}`);
+  for (const w of warnings) io.err(`devc: warning: ${w}`);
 }
 
 // --- list ------------------------------------------------------------------------
@@ -193,9 +193,9 @@ export async function cmdStatus(opts: Options, io: Io): Promise<number> {
   const devSrc = await readFileOrNull(ctx.targets.devcontainer);
   const wsSrc = await readFileOrNull(ctx.targets.workspaceFile);
   const counts = {
-    [`devc-tui:${PROJECTS_FENCE}`]: countEntries(devSrc, "mounts", PROJECTS_FENCE),
-    [`devc-tui:${SKILLS_FENCE}`]: countEntries(devSrc, "mounts", SKILLS_FENCE),
-    [`devc-tui:${FOLDERS_FENCE}`]: countEntries(wsSrc, "folders", FOLDERS_FENCE),
+    [`devc:${PROJECTS_FENCE}`]: countEntries(devSrc, "mounts", PROJECTS_FENCE),
+    [`devc:${SKILLS_FENCE}`]: countEntries(devSrc, "mounts", SKILLS_FENCE),
+    [`devc:${FOLDERS_FENCE}`]: countEntries(wsSrc, "folders", FOLDERS_FENCE),
   };
 
   if (opts.json) {
@@ -206,9 +206,9 @@ export async function cmdStatus(opts: Options, io: Io): Promise<number> {
       devcontainer: { path: ctx.targets.devcontainer, exists: devSrc !== null },
       workspaceFile: { path: ctx.targets.workspaceFile, exists: wsSrc !== null },
       fences: {
-        projects: counts[`devc-tui:${PROJECTS_FENCE}`],
-        skills: counts[`devc-tui:${SKILLS_FENCE}`],
-        folders: counts[`devc-tui:${FOLDERS_FENCE}`],
+        projects: counts[`devc:${PROJECTS_FENCE}`],
+        skills: counts[`devc:${SKILLS_FENCE}`],
+        folders: counts[`devc:${FOLDERS_FENCE}`],
       },
     }, null, 2));
     return 0;
@@ -253,19 +253,19 @@ export async function cmdSelect(
   add: boolean,
 ): Promise<number> {
   if (ids.length === 0) {
-    throw new UsageError(`devc-tui: ${add ? "select" : "deselect"} needs at least one project id`);
+    throw new UsageError(`devc: ${add ? "select" : "deselect"} needs at least one project id`);
   }
   const ctx = await loadContext(opts, io);
   const state = await loadState(ctx);
   const index = nodeIndex(state.tree);
   for (const id of ids) {
     const node = index.get(id);
-    if (node === undefined) throw new UsageError(`devc-tui: unknown project id ${JSON.stringify(id)}`);
+    if (node === undefined) throw new UsageError(`devc: unknown project id ${JSON.stringify(id)}`);
     if (add && !node.selectable) {
       const why = node.isWorkspace
         ? "it is the current workspace"
         : node.warnings.join("; ") || "not selectable";
-      throw new UsageError(`devc-tui: project ${JSON.stringify(id)} is not selectable (${why})`);
+      throw new UsageError(`devc: project ${JSON.stringify(id)} is not selectable (${why})`);
     }
   }
   for (const id of ids) {
@@ -294,7 +294,7 @@ export interface Planned {
 
 /**
  * Derive both files from `state` and diff them against what is on disk. This is the single
- * place a devc-tui fence is ever computed — `apply`, `select`, `skills enable` and the TUI's
+ * place a devc fence is ever computed — `apply`, `select`, `skills enable` and the TUI's
  * `w` all come through here, so they cannot drift apart.
  *
  * Files whose content is unchanged are left out entirely, which is what makes a repeated
@@ -307,7 +307,7 @@ export async function planChanges(ctx: Ctx, state: State): Promise<Planned> {
 
   if (state.devcontainerSrc === null && !ctx.opts.create) {
     throw new RuntimeError(
-      `devc-tui: ${ctx.targets.devcontainer} does not exist (pass --create to create it)`,
+      `devc: ${ctx.targets.devcontainer} does not exist (pass --create to create it)`,
     );
   }
   const devBase = state.devcontainerSrc ?? devcontainerTemplate(ctx.workspaceDir);
@@ -444,7 +444,7 @@ export async function cmdSkills(
 ): Promise<number> {
   if (names.length === 0) {
     throw new UsageError(
-      `devc-tui: skills ${enable ? "enable" : "disable"} needs at least one skill name`,
+      `devc: skills ${enable ? "enable" : "disable"} needs at least one skill name`,
     );
   }
   const ctx = await loadContext(opts, io);
@@ -452,7 +452,7 @@ export async function cmdSkills(
   const available: Skill[] = await listSkills(skillsRoot);
   const known = new Set(available.map((s) => s.name));
   for (const n of names) {
-    if (enable && !known.has(n)) throw new UsageError(`devc-tui: unknown skill ${JSON.stringify(n)}`);
+    if (enable && !known.has(n)) throw new UsageError(`devc: unknown skill ${JSON.stringify(n)}`);
   }
   const state = await loadState(ctx);
   for (const n of names) {

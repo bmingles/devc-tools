@@ -1,27 +1,27 @@
-# devc-tui
+# devc
 
 Selectively bind-mount **sibling projects** (and agent skill folders) into the devcontainer
 of the repo you are working in, and mirror the selection into its VS Code workspace file.
 
-You keep all your repos and worktrees under one directory. devc-tui scans that directory,
+You keep all your repos and worktrees under one directory. devc scans that directory,
 lets you pick what the current container should see, and rewrites exactly three
 comment-fenced blocks:
 
 | Fence | File | Array | Paths |
 | --- | --- | --- | --- |
-| `devc-tui:projects` | `.devcontainer/devcontainer.json` | `mounts` | `source=` host, `target=` container |
-| `devc-tui:skills` | `.devcontainer/devcontainer.json` | `mounts` | `source=` host, `target=` container |
-| `devc-tui:folders` | `<name>.code-workspace` | `folders` | host, relative to the workspace file |
+| `devc:projects` | `.devcontainer/devcontainer.json` | `mounts` | `source=` host, `target=` container |
+| `devc:skills` | `.devcontainer/devcontainer.json` | `mounts` | `source=` host, `target=` container |
+| `devc:folders` | `<name>.code-workspace` | `folders` | host, relative to the workspace file |
 
 ```jsonc
 {
   "mounts": [
-    // my ssh agent, nothing to do with devc-tui   ← untouched, comments included
+    // my ssh agent, nothing to do with devc   ← untouched, comments included
     "type=bind,source=/run/host-services/ssh-auth.sock,target=/ssh-agent",
-    // >>> devc-tui:projects (managed - do not edit)
+    // >>> devc:projects (managed - do not edit)
     "type=bind,source=${localEnv:HOME}/src/projectb,target=/workspaces/projectb",
     "type=bind,source=${localEnv:HOME}/src/projectb.worktrees/some-other,target=/workspaces/projectb.worktrees/some-other"
-    // <<< devc-tui:projects
+    // <<< devc:projects
   ]
 }
 ```
@@ -39,9 +39,9 @@ paths — written relative to the workspace file, the same way you would write t
 {
   "folders": [
     { "path": "." },                          // ← yours, untouched
-    // >>> devc-tui:folders (managed - do not edit)
+    // >>> devc:folders (managed - do not edit)
     { "path": "../projectb.worktrees/some-other", "name": "projectb.worktrees/some-other" }
-    // <<< devc-tui:folders
+    // <<< devc:folders
   ]
 }
 ```
@@ -50,12 +50,12 @@ The `name` is the id (the path relative to `root`), which is what survives the r
 only the `path` is relative. An entry that does not resolve to something under `root` is left
 for you and dropped from the selection with a warning.
 
-**Trust note.** devc-tui writes to files in the current workspace dir — the devcontainer
+**Trust note.** devc writes to files in the current workspace dir — the devcontainer
 file and the `.code-workspace`. Everything outside its fences (comments, formatting, keys it
 knows nothing about) is preserved byte-for-byte, and `--dry-run` shows the exact diff before
 you commit to it. It never touches anything under the scanned root.
 
-Run `devc-tui` with no arguments for the interactive tree; every subcommand below does the
+Run `devc` with no arguments for the interactive tree; every subcommand below does the
 same work headlessly, through the same write path.
 
 ## The interactive tree
@@ -64,7 +64,7 @@ The tree mirrors the directory layout under the scanned root: every folder sits 
 on disk, and folders open and close.
 
 ```
- devc-tui  ~/src -> /workspaces               5 mounts  4 folders  1 skills   *unsaved
+ devc  ~/src -> /workspaces               5 mounts  4 folders  1 skills   *unsaved
  PROJECTS
         myapp  (workspace)
   v [-] org
@@ -130,7 +130,7 @@ selected — including a `.worktrees` folder, which toggles every worktree in it
 select off the parts of the root you are not interested in.
 
 The tree needs at least a 40x10 window and a real terminal: with stdin redirected it exits 2
-and points you at `devc-tui list` / `devc-tui select` instead. `--no-color` and `NO_COLOR`
+and points you at `devc list` / `devc select` instead. `--no-color` and `NO_COLOR`
 drop every escape sequence without changing the layout.
 
 ## Install
@@ -139,14 +139,19 @@ Run it from source via the repo's shell integration (no build step):
 
 ```sh
 source /path/to/devc-tools/scripts/bash_aliases.sh   # from your ~/.bashrc
-devc-tui config init      # writes ~/.config/devc-tui/config.json
-$EDITOR "$(devc-tui config path)"   # set "root" (and "skillsRoot", if you want skills)
+devc config init      # writes ~/.config/devc-tui/config.json
+$EDITOR "$(devc config path)"   # set "root" (and "skillsRoot", if you want skills)
 ```
 
-Or compile a standalone binary: `cd devc-tui && deno task build` → `./devc-tui`.
+> The shell integration currently exposes the tool as **`devc-tui`**, not `devc`, because a
+> `devc` already exists on many systems — substitute `devc-tui` for `devc` in the commands
+> here until that alias is renamed. The config path stays `~/.config/devc-tui/` for the same
+> reason.
+
+Or compile a standalone binary: `cd devc && deno task build` → `./devc`.
 
 **It runs on the host, not inside the container.** Mount `source` paths, workspace folder
-paths and the scanned root are all host-side, so invoke devc-tui from the same shell where you
+paths and the scanned root are all host-side, so invoke devc from the same shell where you
 `source scripts/bash_aliases.sh`. `containerRoot` and `skillsContainerRoot` are strings it
 writes into mount targets, not paths it resolves — they are the only container-side values it
 deals in.
@@ -161,14 +166,14 @@ git config --global worktree.useRelativePaths true      # for new worktrees
 git -C <worktree> worktree repair --relative-paths      # for worktrees you already have
 ```
 
-Then `<worktree>/.git` reads `gitdir: ../../projecta/.git/worktrees/feat`, and devc-tui keeps
+Then `<worktree>/.git` reads `gitdir: ../../projecta/.git/worktrees/feat`, and devc keeps
 that offset intact in the container by mounting each project at
 `containerRoot + "/" + <path relative to root>` — never a flattened basename. That is also
 why **selecting a worktree automatically mounts its primary repo**, shown as `[~]` on the
 primary's own row and left out of the workspace folder list. The two stay where they are in
 the tree; the `[~]` is the only thing that links them on screen.
 
-`devc-tui list --json` reports `relativeGitdir` per worktree, so you can spot the ones that
+`devc list --json` reports `relativeGitdir` per worktree, so you can spot the ones that
 still need `worktree repair`.
 
 ## Layout it expects
@@ -183,7 +188,7 @@ still need `worktree repair`.
 <root>/noise/                            → pruned: nothing selectable beneath it
 ```
 
-- A directory containing `.git` (file or dir) is a **project**; devc-tui does not descend
+- A directory containing `.git` (file or dir) is a **project**; devc does not descend
   into it, so a project is always a leaf.
 - `<base>.worktrees/` is a **worktree folder** whose immediate subdirectories are worktrees.
   It is drawn beside `<base>`, not inside it — the tree matches the filesystem. What binds the
@@ -217,7 +222,7 @@ Created with these defaults on first run. Unknown keys are preserved.
 | `root` | **Host** dir scanned for projects. Unset ⇒ scanning commands exit 2. |
 | `containerRoot` | Container-side parent for mounted projects. |
 | `maxDepth` | Levels below `root` to descend looking for projects. |
-| `skillsRoot` | **Host** dir whose immediate subdirectories are individually mountable skills. Unset ⇒ `skills` subcommands exit 2, and an existing `devc-tui:skills` fence is left as-is. |
+| `skillsRoot` | **Host** dir whose immediate subdirectories are individually mountable skills. Unset ⇒ `skills` subcommands exit 2, and an existing `devc:skills` fence is left as-is. |
 | `skillsContainerRoot` | Container-side parent for mounted skills. |
 | `devcontainerPath` | Devcontainer file, relative to the workspace dir. |
 | `workspaceFile` | Workspace file relative to the workspace dir; `null` auto-detects. |
@@ -242,7 +247,7 @@ accept a leading `~` and `$VAR` / `${VAR}` anywhere:
   `$SRC/repos` into `/repos` and scan the wrong directory while reporting success:
 
   ```
-  devc-tui: config "root": $SRC is not set (~/.config/devc-tui/config.json)
+  devc: config "root": $SRC is not set (~/.config/devc-tui/config.json)
   ```
 
   A variable set to the empty string counts as unset.
@@ -250,10 +255,10 @@ accept a leading `~` and `$VAR` / `${VAR}` anywhere:
   the container's `$HOME` is not yours — expanding them from your shell would silently write
   the wrong mount target.
 - `config show` prints the expanded values, which is how you check an expansion did what you
-  meant. devc-tui never writes a loaded config back, so the file keeps what you typed.
+  meant. devc never writes a loaded config back, so the file keeps what you typed.
 
 This is separate from `${localEnv:HOME}` in the devcontainer file below: `$HOME` is what
-devc-tui reads, `${localEnv:HOME}` is what the Dev Containers extension resolves. Neither
+devc reads, `${localEnv:HOME}` is what the Dev Containers extension resolves. Neither
 understands the other's syntax.
 
 The **workspace dir** is the cwd (or `--workspace-dir <path>`) — the repo being configured.
@@ -263,21 +268,21 @@ already mounts it.
 
 With `workspaceFile: null` the workspace file is the single `*.code-workspace` in the
 workspace dir, or `<basename>.code-workspace` if there is none. Two or more candidates is
-ambiguous — devc-tui exits 2 and asks you to set the key.
+ambiguous — devc exits 2 and asks you to set the key.
 
 ## CLI
 
 ```
-devc-tui                             open the interactive tree (see above)
-devc-tui list                        show the projects under the configured root
-devc-tui status                      resolved config, target files, fence entry counts
-devc-tui select <id>...              add projects/worktrees to the selection, then apply
-devc-tui deselect <id>...            remove projects from the selection, then apply
-devc-tui apply                       rewrite all three fences (idempotent)
-devc-tui skills list                 show the skill dirs under skillsRoot
-devc-tui skills enable <name>...     mount skill dirs, then apply
-devc-tui skills disable <name>...    unmount skill dirs, then apply
-devc-tui config show|path|init       print the resolved config / its path / create it
+devc                             open the interactive tree (see above)
+devc list                        show the projects under the configured root
+devc status                      resolved config, target files, fence entry counts
+devc select <id>...              add projects/worktrees to the selection, then apply
+devc deselect <id>...            remove projects from the selection, then apply
+devc apply                       rewrite all three fences (idempotent)
+devc skills list                 show the skill dirs under skillsRoot
+devc skills enable <name>...     mount skill dirs, then apply
+devc skills disable <name>...    unmount skill dirs, then apply
+devc config show|path|init       print the resolved config / its path / create it
 ```
 
 Global flags: `--workspace-dir <path>`, `--root <path>`, `--config <path>`, `--create`,
@@ -295,23 +300,23 @@ Exit codes: **0** success, **1** runtime error, **2** usage/config error.
 - `--json` makes `list`/`status`/`skills list` emit an object; write commands emit
   `{"changed":["<path>",...]}`.
 
-There is no selection state file: the selection **is** the `devc-tui:folders` block (falling
-back to `devc-tui:projects` when the workspace file has no fence), so the tool and the repo
+There is no selection state file: the selection **is** the `devc:folders` block (falling
+back to `devc:projects` when the workspace file has no fence), so the tool and the repo
 can never drift. Entries that no longer match anything under `root` are dropped with a
 warning on stderr.
 
 ## Fence contract
 
 ```
-// >>> devc-tui:<id> (managed - do not edit)
+// >>> devc:<id> (managed - do not edit)
 <entries, one per line>
-// <<< devc-tui:<id>
+// <<< devc:<id>
 ```
 
 - Fences are matched by regex, so trailing text may drift without breaking round-trips.
-- A fence you move elsewhere inside the same array is rewritten **in place** — devc-tui only
+- A fence you move elsewhere inside the same array is rewritten **in place** — devc only
   appends a block when it cannot find one.
-- An open fence with no matching close is an error: devc-tui exits 1 and writes nothing.
+- An open fence with no matching close is an error: devc exits 1 and writes nothing.
 - Editing is text surgery, never parse-and-reserialize. Commas are normalized per array so
   the result is valid **strict** JSON (no trailing comma) as well as JSONC.
 - A project whose host path contains `,` or `=` cannot be expressed as a mount string and is
@@ -320,11 +325,11 @@ warning on stderr.
 ## Development
 
 ```sh
-cd devc-tui
+cd devc
 deno task check   # type-check
 deno task test    # unit, CLI and TUI tests (no terminal, no host needed)
 deno task run --  # e.g. deno task run list
-deno task build   # standalone ./devc-tui binary
+deno task build   # standalone ./devc binary
 ```
 
 Tests build every root, workspace dir, and skills dir under `Deno.makeTempDir()` — they never
@@ -352,4 +357,4 @@ literal, an unterminated fence) that pin the file-surgery behavior.
 The UI splits into a pure core (`state.ts`, `render.ts`, `keys.ts`) and a thin shell
 (`term.ts`, `app.ts`), so navigation, toggling, filtering and layout are all covered by
 `deno test` — `tests/tui_app_test.ts` even scripts a whole session and asserts the files come
-out byte-identical to the equivalent `devc-tui select`. Only the visual polish needs a human.
+out byte-identical to the equivalent `devc select`. Only the visual polish needs a human.

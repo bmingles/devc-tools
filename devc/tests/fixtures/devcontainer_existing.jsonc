@@ -1,14 +1,14 @@
 {
-  // Hand-written by a human: devc-tui must not touch anything outside its fences.
+  // Hand-written by a human: devc must not touch anything outside its fences.
   "name": "demo",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "mounts": [
-    // my ssh agent, nothing to do with devc-tui
+    // my ssh agent, nothing to do with devc
     "type=bind,source=/run/host-services/ssh-auth.sock,target=/ssh-agent"
-    // >>> devc-tui:projects (managed - do not edit)
-    // <<< devc-tui:projects
-    // >>> devc-tui:skills (managed - do not edit)
-    // <<< devc-tui:skills
+    // >>> devc:projects (managed - do not edit)
+    // <<< devc:projects
+    // >>> devc:skills (managed - do not edit)
+    // <<< devc:skills
   ],
   "remoteUser": "vscode",
   "customizations": {

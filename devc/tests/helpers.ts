@@ -11,7 +11,7 @@ export async function fixture(name: string): Promise<string> {
 
 /** Run `fn` with a fresh temp dir, removing it afterwards no matter what. */
 export async function withTemp<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await Deno.makeTempDir({ prefix: "devc-tui-test-" });
+  const dir = await Deno.makeTempDir({ prefix: "devc-test-" });
   try {
     return await fn(await Deno.realPath(dir));
   } finally {
@@ -51,7 +51,7 @@ export async function worktree(path: string, gitdir: string): Promise<void> {
   await Deno.writeTextFile(join(path, ".git"), `gitdir: ${gitdir}\n`);
 }
 
-/** Write a devc-tui config file and return its path. */
+/** Write a devc config file and return its path. */
 export async function writeConfig(
   dir: string,
   cfg: Record<string, unknown>,

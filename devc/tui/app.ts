@@ -33,7 +33,7 @@ import {
 import { Terminal } from "./term.ts";
 
 export const NOT_A_TERMINAL =
-  'devc-tui: not a terminal; use "devc-tui list" / "devc-tui select ..." instead';
+  'devc: not a terminal; use "devc list" / "devc select ..." instead';
 
 export interface AppDeps {
   opts: Options;
@@ -161,8 +161,8 @@ function syncedState(cliState: State, ui: UiState): State {
 
 function errorMessage(e: unknown): string {
   if (e instanceof UsageError || e instanceof RuntimeError) return e.message;
-  if (e instanceof Error) return `devc-tui: ${e.message}`;
-  return `devc-tui: ${String(e)}`;
+  if (e instanceof Error) return `devc: ${e.message}`;
+  return `devc: ${String(e)}`;
 }
 
 export interface StartOptions {
@@ -170,7 +170,7 @@ export interface StartOptions {
   isTerminal?: () => boolean;
 }
 
-/** `devc-tui` with no subcommand: the interactive tree, or a pointed refusal. */
+/** `devc` with no subcommand: the interactive tree, or a pointed refusal. */
 export async function startTui(
   opts: Options,
   io: Io,
