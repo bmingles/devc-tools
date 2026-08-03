@@ -17,7 +17,7 @@ cd() { builtin cd "$@" && [ -f .nvmrc ] && nvm use --silent; }
 [ -f .nvmrc ] && nvm use --silent
 
 # Change iTerm2 tab color to green cleanly without empty lines
-if [ -n "$ITERM_SESSION_ID" ] || [ "$TERM_PROGRAM" = "iTerm.app" ] || [ -n "$TMUX" ]; then
+if [ -n "$ITERM_SESSION_ID" ] || [ "$TERM_PROGRAM" = "iTerm.app" ]; then
   echo -ne "\033]6;1;bg;red;brightness;46\a"
   echo -ne "\033]6;1;bg;green;brightness;204\a"
   echo -ne "\033]6;1;bg;blue;brightness;113\a"
@@ -25,21 +25,16 @@ fi
 
 # Set terminal title to project name (overrides "deno" shown by iTerm2)
 _DEVC_TITLE="$(basename "${PROJECT_PATH:-$PWD}" | tr '.:'  '__')"
-if [ -n "$TMUX" ]; then
-  tmux rename-window "$_DEVC_TITLE"
-  unset _DEVC_TITLE
-else
-  printf '\033]0;%s\007' "$_DEVC_TITLE"
-  # The devcontainers base image (~/.bashrc) retitles the terminal to the running
-  # command via a DEBUG trap (preexec) and to $SHELL each prompt via precmd() in
-  # PROMPT_COMMAND. With the Claude CLI's own title disabled
-  # (CLAUDE_CODE_DISABLE_TERMINAL_TITLE), that command title would otherwise win
-  # and hide the project name. Drop the trap and repoint precmd() — already wired
-  # into PROMPT_COMMAND — at the project name so it persists at the prompt and
-  # while a foreground app runs.
-  trap - DEBUG
-  precmd() { printf '\033]0;%s\007' "$_DEVC_TITLE"; }
-fi
+printf '\033]0;%s\007' "$_DEVC_TITLE"
+# The devcontainers base image (~/.bashrc) retitles the terminal to the running
+# command via a DEBUG trap (preexec) and to $SHELL each prompt via precmd() in
+# PROMPT_COMMAND. With the Claude CLI's own title disabled
+# (CLAUDE_CODE_DISABLE_TERMINAL_TITLE), that command title would otherwise win
+# and hide the project name. Drop the trap and repoint precmd() — already wired
+# into PROMPT_COMMAND — at the project name so it persists at the prompt and
+# while a foreground app runs.
+trap - DEBUG
+precmd() { printf '\033]0;%s\007' "$_DEVC_TITLE"; }
 
 # On `devc attach`, clear gnarly bash-init output on the first prompt, after
 # all buffered output from initialization has been flushed.
