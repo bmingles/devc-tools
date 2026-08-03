@@ -16,20 +16,38 @@ The tool ships with a **default `Dockerfile` + `devcontainer.json`** bundled ins
 
 When a user wants to customize the container for a particular project, they run `devc config`. This opens a TUI that edits a project-specific `.devcontainer/devcontainer.json` and `.devcontainer/Dockerfile`, which are then saved in the cwd project.
 
+### Configuration precedence
+
+When a `devc` command needs container configuration, it resolves in this order:
+
+1. `PATH/.devcontainer/devcontainer.json` (+ sibling `Dockerfile`) if present.
+2. The bundled default `devcontainer.json` + `Dockerfile`.
+
+This means once a user applies a project-specific config via `devc config`, subsequent commands automatically use it.
+
 ## Global user configuration
 
 The first time any `devc` command is executed, the tool enters a one-time **global config mode** before running the requested command. This mode prompts the user for:
 
-- **Code folder root** — the base directory where code projects live.
-- **Skills folder root** — the base directory where agent skills live.
+- **Code folder roots** — one or more directories where code projects live.
+- **Skills folder roots** — one or more directories where agent skills live.
 
-These values are saved to a global config file, e.g. `~/.config/devc-tui/config.json`. Once that file exists, the global config prompt no longer runs automatically before other commands. The user can re-run it later via `devc config` (global settings step) if they want to change the roots.
+These values are saved as lists in a global config file, e.g. `~/.config/devc-tui/config.json`. Once that file exists, the global config prompt no longer runs automatically before other commands. The user can re-run it later via `devc config` (global settings step) if they want to change the root lists.
+
+Example global config:
+
+```json
+{
+  "codeRoots": ["~/code", "~/work"],
+  "skillsRoots": ["~/.agents/skills", "~/team-skills"]
+}
+```
 
 ## First-run flow
 
 1. User runs `devc <command>` for the first time.
 2. If `~/.config/devc-tui/config.json` does not exist, the TUI global config prompt appears.
-3. User enters their code root and skills root.
+3. User adds one or more code roots and one or more skills roots.
 4. The global config file is saved.
 5. The originally requested command continues.
 
@@ -47,31 +65,89 @@ Options:
   -h, --help  Print help
 ```
 
-### In-memory configuration
+### Wizard layout
 
-When `config` starts, it loads a working copy of the container configuration into memory:
+The TUI is divided into three regions:
 
-- If `PATH/.devcontainer/devcontainer.json` already exists, that file (and a sibling `Dockerfile` if present) is used as the base.
-- Otherwise, the bundled default `devcontainer.json` + `Dockerfile` is used as the base.
+- **Left sidebar** — list of wizard steps; the current step is highlighted.
+- **Main area** — controls for the current step (tables, pickers, previews).
+- **Footer** — available keybindings, e.g.:
+  - `↑` / `↓` or `Tab` / `Shift+Tab` — move focus.
+  - `Enter` — edit a field or confirm a selection.
+  - `Space` — toggle checkboxes.
+  - `Esc` or the **Back** button — return to the previous step.
+  - `A` or the **Apply** button — write files (only active on the review step).
+  - `Q` or **Cancel** — quit without writing files.
 
-### Wizard steps
+### Starting the wizard
 
-The config TUI steps the user through container settings, for example:
+When the user runs `devc config [PATH]`:
 
-- Edit devcontainer settings (features, environment variables, post-create commands, etc.).
-- Add mounts for source code folders, using the global **code folder root** as the starting point.
-- Add mounts for skills folders, using the global **skills folder root** as the starting point.
-- Add any additional custom mounts or overrides.
+1. Resolve the project directory (`PATH` or cwd).
+2. If `~/.config/devc-tui/config.json` is missing, run the **Global config** step first and persist the code/skills root lists.
+3. Load the base container configuration into memory:
+   - If `PATH/.devcontainer/devcontainer.json` exists, load it (and a sibling `Dockerfile` if present).
+   - Otherwise, start from the bundled default `devcontainer.json` + `Dockerfile`.
+4. Proceed to the **Project overview** step.
 
-### Applying the configuration
+### Step 1: Project overview
 
-When the user confirms/"Apply" in the TUI:
+Displays a summary of the project being configured:
 
-1. The `.devcontainer/` directory is created under `PATH` if it does not already exist.
-2. The in-memory `devcontainer.json` is written to `PATH/.devcontainer/devcontainer.json`.
-3. The in-memory `Dockerfile` is written to `PATH/.devcontainer/Dockerfile`.
+- Project path
+- Base config source: `Bundled default` vs `Existing .devcontainer/`
+- Whether mounts will be created for the first time or edited in place
 
-If the user cancels/quits without applying, no files are written.
+Actions: **Next**, **Cancel**.
+
+### Step 2: Source code mounts
+
+The current project directory is always mounted as the devcontainer workspace. This step lets the user add **extra source code folders** that should also be available inside the container.
+
+- A mount table lists each extra source mount:
+  - **Host path** — absolute path on the host.
+  - **Container path** — absolute path inside the container. Defaults to `/workspaces/<basename>`.
+  - **Read-only** toggle (default off for source code).
+- **Add** prompts the user to pick one of the configured **code folder roots**, then opens a directory picker rooted at that selection.
+- **Remove** deletes the selected mount.
+- Duplicate container paths are rejected.
+
+### Step 3: Skills mounts
+
+Configure which agent skills folders are mounted into the container.
+
+- A mount table lists each skills mount:
+  - **Host path** — absolute path on the host.
+  - **Container path** — defaults to `~/.agents/skills/<basename>`.
+  - **Read-only** toggle (default on, but editable).
+- **Add** prompts the user to pick one of the configured **skills folder roots**, then opens a directory picker rooted at that selection.
+- **Remove** deletes the selected mount.
+- Duplicate container paths are rejected.
+
+### Step 4: Review & apply
+
+Presents a final summary before anything is written to disk:
+
+- Path where files will be written: `PATH/.devcontainer/`
+- Whether `devcontainer.json` and/or `Dockerfile` are new or overwriting existing files
+- Full list of mounts
+- Preview of the `devcontainer.json` **mounts** section (the only part the wizard changes)
+- Note that the bundled/existing `Dockerfile` is copied as-is
+
+Actions: **Apply**, **Back**, **Cancel**.
+
+When the user selects **Apply**:
+
+1. Create `PATH/.devcontainer/` if it does not exist.
+2. Serialize the in-memory `devcontainer.json` (with the configured mounts) to `PATH/.devcontainer/devcontainer.json`.
+3. Write the unchanged base `Dockerfile` to `PATH/.devcontainer/Dockerfile`.
+4. Return to the shell with a success message.
+
+If the user selects **Cancel** or quits, no files are written and the in-memory changes are discarded.
+
+### Reconfiguring a project
+
+Running `devc config` again on a project that already has a `.devcontainer/devcontainer.json` loads that file as the base and lets the user edit the mounts. Applying overwrites the existing files with the new configuration.
 
 ## Top-level help
 
