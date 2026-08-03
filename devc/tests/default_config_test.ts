@@ -141,7 +141,9 @@ Deno.test("loadResolvedRemoteEnv strips // line comments from config before pars
 Deno.test("materializeDefaultConfig copies the embedded tree to cacheDir and returns the config path", async () => {
   await withTempDir(async (cacheDir) => {
     const path = await materializeDefaultConfig(cacheDir);
-    assertEquals(path, `${cacheDir}/devcontainer.json`);
+    // Config lands inside a `.devcontainer/` folder so the CLI accepts the
+    // relative-path `./features/devc` Feature (it must be a child of it).
+    assertEquals(path, `${cacheDir}/.devcontainer/devcontainer.json`);
 
     for (
       const file of [
@@ -154,7 +156,10 @@ Deno.test("materializeDefaultConfig copies the embedded tree to cacheDir and ret
         "features/devc/tmux.conf",
       ]
     ) {
-      assertEquals((await Deno.stat(`${cacheDir}/${file}`)).isFile, true);
+      assertEquals(
+        (await Deno.stat(`${cacheDir}/.devcontainer/${file}`)).isFile,
+        true,
+      );
     }
   });
 });
@@ -169,7 +174,10 @@ Deno.test("materializeDefaultConfig materializes the devc Feature subtree", asyn
         "features/devc/post-create.sh",
       ]
     ) {
-      assertEquals((await Deno.stat(`${cacheDir}/${file}`)).isFile, true);
+      assertEquals(
+        (await Deno.stat(`${cacheDir}/.devcontainer/${file}`)).isFile,
+        true,
+      );
     }
   });
 });
@@ -179,7 +187,9 @@ Deno.test("materialized devcontainer.json and devcontainer-feature.json parse as
     await materializeDefaultConfig(cacheDir);
 
     // devcontainer.json is JSONC (has // comments); strip them before parsing.
-    const dcText = await Deno.readTextFile(`${cacheDir}/devcontainer.json`);
+    const dcText = await Deno.readTextFile(
+      `${cacheDir}/.devcontainer/devcontainer.json`,
+    );
     const dcNoComments = dcText
       .split("\n")
       .filter((line) => !/^\s*\/\//.test(line))
@@ -192,7 +202,7 @@ Deno.test("materialized devcontainer.json and devcontainer-feature.json parse as
 
     // devcontainer-feature.json is plain JSON.
     const featText = await Deno.readTextFile(
-      `${cacheDir}/features/devc/devcontainer-feature.json`,
+      `${cacheDir}/.devcontainer/features/devc/devcontainer-feature.json`,
     );
     const feat = JSON.parse(featText);
     assertEquals(feat.id, "devc");
@@ -209,7 +219,9 @@ Deno.test("materializeDefaultConfig overwrites an existing copy without erroring
     const first = await materializeDefaultConfig(cacheDir);
     const second = await materializeDefaultConfig(cacheDir);
     assertEquals(first, second);
-    const contents = await Deno.readTextFile(`${cacheDir}/devcontainer.json`);
+    const contents = await Deno.readTextFile(
+      `${cacheDir}/.devcontainer/devcontainer.json`,
+    );
     assertEquals(contents.includes("STALE"), false);
   });
 });
