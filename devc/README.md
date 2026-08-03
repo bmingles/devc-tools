@@ -11,6 +11,7 @@ positional overrides it. The resolved path identifies the project and its contai
 ## Commands
 
 ```text
+devc config  [PATH]                                   Configure the project's dev container (TUI)
 devc up      [PATH] [--json]                          Create/start the container; print its status
 devc attach  [PATH] [--build] [--no-clear]            Start (creating if needed) and attach a login shell
 devc claude  [PATH] [EXTRA_ARGS...]                   Start and run `claude` (+ forwarded args) in a login shell
@@ -20,6 +21,9 @@ devc stop    [PATH]                                   Stop the container
 devc down    [PATH]                                   Stop and remove the container
 devc status  [PATH]                                   Print `running` / `stopped` / `missing`
 ```
+
+Run `devc --help` for the full command list, `devc <COMMAND> --help` for a command's options, and
+`devc --version` to print the version.
 
 Notes:
 
