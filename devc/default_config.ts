@@ -53,11 +53,19 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
 }
 
 /**
- * Copies the embedded `devc/default/` tree straight to `cacheDir` (default
- * `~/.cache/devc/default`), overwriting any existing copy, and returns the path
- * to the materialized `devcontainer.json`, suitable for `devcontainer up
- * --config <path>`. There is no user-editable global template override dir —
- * customization happens per-project via `devc config`.
+ * Copies the embedded `devc/default/` tree into a `.devcontainer/` folder under
+ * `cacheDir` (default `~/.cache/devc/default`), overwriting any existing copy,
+ * and returns the path to the materialized `devcontainer.json`, suitable for
+ * `devcontainer up --config <path>`. There is no user-editable global template
+ * override dir — customization happens per-project via `devc config`.
+ *
+ * The tree lands in a `.devcontainer/` subfolder (not `cacheDir` directly)
+ * because `@devcontainers/cli` only accepts a relative-path ("local") Feature —
+ * the bundled default references `"./features/devc"` — when the referencing
+ * `devcontainer.json` lives inside a folder literally named `.devcontainer` and
+ * the Feature resolves to a child of it. Materializing flat into `cacheDir`
+ * makes the CLI reject the Feature ("Resolved path must be a child of the
+ * .devcontainer/ folder").
  *
  * `cacheDir` defaults to the real `~/.cache/devc/default` and only needs
  * overriding in tests.
@@ -65,8 +73,11 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
 export async function materializeDefaultConfig(
   cacheDir: string = `${homeDir()}/.cache/devc/default`,
 ): Promise<string> {
-  await copyDir(DEFAULT_DIR_URL, cacheDir);
-  return `${cacheDir}/devcontainer.json`;
+  const devcontainerDir = `${cacheDir}/.devcontainer`;
+  // Remove any prior copy so files dropped between versions don't linger.
+  await Deno.remove(devcontainerDir, { recursive: true }).catch(() => {});
+  await copyDir(DEFAULT_DIR_URL, devcontainerDir);
+  return `${devcontainerDir}/devcontainer.json`;
 }
 
 /**
