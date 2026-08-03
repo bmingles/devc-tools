@@ -14,7 +14,7 @@ import {
   globalConfigExists,
   runGlobalConfigWizard,
   runProjectConfigWizard,
-} from "./tui/wizard.ts";
+} from "./tui/config_flow.ts";
 import {
   COMMAND_HELP,
   COMMANDS,
@@ -93,6 +93,11 @@ if (!KNOWN_COMMANDS.has(subcommand)) {
 // Global config step is prepended (as the first step) when the global config is missing and
 // stdin is a TTY, so the very first run configures roots then continues into the project steps.
 if (subcommand === "config") {
+  // `--global` reconfigures the code/skills roots only (free-mode folder picker), then exits.
+  if (Deno.args.includes("--global")) {
+    await runGlobalConfigWizard({ err: (m) => console.error(m) });
+    Deno.exit(0);
+  }
   const target = resolveLocalFolder(
     Deno.args.find((a, i) => i > 0 && !a.startsWith("--")),
   );

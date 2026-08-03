@@ -68,6 +68,21 @@ deno task check                        # type-check
 deno task build                        # compile the `devc` binary (embeds default/)
 ```
 
-The interactive `devc config` project wizard and global config (code/skills roots at
-`~/.config/devc-tui/config.json`) land in later phases; only the container-lifecycle
-commands above are implemented today.
+### `devc config`
+
+`devc config [PATH]` is a picker-driven flow for the project's `.devcontainer/`. You *select*
+folders — no typing paths:
+
+- **Source folders** and **skills folders** are each chosen with a multi-select, type-to-filter
+  picker: `↑/↓` move, `→` open a folder, `←` (or backspace on an empty filter) go up, `space`
+  ticks/unticks (selection persists across folders), `⏎` confirms, `esc` cancels. Type any
+  characters to filter the current folder.
+- Selection is **scoped to your configured roots**: the picker opens on the list of roots, and
+  each root is a boundary — you can't navigate above it, and the roots themselves aren't
+  selectable (you pick folders *inside* them).
+- A **review** summary then a single `Apply?` confirm writes the two managed mount blocks
+  (`devc:source`, `devc:skills`); everything else in the file is left untouched.
+
+**Roots** (where the pickers are scoped) live in `~/.config/devc-tui/config.json`, stored folded
+to `~/…`. On first run — or any time roots are missing — `devc config` collects them first with
+a free-navigation picker. Run **`devc config --global`** to reconfigure them at any time.

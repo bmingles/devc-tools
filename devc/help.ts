@@ -41,13 +41,14 @@ export function topLevelHelp(): string {
 /** Per-command help blocks, keyed by command name — verbatim from the design doc. */
 export const COMMAND_HELP: Record<string, string> = {
   config: [
-    "Usage: devc config [PATH]",
+    "Usage: devc config [PATH] [--global]",
     "",
     "Arguments:",
     "  [PATH]  Path to the project (default: current directory)",
     "",
     "Options:",
-    "  -h, --help  Print help",
+    "      --global  Reconfigure the code/skills folder roots only, then exit",
+    "  -h, --help    Print help",
   ].join("\n"),
 
   attach: [

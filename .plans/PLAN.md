@@ -4,6 +4,8 @@
 
 ### Pending
 
+- [devc-wizard-modernize](devc-wizard-modernize.md) — Replace the full-screen sidebar wizard (mnemonic `N`/`B`/`A` keys) with a modern inline sequential flow plus a multi-select, type-to-filter folder picker, zero new dependencies, on the existing `tui/term.ts`+`tui/keys.ts`.
+
 ### Completed
 
 - [devc-container-feature-fix](archived/devc-container-feature-fix.md) — Fix zero-config `devc up`: a local Feature can't load from devc's out-of-tree bundled config, so the bundled default carries its baseline itself (Dockerfile build-time + top-level postCreateCommand runtime) while `devc config` projects keep the composable Feature. Also drops in-container tmux.
@@ -39,3 +41,4 @@
 | devc config wizard — project `.devcontainer/` via managed fences | [devc-config-wizard](archived/devc-config-wizard.md) | complete |
 | devc help output — clap-style `--help`/`--version` + per-command help | [devc-help-output](archived/devc-help-output.md) | complete |
 | devc container baseline fix — out-of-tree Feature + drop in-container tmux | [devc-container-feature-fix](archived/devc-container-feature-fix.md) | complete |
+| devc wizard modernize — inline sequential flow + multi-select folder picker | [devc-wizard-modernize](devc-wizard-modernize.md) | in progress |
