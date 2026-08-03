@@ -10,9 +10,10 @@ import {
   stopContainer,
 } from "./container.ts";
 import { parseAttachArgs } from "./args.ts";
+import { globalConfigExists, runGlobalConfigWizard } from "./tui/wizard.ts";
 
 const USAGE =
-  "Usage: devc attach [path] [--build] [--no-clear] | devc claude [path] [...] | " +
+  "Usage: devc config | devc attach [path] [--build] [--no-clear] | devc claude [path] [...] | " +
   "devc up [path] [--json] | devc exec [path] [--cwd <dir>] [--env K=V]... -- <cmd...> | " +
   "devc mounts [path] [--json] | devc stop [path] | devc down [path] | devc status [path]";
 
@@ -63,6 +64,19 @@ async function attach(rawArgs: string[], command?: string): Promise<void> {
 if (subcommand === "-h" || subcommand === "--help") {
   console.log(USAGE);
   Deno.exit(0);
+}
+
+// `devc config`: (re-)open the global-config editor even when the file exists.
+if (subcommand === "config") {
+  await runGlobalConfigWizard({ err: (m) => console.error(m) });
+  Deno.exit(0);
+}
+
+// First-run hook: before dispatching any other command, if the global config does not exist
+// and stdin is a TTY, run the global-config wizard and then continue. Not a TTY ⇒ skip
+// silently (lifecycle commands do not need roots), so a scripted `devc up` never blocks.
+if (!(await globalConfigExists()) && Deno.stdin.isTerminal()) {
+  await runGlobalConfigWizard({ err: (m) => console.error(m) });
 }
 
 if (subcommand === "attach") {

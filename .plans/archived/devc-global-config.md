@@ -63,34 +63,34 @@ write `config.json` (pretty JSON, unknown keys preserved, trailing newline).
 
 ## Checklist
 
-- [ ] `devc/config.ts` — new global config module: import `CONFIG_DIR`; `expandPath`,
+- [x] `devc/config.ts` — new global config module: import `CONFIG_DIR`; `expandPath`,
       `displayPath`; `loadGlobalConfig()` → `{ codeRoots, skillsRoots, extra, path }` (raw +
       expanded accessors), `saveGlobalConfig()`, `globalConfigExists()`.
-- [ ] `devc/tui/wizard_state.ts` — new: `WizardState`, step model, `reduce(state, key)` →
+- [x] `devc/tui/wizard_state.ts` — new: `WizardState`, step model, `reduce(state, key)` →
       `{ state, effect }` with effects `save` / `quit` / `none`; text-input sub-mode for Add.
-- [ ] `devc/tui/wizard_render.ts` — new: sidebar/main/footer layout, `render(state, size)`; reuse
+- [x] `devc/tui/wizard_render.ts` — new: sidebar/main/footer layout, `render(state, size)`; reuse
       `colorEnabled`/`stripAnsi`/`Size` helpers (re-add minimal versions if they lived only in the
       deleted `render.ts`).
-- [ ] `devc/tui/wizard.ts` — new: app loop (own the `Terminal`, feed bytes to `KeyDecoder`, apply
+- [x] `devc/tui/wizard.ts` — new: app loop (own the `Terminal`, feed bytes to `KeyDecoder`, apply
       effects). Injected IO/input/output/size for tests; `raw` off in tests. Export a
       `startWizard(opts, io, deps)` entry.
-- [ ] `devc/main.ts` — first-run hook: before command dispatch, if `!globalConfigExists()` and
+- [x] `devc/main.ts` — first-run hook: before command dispatch, if `!globalConfigExists()` and
       stdin is a TTY, run the global-config wizard then continue. Wire `config` subcommand to open
       the global-config editor. `config` added to usage/help.
-- [ ] Tests: `devc/tests/global_config_test.ts` (load/save round-trip, unknown-key preservation,
+- [x] Tests: `devc/tests/global_config_test.ts` (load/save round-trip, unknown-key preservation,
       expansion + unset-var error), `devc/tests/wizard_state_test.ts` (add/remove/focus/save/quit
       via scripted keys), `devc/tests/wizard_render_test.ts` (frame snapshot for a small size).
-- [ ] `devc/deno.json` — add the new tui/config files to the `check` task list.
+- [x] `devc/deno.json` — add the new tui/config files to the `check` task list.
 
 ## Validation
 
-- [ ] `cd devc && deno task test` — global-config and wizard-state/render tests pass.
-- [ ] `cd devc && deno task check` clean.
-- [ ] Load/save round-trip: writing `{codeRoots:["~/code"],skillsRoots:[]}` then reading back
+- [x] `cd devc && deno task test` — global-config and wizard-state/render tests pass.
+- [x] `cd devc && deno task check` clean.
+- [x] Load/save round-trip: writing `{codeRoots:["~/code"],skillsRoots:[]}` then reading back
       yields the raw `~/code` (not expanded) and an expanded accessor returns `<HOME>/code`.
-- [ ] Scripted `wizard_state` test: Add `~/code` to code roots, Add `~/.agents/skills` to skills
+- [x] Scripted `wizard_state` test: Add `~/code` to code roots, Add `~/.agents/skills` to skills
       roots, Apply → emits `save` with the expected lists; `Q` → emits `quit` with no save.
-- [ ] Non-TTY: `echo | deno run ... main.ts up .` does **not** launch the wizard (first-run skipped).
+- [x] Non-TTY: `echo | deno run ... main.ts up .` does **not** launch the wizard (first-run skipped).
 - [ ] (user) In a fresh env (no `config.json`), a TTY `devc status` launches the global-config
       step; adding roots + Apply writes `~/.config/devc-tui/config.json`; the command then runs.
 
