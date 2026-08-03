@@ -71,10 +71,10 @@ Command surface and flags per design's per-command sections. Notable details:
 
 ## Checklist
 
-- [ ] `devc/paths.ts` — port `normalizePath` verbatim.
-- [ ] `devc/args.ts` — `parseAttachArgs` supporting only `--build` (→`rebuild`) and `--no-clear`;
+- [x] `devc/paths.ts` — port `normalizePath` verbatim.
+- [x] `devc/args.ts` — `parseAttachArgs` supporting only `--build` (→`rebuild`) and `--no-clear`;
       drop `--tmux`/`--CC`. Positional `[PATH]` = first non-`--` arg.
-- [ ] `devc/container.ts` — port: `resolveLocalFolder`, `assertLocalFolderExists`, `findContainer`,
+- [x] `devc/container.ts` — port: `resolveLocalFolder`, `assertLocalFolderExists`, `findContainer`,
       `getContainerStatus`, `buildExecArgs`, `execInContainer`, `parseMounts`, `getContainerMounts`,
       `isGitWorktree`, `computeContainerWorkspaceFolder`, `containerNameForLocalFolder`,
       `dockerInspect`, `renameContainerIfNeeded`, `tagImageIfNeeded`, `dumpBuildOutput`,
@@ -82,49 +82,49 @@ Command surface and flags per design's per-command sections. Notable details:
       `hostIsTmux`, `applyAttachColors`, `attachToContainer`. Strip the tmux/controlMode attach
       branch and those two `AttachOptions` fields; keep tint, window rename, and `$TMUX`/`TERM*`
       exec-env forwarding.
-- [ ] `devc/default_config.ts` — `hasOwnDevcontainerConfig`; `materializeDefaultConfig(cacheDir?)`
+- [x] `devc/default_config.ts` — `hasOwnDevcontainerConfig`; `materializeDefaultConfig(cacheDir?)`
       (embedded `default/` → cache dir, no template-override seeding); `substituteVars`;
       `loadResolvedRemoteEnv(configPath, containerWorkspaceFolder)` (read materialized config
       `remoteEnv`, substitute; no overlay merge); `CONFIG_DIR` const. Drop `findDevcConfigPath`,
       `loadExtraConfigArgs`, and all `.devc/devc.json` handling.
-- [ ] `devc/main.ts` — argv dispatch for `up`/`attach`/`claude`/`exec`/`mounts`/`stop`/`down`/
+- [x] `devc/main.ts` — argv dispatch for `up`/`attach`/`claude`/`exec`/`mounts`/`stop`/`down`/
       `status` + usage/`--help`. `fail(e)` → `devc: <msg>` to stderr, exit 1; exec infra failure
       exit 125. Derive attach session name from the git toplevel of the resolved path.
-- [ ] Copy `default/` verbatim into `devc/default/`: `Dockerfile`, `devcontainer.json`,
+- [x] Copy `default/` verbatim into `devc/default/`: `Dockerfile`, `devcontainer.json`,
       `post-create.sh`, `bashrc-additions.sh`, `tmux.conf`.
-- [ ] `devc/deno.json` — tasks: `run` (`deno run --allow-run=docker,devcontainer,git,tmux,tty
+- [x] `devc/deno.json` — tasks: `run` (`deno run --allow-run=docker,devcontainer,git,tmux,tty
       --allow-read --allow-write --allow-env main.ts`), `test` (`deno test --allow-run=git
       --allow-read --allow-write --allow-env`), `check`, `build` (`deno compile
       --allow-run=docker,devcontainer,git,tmux,tty --allow-read --allow-write --allow-env
       --include default --output devc main.ts`). Keep `imports` for `@std/path`, `@std/assert`.
-- [ ] Port unit tests to `devc/tests/`: `resolve_local_folder_test.ts`, `container_name_test.ts`,
+- [x] Port unit tests to `devc/tests/`: `resolve_local_folder_test.ts`, `container_name_test.ts`,
       `container_workspace_folder_test.ts`, `exec_args_test.ts` (`buildExecArgs`), `mounts_test.ts`
       (`parseMounts`), `session_name_test.ts`, `assert_local_folder_test.ts`, `args_test.ts`
       (trimmed to the kept flags), `default_config_test.ts` (only kept functions:
       `hasOwnDevcontainerConfig`, `substituteVars`, `materializeDefaultConfig`, remoteEnv read).
-- [ ] Delete the obsolete fence-based tool: `devc/cli.ts`, `devc/config.ts`, `devc/scan.ts`,
+- [x] Delete the obsolete fence-based tool: `devc/cli.ts`, `devc/config.ts`, `devc/scan.ts`,
       `devc/model.ts`, `devc/workspace.ts`, `devc/devcontainer.ts`, `devc/diff.ts`, `devc/skills.ts`,
       `devc/tui/app.ts`, `devc/tui/state.ts`, `devc/tui/render.ts`, and their tests
       (`cli_test.ts`, `config_test.ts`, `model_test.ts`, `scan_test.ts`, `tui_app_test.ts`,
       `tui_keys_test.ts`, `tui_render_test.ts`, `tui_state_test.ts`, `tests/fixtures/*`).
       **Keep** `devc/jsonc_edit.ts` (+ `tests/jsonc_edit_test.ts`), `devc/tui/term.ts`,
       `devc/tui/keys.ts` (+ `tests/helpers.ts`) for later phases.
-- [ ] Update `devc/README.md` to the new command surface (or stub it and note wizard/config land
+- [x] Update `devc/README.md` to the new command surface (or stub it and note wizard/config land
       in later phases).
 
 ## Validation
 
-- [ ] `cd devc && deno task test` — all ported unit tests pass.
-- [ ] `cd devc && deno task check` — type-checks clean (update the `check` file list to the new modules).
-- [ ] `cd devc && deno task build` produces a `devc` binary that embeds `default/`
+- [x] `cd devc && deno task test` — all ported unit tests pass.
+- [x] `cd devc && deno task check` — type-checks clean (update the `check` file list to the new modules).
+- [x] `cd devc && deno task build` produces a `devc` binary that embeds `default/`
       (`./devc status /tmp` runs without a `default/` dir on disk beside it).
-- [ ] `deno run ... main.ts status .` prints `missing` in a dir with no container; exits 0.
+- [x] `deno run ... main.ts status .` prints `missing` in a dir with no container; exits 0.
 - [ ] (user) In a real repo: `devc up` builds via the bundled default and prints the running line;
       `devc status` → `running`; `devc exec -- echo hi` prints `hi`; `devc mounts` lists mounts;
       `devc stop` → `stopped`; `devc down` → `missing`. `devc up` in a git worktree mounts the
       common dir (workspace path reflects the worktree layout).
-- [ ] `grep -rniE "agent-tools|/workspaces/agent-tools" devc/` returns nothing (no reference leak).
-- [ ] `grep -rn "\.devc/devc\.json\|loadExtraConfigArgs\|--tmux\|--CC" devc/` returns nothing.
+- [x] `grep -rniE "agent-tools|/workspaces/agent-tools" devc/` returns nothing (no reference leak).
+- [x] `grep -rn "\.devc/devc\.json\|loadExtraConfigArgs\|--tmux\|--CC" devc/` returns nothing.
 
 ## Relevant Files
 

@@ -1,0 +1,76 @@
+{
+  "name": "Default",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "features": {
+    "ghcr.io/devcontainers-community/features/deno:1": {},
+    "ghcr.io/devcontainers/features/go:1": { "version": "latest" },
+    "ghcr.io/devcontainers/features/node:1": {
+      "nodeGypDependencies": true,
+      "version": "latest",
+      "pnpmVersion": "none",
+      "nvmVersion": "latest"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "installTools": true,
+      "version": "3.12"
+    }
+  },
+  "remoteEnv": {
+    "LANG": "en_US.utf8",
+    "PROJECT_PATH": "${containerWorkspaceFolder}",
+    "TZ": "America/Chicago",
+    // Stop the Claude CLI from overwriting the terminal title with the current
+    // task, so the project-name title set in bashrc-additions.sh persists.
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
+  },
+  "postCreateCommand": "/usr/local/share/devc/post-create.sh",
+  "mounts": [
+    // ~/.claude folder
+    "type=volume,source=claude-code-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
+    "type=bind,source=${localEnv:HOME}/.claude/CLAUDE.md,target=/home/vscode/.claude/CLAUDE.md,consistency=cached,readonly",
+    "type=bind,source=${localEnv:HOME}/.claude/settings.devc.json,target=/home/vscode/.claude/settings.json,consistency=cached,readonly",
+    "type=bind,source=${localEnv:HOME}/.claude/statusline.sh,target=/home/vscode/.claude/statusline.sh,consistency=cached,readonly",
+    "type=bind,source=${localEnv:HOME}/.agents/skills,target=/home/vscode/.claude/skills,consistency=cached",
+    // "type=bind,source=${localEnv:HOME}/.agents/skills,target=${containerWorkspaceFolder}/.claude/skills,consistency=cached,readonly",
+
+    // ~/.claude.json (auth) persisted per-workspace via volume; see post-create.sh for symlink setup
+    "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/home/vscode/.claude-json-vol",
+
+    "type=volume,source=go-cache-${localWorkspaceFolderBasename},target=/home/vscode/go/pkg",
+    "type=volume,source=go-build-cache-${localWorkspaceFolderBasename},target=/root/.cache/go-build",
+    "type=volume,source=node-modules-${localWorkspaceFolderBasename},target=${containerWorkspaceFolder}/node_modules"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "denoland.vscode-deno",
+        "golang.go",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "claudeCode.allowDangerouslySkipPermissions": true,
+        "claudeCode.initialPermissionMode": "bypassPermissions",
+        "chat.agent.maxRequests": 50,
+        "chat.tools.terminal.autoApprove": { "/.*/": true },
+        "chat.tools.terminal.ignoreDefaultAutoApproveRules": true,
+        "editor.formatOnSave": true,
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "workbench.colorCustomizations": {
+          "statusBar.background": "#7c3aed",
+          "statusBar.foreground": "#ffffff",
+          "titleBar.activeBackground": "#7c3aed",
+          "titleBar.activeForeground": "#ffffff",
+          "titleBar.inactiveBackground": "#5b21b6",
+          "titleBar.inactiveForeground": "#ffffff",
+          "chat.requestBorder": "#e21010",
+          "statusBarItem.remoteBackground": "#e21010"
+        }
+      }
+    }
+  }
+}

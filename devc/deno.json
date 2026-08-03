@@ -1,9 +1,9 @@
 {
   "tasks": {
-    "run": "deno run --allow-read --allow-write --allow-env main.ts",
-    "check": "deno check main.ts cli.ts config.ts scan.ts model.ts jsonc_edit.ts devcontainer.ts workspace.ts skills.ts diff.ts tui/state.ts tui/render.ts tui/keys.ts tui/term.ts tui/app.ts",
-    "test": "deno test --allow-read --allow-write --allow-env",
-    "build": "deno compile --allow-read --allow-write --allow-env --output devc main.ts"
+    "run": "deno run --allow-run=docker,devcontainer,git,tmux,tty --allow-read --allow-write --allow-env main.ts",
+    "check": "deno check main.ts args.ts container.ts default_config.ts paths.ts jsonc_edit.ts tui/keys.ts tui/term.ts",
+    "test": "deno test --allow-run=git --allow-read --allow-write --allow-env",
+    "build": "deno compile --allow-run=docker,devcontainer,git,tmux,tty --allow-read --allow-write --allow-env --include default --output devc main.ts"
   },
   "imports": {
     "jsr:@std/path": "jsr:@std/path@^1",
