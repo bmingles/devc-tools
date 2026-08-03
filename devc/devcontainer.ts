@@ -1,6 +1,6 @@
 // The devcontainer file: read, create-on-demand, and rewrite its two fences in `mounts`.
 //
-// devc-tui owns `devc-tui:projects` and `devc-tui:skills` and nothing else in the file. A
+// devc owns `devc:projects` and `devc:skills` and nothing else in the file. A
 // missing devcontainer.json is a hard error unless the caller asked for `--create`, because
 // silently inventing an image for someone's project is not a favor.
 
@@ -25,15 +25,15 @@ export async function readFileOrNull(path: string): Promise<string | null> {
 /** Starter devcontainer.json, with both fences already in place. */
 export function devcontainerTemplate(workspaceDir: string): string {
   return `{
-  // Created by devc-tui. Set the image/build and everything else to taste;
-  // devc-tui only ever rewrites the fenced blocks below.
+  // Created by devc. Set the image/build and everything else to taste;
+  // devc only ever rewrites the fenced blocks below.
   "name": ${JSON.stringify(basename(workspaceDir))},
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "mounts": [
-    // >>> devc-tui:projects (managed - do not edit)
-    // <<< devc-tui:projects
-    // >>> devc-tui:skills (managed - do not edit)
-    // <<< devc-tui:skills
+    // >>> devc:projects (managed - do not edit)
+    // <<< devc:projects
+    // >>> devc:skills (managed - do not edit)
+    // <<< devc:skills
   ]
 }
 `;
@@ -59,7 +59,7 @@ export function applyDevcontainer(
 /** Turn a fence error into the user-facing message naming the file. */
 export function wrapFenceError(e: unknown, path: string): unknown {
   if (e instanceof UnterminatedFenceError) {
-    return new RuntimeError(`devc-tui: unterminated devc-tui:${e.fenceId} fence in ${path}`);
+    return new RuntimeError(`devc: unterminated devc:${e.fenceId} fence in ${path}`);
   }
   return e;
 }

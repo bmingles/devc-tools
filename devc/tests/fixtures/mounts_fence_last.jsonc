@@ -1,9 +1,9 @@
 {
   "mounts": [
     "type=bind,source=/host/keep,target=/container/keep",
-    // >>> devc-tui:projects (managed - do not edit)
+    // >>> devc:projects (managed - do not edit)
     "type=bind,source=/host/a,target=/workspaces/a",
     "type=bind,source=/host/b,target=/workspaces/b"
-    // <<< devc-tui:projects
+    // <<< devc:projects
   ]
 }

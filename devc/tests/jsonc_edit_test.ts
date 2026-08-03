@@ -1,4 +1,4 @@
-// The risky part: editing JSONC files devc-tui does not own. Every case here asserts both
+// The risky part: editing JSONC files devc does not own. Every case here asserts both
 // that our fence changed and that the user's bytes did not.
 
 import { assert, assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@^1";
@@ -35,13 +35,13 @@ Deno.test("no-fence insert: both fences are appended, user elements untouched", 
       `    {\n      "type": "bind",\n      "source": "/host/${n}",\n      "target": "/container/${n}"\n    }`,
     );
   }
-  assertStringIncludes(out, "  // >>> devc-tui:projects (managed - do not edit)");
-  assertStringIncludes(out, "  // <<< devc-tui:skills");
+  assertStringIncludes(out, "  // >>> devc:projects (managed - do not edit)");
+  assertStringIncludes(out, "  // <<< devc:skills");
 
   // Fences land in projects-then-skills order, inside the array.
   const span = findArraySpan(out, "mounts")!;
-  assert(out.indexOf("devc-tui:projects") < out.indexOf("devc-tui:skills"));
-  assert(out.indexOf("devc-tui:skills") < span.close);
+  assert(out.indexOf("devc:projects") < out.indexOf("devc:skills"));
+  assert(out.indexOf("devc:skills") < span.close);
 
   // Still strict JSON once comments are stripped, and no elements were added.
   const parsed = parseJsonc(out) as { mounts: unknown[]; remoteUser: string };

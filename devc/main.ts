@@ -1,16 +1,16 @@
-// devc-tui — selectively bind-mount sibling projects (and agent skill folders) into the
+// devc — selectively bind-mount sibling projects (and agent skill folders) into the
 // current devcontainer, and mirror the selection into the VS Code workspace file.
 //
 // Run it from the host, in the repo you want to configure:
 //
-//   devc-tui list                                   what's under the configured root
-//   devc-tui select projectb.worktrees/some-other    mount it + add it to the workspace
-//   devc-tui deselect projectb.worktrees/some-other  take it back out
-//   devc-tui status                                  where the files are, what's in the fences
+//   devc list                                   what's under the configured root
+//   devc select projectb.worktrees/some-other    mount it + add it to the workspace
+//   devc deselect projectb.worktrees/some-other  take it back out
+//   devc status                                  where the files are, what's in the fences
 //
-// devc-tui only ever rewrites its three comment-fenced blocks:
-// `devc-tui:projects` / `devc-tui:skills` in the devcontainer's `mounts`, and
-// `devc-tui:folders` in the workspace file's `folders`. Everything else in those files —
+// devc only ever rewrites its three comment-fenced blocks:
+// `devc:projects` / `devc:skills` in the devcontainer's `mounts`, and
+// `devc:folders` in the workspace file's `folders`. Everything else in those files —
 // comments, formatting, keys it knows nothing about — is preserved byte-for-byte.
 //
 // This file owns argv only: the subcommands live in cli.ts and the interactive tree — what
@@ -34,7 +34,7 @@ import {
 import { RuntimeError, UsageError } from "./config.ts";
 import { startTui } from "./tui/app.ts";
 
-export const USAGE = `usage: devc-tui [command] [options]
+export const USAGE = `usage: devc [command] [options]
 
 commands:
   (none)                      open the interactive project tree
@@ -93,7 +93,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const valueKey = VALUE_FLAGS[arg];
     if (valueKey !== undefined) {
       const value = argv[++i];
-      if (value === undefined) throw new UsageError(`devc-tui: ${arg} needs a value`);
+      if (value === undefined) throw new UsageError(`devc: ${arg} needs a value`);
       (opts[valueKey] as string) = value;
       continue;
     }
@@ -108,7 +108,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
     if (arg.startsWith("-") && arg !== "-") {
-      throw new UsageError(`devc-tui: unknown option ${JSON.stringify(arg)}`);
+      throw new UsageError(`devc: unknown option ${JSON.stringify(arg)}`);
     }
     args.push(arg);
   }
@@ -172,7 +172,7 @@ async function dispatch(args: string[], opts: Options, io: Io): Promise<number> 
     case "config":
       return await dispatchConfig(rest, opts, io);
     default:
-      io.err(`devc-tui: unknown command ${JSON.stringify(sub)}`);
+      io.err(`devc: unknown command ${JSON.stringify(sub)}`);
       io.err(USAGE);
       return 2;
   }
@@ -189,7 +189,7 @@ async function dispatchSkills(args: string[], opts: Options, io: Io): Promise<nu
     case "disable":
       return await cmdSkills(opts, io, rest, false);
     default:
-      io.err(`devc-tui: unknown skills subcommand ${JSON.stringify(sub)}`);
+      io.err(`devc: unknown skills subcommand ${JSON.stringify(sub)}`);
       io.err(USAGE);
       return 2;
   }
@@ -206,7 +206,7 @@ async function dispatchConfig(args: string[], opts: Options, io: Io): Promise<nu
     case "init":
       return await cmdConfigInit(opts, io);
     default:
-      io.err(`devc-tui: unknown config subcommand ${JSON.stringify(sub)}`);
+      io.err(`devc: unknown config subcommand ${JSON.stringify(sub)}`);
       io.err(USAGE);
       return 2;
   }
@@ -222,11 +222,11 @@ function fail(e: unknown, io: Io): number {
     io.err(e.message);
     return 1;
   }
-  if (e instanceof Error && e.message.startsWith("devc-tui:")) {
+  if (e instanceof Error && e.message.startsWith("devc:")) {
     io.err(e.message);
     return 1;
   }
-  io.err("devc-tui: unexpected failure");
+  io.err("devc: unexpected failure");
   io.err(String(e instanceof Error ? (e.stack ?? e.message) : e));
   return 1;
 }

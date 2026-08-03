@@ -61,7 +61,7 @@ async function setup(
   });
 }
 
-/** Invoke devc-tui with the env's workspace dir and config, capturing output. */
+/** Invoke devc with the env's workspace dir and config, capturing output. */
 async function cli(env: Env, ...args: string[]) {
   const cap = capture();
   const code = await run(
@@ -98,7 +98,7 @@ Deno.test("cli: select writes both files, apply is idempotent, deselect restores
       `,source=${join(env.root, "projectb.worktrees", "some-other")},target=/workspaces/projectb.worktrees/some-other"`,
     );
     // The user's own mount, comments and unrelated keys are all still there.
-    assertStringIncludes(dev, "    // my ssh agent, nothing to do with devc-tui\n");
+    assertStringIncludes(dev, "    // my ssh agent, nothing to do with devc\n");
     assertStringIncludes(dev, '"type=bind,source=/run/host-services/ssh-auth.sock,target=/ssh-agent"');
     const parsed = parseJsonc(dev) as { mounts: string[]; remoteUser: string };
     assertEquals(parsed.mounts.length, 3);
@@ -181,7 +181,7 @@ Deno.test("cli: skills enable touches only the skills fence", async () => {
 
     const unknown = await cli(env, "skills", "enable", "nope");
     assertEquals(unknown.code, 2);
-    assertStringIncludes(unknown.stderr, 'devc-tui: unknown skill "nope"');
+    assertStringIncludes(unknown.stderr, 'devc: unknown skill "nope"');
   });
 });
 
@@ -206,7 +206,7 @@ Deno.test("cli: unknown id exits 2 and writes nothing", async () => {
     const dev = await Deno.readTextFile(env.devcontainer);
     const res = await cli(env, "select", "nope");
     assertEquals(res.code, 2);
-    assertStringIncludes(res.stderr, 'devc-tui: unknown project id "nope"');
+    assertStringIncludes(res.stderr, 'devc: unknown project id "nope"');
     assertEquals(await Deno.readTextFile(env.devcontainer), dev);
     assertEquals(await readOrNull(env.workspaceFile), null);
 
@@ -223,7 +223,7 @@ Deno.test("cli: a missing devcontainer needs --create", async () => {
     assertEquals(bare.code, 1);
     assertStringIncludes(
       bare.stderr,
-      `devc-tui: ${env.devcontainer} does not exist (pass --create to create it)`,
+      `devc: ${env.devcontainer} does not exist (pass --create to create it)`,
     );
     assertEquals(await readOrNull(env.devcontainer), null);
     assertEquals(await readOrNull(env.workspaceFile), null);
@@ -246,7 +246,7 @@ Deno.test("cli: an unterminated fence is refused before anything is written", as
     assertEquals(res.code, 1);
     assertStringIncludes(
       res.stderr,
-      `devc-tui: unterminated devc-tui:projects fence in ${env.devcontainer}`,
+      `devc: unterminated devc:projects fence in ${env.devcontainer}`,
     );
     assertEquals(await Deno.readTextFile(env.devcontainer), broken);
     assertEquals(await readOrNull(env.workspaceFile), null);
@@ -287,7 +287,7 @@ Deno.test("cli: status reports the resolved paths and fence counts", async () =>
     assertStringIncludes(text.stdout, env.root);
     assertStringIncludes(text.stdout, `${env.devcontainer} (exists)`);
     assertStringIncludes(text.stdout, `${env.workspaceFile} (exists)`);
-    assertStringIncludes(text.stdout, "devc-tui:projects");
+    assertStringIncludes(text.stdout, "devc:projects");
 
     const json = await cli(env, "status", "--json");
     const parsed = JSON.parse(json.stdout) as {
@@ -340,7 +340,7 @@ Deno.test("cli: root must be configured, and config subcommands work without it"
       await run(["list", "--config", cfgPath, "--workspace-dir", tmp], listed.io),
       2,
     );
-    assertStringIncludes(listed.stderr(), 'devc-tui: config "root" is not set');
+    assertStringIncludes(listed.stderr(), 'devc: config "root" is not set');
 
     // --root fills it in for one invocation.
     const withRoot = capture();
@@ -378,15 +378,15 @@ Deno.test("cli: no args opens the interactive tree; --help exits 0", async () =>
 
   const help = capture();
   assertEquals(await run(["--help"], help.io), 0);
-  assertStringIncludes(help.stdout(), "usage: devc-tui");
+  assertStringIncludes(help.stdout(), "usage: devc");
 
   const bad = capture();
   assertEquals(await run(["nope"], bad.io), 2);
-  assertStringIncludes(bad.stderr(), 'devc-tui: unknown command "nope"');
+  assertStringIncludes(bad.stderr(), 'devc: unknown command "nope"');
 
   const badFlag = capture();
   assertEquals(await run(["list", "--nope"], badFlag.io), 2);
-  assertStringIncludes(badFlag.stderr(), 'devc-tui: unknown option "--nope"');
+  assertStringIncludes(badFlag.stderr(), 'devc: unknown option "--nope"');
 });
 
 Deno.test("cli: the workspace dir may be the configured root itself", async () => {

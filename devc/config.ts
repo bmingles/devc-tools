@@ -1,6 +1,6 @@
 // Config file handling and target-file resolution.
 //
-// devc-tui is a general-purpose tool: the "workspace dir" is whatever repo the user ran it
+// devc is a general-purpose tool: the "workspace dir" is whatever repo the user ran it
 // in, and `root` is an unrelated host directory full of projects. Nothing here may assume
 // the two are related — the workspace dir may sit inside `root`, outside it, or *be* it.
 
@@ -86,7 +86,7 @@ function envOrNull(name: string): string | null {
 export function expandPath(value: string, key: string, cfgPath: string): string {
   const fail = (name: string): never => {
     throw new UsageError(
-      `devc-tui: config ${JSON.stringify(key)}: $${name} is not set (${displayPath(cfgPath)})`,
+      `devc: config ${JSON.stringify(key)}: $${name} is not set (${displayPath(cfgPath)})`,
     );
   };
 
@@ -122,14 +122,14 @@ export async function loadConfig(override?: string): Promise<LoadedConfig> {
     const text = await Deno.readTextFile(path);
     const parsed = JSON.parse(text);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      throw new UsageError(`devc-tui: ${displayPath(path)} is not a JSON object`);
+      throw new UsageError(`devc: ${displayPath(path)} is not a JSON object`);
     }
     raw = parsed as Record<string, unknown>;
   } catch (e) {
     if (e instanceof UsageError) throw e;
     if (!(e instanceof Deno.errors.NotFound)) {
       if (e instanceof SyntaxError) {
-        throw new UsageError(`devc-tui: ${displayPath(path)} is not valid JSON: ${e.message}`);
+        throw new UsageError(`devc: ${displayPath(path)} is not valid JSON: ${e.message}`);
       }
       throw e;
     }
@@ -210,7 +210,7 @@ export function displayPath(path: string): string {
 /** `root` is required by anything that scans. Fail with the exact remedy. */
 export function requireRoot(cfg: Config, path: string): string {
   if (cfg.root.trim() === "") {
-    throw new UsageError(`devc-tui: config "root" is not set (edit ${displayPath(path)})`);
+    throw new UsageError(`devc: config "root" is not set (edit ${displayPath(path)})`);
   }
   return resolve(cfg.root);
 }
@@ -218,7 +218,7 @@ export function requireRoot(cfg: Config, path: string): string {
 /** `skillsRoot` is required by the skills subcommands. */
 export function requireSkillsRoot(cfg: Config, path: string): string {
   if (cfg.skillsRoot.trim() === "") {
-    throw new UsageError(`devc-tui: config "skillsRoot" is not set (edit ${displayPath(path)})`);
+    throw new UsageError(`devc: config "skillsRoot" is not set (edit ${displayPath(path)})`);
   }
   return resolve(cfg.skillsRoot);
 }
@@ -275,12 +275,12 @@ export async function resolveTargets(
     }
   } catch (e) {
     if (!(e instanceof Deno.errors.NotFound)) throw e;
-    throw new UsageError(`devc-tui: workspace dir ${dir} does not exist`);
+    throw new UsageError(`devc: workspace dir ${dir} does not exist`);
   }
   found.sort();
   if (found.length > 1) {
     throw new UsageError(
-      `devc-tui: ${dir} has ${found.length} *.code-workspace files ` +
+      `devc: ${dir} has ${found.length} *.code-workspace files ` +
         `(${found.join(", ")}); set "workspaceFile" in ${displayPath(cfgPath)}`,
     );
   }

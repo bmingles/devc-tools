@@ -1,10 +1,10 @@
 // Text surgery on JSONC files we do not own (devcontainer.json, *.code-workspace).
 //
 // These files are hand-maintained: they carry comments, deliberate formatting, and keys
-// devc-tui knows nothing about. So we never parse-and-reserialize — every edit is a
+// devc knows nothing about. So we never parse-and-reserialize — every edit is a
 // byte-level splice guided by a small scanner that understands string literals (with
 // escapes), `//` and `/* */` comments, and bracket depth. Anything outside the fenced
-// block devc-tui owns comes out of a write byte-for-byte identical.
+// block devc owns comes out of a write byte-for-byte identical.
 //
 // The one thing we normalize globally (per array) is commas: a fence can land first,
 // last, or between user elements, and JSONC tolerates a trailing comma while strict
@@ -40,22 +40,22 @@ export interface FenceSpan {
 /** An open fence with no close after it — the file is not safe to rewrite. */
 export class UnterminatedFenceError extends Error {
   constructor(public readonly fenceId: string) {
-    super(`unterminated devc-tui:${fenceId} fence`);
+    super(`unterminated devc:${fenceId} fence`);
     this.name = "UnterminatedFenceError";
   }
 }
 
-/** Full fence id, e.g. `devc-tui:projects`. */
+/** Full fence id, e.g. `devc:projects`. */
 export function fenceId(id: string): string {
-  return `devc-tui:${id}`;
+  return `devc:${id}`;
 }
 
 function openFenceRe(id: string): RegExp {
-  return new RegExp(`^[ \\t]*//[ \\t]*>>>[ \\t]*devc-tui:${escapeRe(id)}\\b`, "m");
+  return new RegExp(`^[ \\t]*//[ \\t]*>>>[ \\t]*devc:${escapeRe(id)}\\b`, "m");
 }
 
 function closeFenceRe(id: string): RegExp {
-  return new RegExp(`^[ \\t]*//[ \\t]*<<<[ \\t]*devc-tui:${escapeRe(id)}[ \\t]*$`, "m");
+  return new RegExp(`^[ \\t]*//[ \\t]*<<<[ \\t]*devc:${escapeRe(id)}[ \\t]*$`, "m");
 }
 
 function escapeRe(s: string): string {
@@ -408,7 +408,7 @@ export function ensureArray(src: string, key: string, indent = "  "): string {
   const kinds = classify(src);
   const brace = nextCode(kinds, 0, src.length);
   if (src[brace] !== "{") {
-    throw new Error(`devc-tui: not a JSON object (cannot add "${key}")`);
+    throw new Error(`devc: not a JSON object (cannot add "${key}")`);
   }
   const end = matchBracket(src, kinds, brace);
   const inner = end === -1 ? src.length : end;
@@ -428,14 +428,14 @@ export function writeBlocks(
 ): string {
   let out = ensureArray(src, key);
   const span0 = findArraySpan(out, key);
-  if (span0 === null) throw new Error(`devc-tui: could not locate the "${key}" array`);
+  if (span0 === null) throw new Error(`devc: could not locate the "${key}" array`);
   const indent = elementIndent(out, span0);
   for (const block of blocks) {
     const span = findArraySpan(out, key);
-    if (span === null) throw new Error(`devc-tui: could not locate the "${key}" array`);
+    if (span === null) throw new Error(`devc: could not locate the "${key}" array`);
     out = spliceBlock(out, span, block.id, block.lines, indent);
   }
   const span = findArraySpan(out, key);
-  if (span === null) throw new Error(`devc-tui: could not locate the "${key}" array`);
+  if (span === null) throw new Error(`devc: could not locate the "${key}" array`);
   return normalizeArrayCommas(out, span);
 }

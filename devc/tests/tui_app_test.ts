@@ -238,7 +238,7 @@ Deno.test("app: a missing devcontainer asks before creating it", async () => {
     assertEquals(created.code, 0, created.stderr);
     const dev = await Deno.readTextFile(env.devcontainer);
     assertEquals(fenceEntries(dev, "mounts", "projects").length, 1);
-    assertStringIncludes(dev, "Created by devc-tui");
+    assertStringIncludes(dev, "Created by devc");
   });
 });
 

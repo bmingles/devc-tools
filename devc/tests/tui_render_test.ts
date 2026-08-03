@@ -73,7 +73,7 @@ Deno.test("render: the header, message and keys lines say what they should", asy
     const size = { columns: 80, rows: 24 };
     const lines = render(setSize(state, size), size).map(stripAnsi);
     // 2 mounts (the worktree plus its auto primary), 1 folder, 1 skill.
-    assertStringIncludes(lines[0], "devc-tui");
+    assertStringIncludes(lines[0], "devc");
     assertStringIncludes(lines[0], "-> /workspaces");
     assertStringIncludes(lines[0], "2 mounts  1 folders  1 skills");
     assert(!lines[0].includes("*unsaved"));

@@ -164,12 +164,12 @@ export function derive(tree: Tree, selection: Set<string>, cfg: Config): Derived
   return { mounts, folders, auto, warnings };
 }
 
-/** Mount entries for the `devc-tui:projects` fence. */
+/** Mount entries for the `devc:projects` fence. */
 export function deriveMounts(tree: Tree, selection: Set<string>, cfg: Config): Mount[] {
   return derive(tree, selection, cfg).mounts;
 }
 
-/** Folder entries for the `devc-tui:folders` fence. */
+/** Folder entries for the `devc:folders` fence. */
 export function deriveFolders(tree: Tree, selection: Set<string>, cfg: Config): Folder[] {
   return derive(tree, selection, cfg).folders;
 }
@@ -179,7 +179,7 @@ export function mountLines(mounts: Mount[]): string[] {
   return mounts.map((m) => JSON.stringify(mountString(mountSourceFor(m.source), m.target)));
 }
 
-/** JSONC lines for the `devc-tui:skills` fence. */
+/** JSONC lines for the `devc:skills` fence. */
 export function skillMountLines(
   cfg: Config,
   skills: Array<{ name: string; path: string }>,
@@ -189,7 +189,7 @@ export function skillMountLines(
   );
 }
 
-/** JSONC lines for the `devc-tui:folders` fence. */
+/** JSONC lines for the `devc:folders` fence. */
 export function folderLines(folders: Folder[]): string[] {
   return folders.map((f) =>
     `{ "path": ${JSON.stringify(f.path)}, "name": ${JSON.stringify(f.name)} }`
@@ -207,9 +207,9 @@ export interface ReadSelection {
 /**
  * Recover the explicit selection from the files.
  *
- * The `devc-tui:folders` fence is the source of truth, since it holds exactly the explicit
+ * The `devc:folders` fence is the source of truth, since it holds exactly the explicit
  * picks. When the workspace file (or its fence) is absent but the devcontainer's
- * `devc-tui:projects` fence is not, every project entry there is treated as explicit —
+ * `devc:projects` fence is not, every project entry there is treated as explicit —
  * otherwise a first run against a devcontainer-only setup would silently drop mounts.
  */
 export function readSelection(

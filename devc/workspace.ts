@@ -1,10 +1,10 @@
-// The `.code-workspace` file: read, create-on-demand, and rewrite the `devc-tui:folders`
+// The `.code-workspace` file: read, create-on-demand, and rewrite the `devc:folders`
 // fence in `folders`.
 //
 // Unlike the devcontainer file this one is auto-created when missing — it holds nothing but
 // a folder list, so there is nothing to get wrong. The `{ "path": "." }` entry deliberately
 // sits *outside* the fence: the current workspace dir is already the workspace root, so
-// devc-tui must never emit it as a folder.
+// devc must never emit it as a folder.
 
 import { writeBlocks } from "./jsonc_edit.ts";
 import { wrapFenceError } from "./devcontainer.ts";
@@ -15,8 +15,8 @@ const FOLDERS_KEY = "folders";
 export const WORKSPACE_TEMPLATE = `{
   "folders": [
     { "path": "." }
-    // >>> devc-tui:folders (managed - do not edit)
-    // <<< devc-tui:folders
+    // >>> devc:folders (managed - do not edit)
+    // <<< devc:folders
   ]
 }
 `;

@@ -100,7 +100,7 @@ export function render(state: UiState, size: Size): string[] {
 const HEADER_GAP = 3;
 
 /**
- * `devc-tui  <root> -> <containerRoot>` on the left, live counts on the right. The counts and
+ * `devc  <root> -> <containerRoot>` on the left, live counts on the right. The counts and
  * the unsaved marker are what a narrow terminal must keep, so the root path is shortened from
  * its head (`.../src`) and then dropped entirely before either of them gives way.
  */
@@ -109,7 +109,7 @@ function headerSegs(state: UiState, columns: number): Seg[] {
   const counts = `${d.mounts.length} mounts  ${d.folders.length} folders  ` +
     `${state.skillSelection.size} skills`;
   const dirty = isDirty(state);
-  const name = " devc-tui";
+  const name = " devc";
   const arrow = ` -> ${state.cfg.containerRoot}`;
   const candidates = dirty ? [`${counts}   *unsaved`, "*unsaved"] : [counts, ""];
 

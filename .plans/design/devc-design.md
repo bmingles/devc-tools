@@ -1,4 +1,4 @@
-# devc-tui CLI Design
+# devc CLI Design
 
 ## Project directory semantics
 
@@ -10,7 +10,7 @@ All `devc` commands operate on the **current working directory** by default. The
 
 ## How it works
 
-`devc-tui` is both a CLI and a TUI. The CLI surface area documented here is the primary interface, but some commands (starting with `config`) launch an interactive TUI wizard.
+`devc` is both a CLI and a TUI. The CLI surface area documented here is the primary interface, but some commands (starting with `config`) launch an interactive TUI wizard.
 
 The tool ships with a **default `Dockerfile` + `devcontainer.json`** bundled inside the binary/installation. All container-related CLI commands (`up`, `attach`, `exec`, etc.) use this bundled configuration by default to create or start the project container.
 
