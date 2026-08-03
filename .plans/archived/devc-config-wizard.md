@@ -87,44 +87,44 @@ path). New rows get the default container path + default read-only for that step
 
 ## Checklist
 
-- [ ] Extend `devc/tui/wizard_state.ts` with the four project steps (overview, source, skills,
+- [x] Extend `devc/tui/wizard_state.ts` with the four project steps (overview, source, skills,
       review) as additional steps after the global step; per-step mount tables with add/remove,
       container-path edit, read-only toggle; text-input + directory-picker sub-modes.
-- [ ] Extend `devc/tui/wizard_render.ts` — render mount tables, the picker, and the review preview
+- [x] Extend `devc/tui/wizard_render.ts` — render mount tables, the picker, and the review preview
       (show the two fences' would-be contents + new/update status).
-- [ ] `devc/mounts.ts` (new) — pure helpers: serialize a mount row → spec string; parse a fence
+- [x] `devc/mounts.ts` (new) — pure helpers: serialize a mount row → spec string; parse a fence
       entry → row; defaults + duplicate-target validation; `SOURCE_CONTAINER_ROOT`,
       `SKILLS_CONTAINER_ROOT` consts; host-path `${localEnv:HOME}` folding.
-- [ ] `devc/wizard_apply.ts` (new) — first-creation vs update-in-place logic over `jsonc_edit`
+- [x] `devc/wizard_apply.ts` (new) — first-creation vs update-in-place logic over `jsonc_edit`
       (`findArraySpan`, `ensureArray`, `findFence`, `parseFenceEntries`, `writeBlocks`), Dockerfile
       + `features/` copy on creation, `recentSkills` persistence.
-- [ ] `devc/config.ts` — add `recentSkills: string[]` to the schema (load/save, unknown-key
+- [x] `devc/config.ts` — add `recentSkills: string[]` to the schema (load/save, unknown-key
       preserving); raw storage + expanded accessor.
-- [ ] `devc/main.ts` — `config [PATH]` opens the full project wizard (global step first when
+- [x] `devc/main.ts` — `config [PATH]` opens the full project wizard (global step first when
       config missing + TTY). Resolve base per precedence.
-- [ ] `devc/default_config.ts` — expose a helper returning the bundled default `devcontainer.json`
+- [x] `devc/default_config.ts` — expose a helper returning the bundled default `devcontainer.json`
       text + `Dockerfile` bytes + `features/` dir URL for the wizard (reads embedded assets).
-- [ ] Tests: `devc/tests/mounts_row_test.ts` (serialize/parse round-trip, home folding, defaults,
+- [x] Tests: `devc/tests/mounts_row_test.ts` (serialize/parse round-trip, home folding, defaults,
       dup rejection); `devc/tests/wizard_apply_test.ts` (first-creation inserts populated fences +
       copies Dockerfile/features; update rewrites only fences and preserves infra + a hand-added
       mount + a comment byte-for-byte; reconfigure recovers selection from fences; remembered-list
       seeding for a new project); `devc/tests/wizard_project_state_test.ts` (scripted key flows:
       add/remove/toggle/dup-reject/apply/cancel).
-- [ ] `devc/deno.json` — add new modules to `check`.
+- [x] `devc/deno.json` — add new modules to `check`.
 
 ## Validation
 
-- [ ] `cd devc && deno task test` — all wizard/mounts/apply tests pass.
-- [ ] `cd devc && deno task check` clean.
-- [ ] First-creation test: bundled default → `.devcontainer/devcontainer.json` contains both fences
+- [x] `cd devc && deno task test` — all wizard/mounts/apply tests pass.
+- [x] `cd devc && deno task check` clean.
+- [x] First-creation test: bundled default → `.devcontainer/devcontainer.json` contains both fences
       populated with the configured mounts, infra mounts intact, `Dockerfile` + `features/devc/`
       copied.
-- [ ] Idempotence: apply the same selection twice → the second write is byte-identical.
-- [ ] Preservation: hand-add a mount and a comment outside the fences, reconfigure + apply → those
+- [x] Idempotence: apply the same selection twice → the second write is byte-identical.
+- [x] Preservation: hand-add a mount and a comment outside the fences, reconfigure + apply → those
       survive byte-for-byte and infra mounts are **not** re-asserted after being removed by hand.
-- [ ] Remembered list: apply skills `[A,B]` in project 1; a fresh project's Skills step is
+- [x] Remembered list: apply skills `[A,B]` in project 1; a fresh project's Skills step is
       pre-seeded with `[A,B]` (minus any whose host path no longer exists); source starts empty.
-- [ ] Dup rejection: adding a second mount with an existing container `target` is refused.
+- [x] Dup rejection: adding a second mount with an existing container `target` is refused.
 - [ ] (user) `devc config` in a real repo produces a `.devcontainer/` that `devc up` builds, with
       the selected source folders at `/workspaces/<name>` and skills at `~/.claude/skills/<name>`,
       discovered by the in-container agent.

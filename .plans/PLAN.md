@@ -4,10 +4,9 @@
 
 ### Pending
 
-- [devc-config-wizard](devc-config-wizard.md) — The four-step `devc config` project wizard writing `.devcontainer/` via two comment-fenced mount blocks (`devc:source`/`devc:skills`) over the kept `jsonc_edit.ts`; opt-in per-folder skills with a remembered last-selection seed.
-
 ### Completed
 
+- [devc-config-wizard](archived/devc-config-wizard.md) — The four-step `devc config` project wizard writing `.devcontainer/` via two comment-fenced mount blocks (`devc:source`/`devc:skills`) over the kept `jsonc_edit.ts`; opt-in per-folder skills with a remembered last-selection seed.
 - [devc-global-config](archived/devc-global-config.md) — Global user config (`codeRoots`/`skillsRoots` at `~/.config/devc-tui/config.json`), first-run flow, and the reusable step-based wizard TUI shell (reusing `tui/term.ts`+`tui/keys.ts`) with the Global config step.
 - [devc-container-feature](archived/devc-container-feature.md) — Repackage the baseline setup (Claude CLI, `.claude` volume/symlink, shell additions) as a custom devcontainer Feature so a project's own top-level `postCreateCommand` composes instead of clobbering it; make skills opt-in in the zero-config default.
 - [devc-lifecycle-core](archived/devc-lifecycle-core.md) — Replace the fence-based tool with the container-lifecycle CLI (`up`/`attach`/`claude`/`exec`/`mounts`/`stop`/`down`/`status`) + bundled default, ported from the reference `@devcontainers/cli`+`docker` implementation (tmux-attach and `.devc` overlay dropped).
@@ -33,4 +32,4 @@
 | devc lifecycle core — container commands + bundled default (ported) | [devc-lifecycle-core](archived/devc-lifecycle-core.md) | complete |
 | devc baseline as a devcontainer Feature — composable postCreate | [devc-container-feature](archived/devc-container-feature.md) | complete |
 | devc global config + wizard TUI foundation | [devc-global-config](archived/devc-global-config.md) | complete |
-| devc config wizard — project `.devcontainer/` via managed fences | [devc-config-wizard](devc-config-wizard.md) | |
+| devc config wizard — project `.devcontainer/` via managed fences | [devc-config-wizard](archived/devc-config-wizard.md) | complete |

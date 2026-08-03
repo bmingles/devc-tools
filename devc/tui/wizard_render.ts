@@ -10,7 +10,13 @@
 //      frame with ANSI stripped — so nothing is encoded in colour alone (the focused row keeps
 //      a literal `>` gutter as well as reverse video).
 
-import { focusSlots, type WizardState } from "./wizard_state.ts";
+import {
+  skillsRows,
+  sourceRows,
+  type Step,
+  type WizardState,
+} from "./wizard_state.ts";
+import { serializeMount } from "../mounts.ts";
 
 export interface Size {
   columns: number;
@@ -95,34 +101,113 @@ function sidebarLines(state: WizardState, height: number): string[] {
   return out;
 }
 
-function mainLines(state: WizardState, width: number, height: number): string[] {
+function mainLines(
+  state: WizardState,
+  width: number,
+  height: number,
+): string[] {
   const step = state.steps[state.step];
   const out: string[] = [sgr(` ${step.title}`, SGR.bold, state.color), ""];
-  const slots = focusSlots(step);
 
-  step.controls.forEach((control, c) => {
-    const headerFocused = focused(state, c, -1);
-    out.push(rowLine(state, `[${control.label}]`, headerFocused, 1));
-    if (control.items.length === 0) {
+  if (state.rootPicker !== null) {
+    out.push(" Choose a root:");
+    out.push("");
+    state.rootPicker.roots.forEach((root, i) => {
+      out.push(rowLine(state, `- ${root}`, i === state.rootPicker!.cursor, 1));
+    });
+  } else if (state.picker !== null) {
+    const picker = state.picker;
+    out.push(` ${picker.cwd}`);
+    out.push("");
+    out.push(
+      rowLine(state, "[select this directory]", picker.cursor === -1, 1),
+    );
+    if (picker.entries.length === 0) {
+      out.push("   " + sgr("(no subdirectories)", SGR.dim, state.color));
+    }
+    picker.entries.forEach((name, i) => {
+      out.push(rowLine(state, `- ${name}/`, picker.cursor === i, 1));
+    });
+  } else if (step.kind === "global") {
+    step.controls.forEach((control, c) => {
+      out.push(rowLine(state, `[${control.label}]`, focused(state, c, -1), 1));
+      if (control.items.length === 0) {
+        out.push("     " + sgr("(none)", SGR.dim, state.color));
+      }
+      control.items.forEach((item, i) => {
+        out.push(rowLine(state, `- ${item}`, focused(state, c, i), 3));
+      });
+      out.push("");
+    });
+  } else if (step.kind === "overview") {
+    out.push(
+      ` ${
+        step.creating ? "Creating a new" : "Updating the existing"
+      } devcontainer config:`,
+    );
+    out.push(`   ${step.basePath}`);
+    out.push("");
+    out.push(
+      " The wizard manages only the devc:source and devc:skills mount blocks;",
+    );
+    out.push(" everything else is left untouched.");
+    out.push("");
+    out.push(" Press N (or Tab) to continue.");
+  } else if (step.kind === "mounts") {
+    out.push(rowLine(state, "[+ add folder]", focused(state, 0, -1), 1));
+    if (step.rows.length === 0) {
       out.push("     " + sgr("(none)", SGR.dim, state.color));
     }
-    control.items.forEach((item, i) => {
-      out.push(rowLine(state, `- ${item}`, focused(state, c, i), 3));
+    step.rows.forEach((row, i) => {
+      const ro = row.readonly ? " (ro)" : "";
+      out.push(
+        rowLine(
+          state,
+          `- ${row.source} -> ${row.target}${ro}`,
+          focused(state, 0, i),
+          3,
+        ),
+      );
     });
-    out.push("");
-  });
+  } else if (step.kind === "review") {
+    reviewLines(state).forEach((l) => out.push(l));
+  }
 
   if (state.input !== null) {
     out.push("");
-    out.push(` add: ${state.input.value}` + sgr("_", SGR.dim, state.color));
+    const label = state.input.editRow !== undefined ? "target" : "add";
+    out.push(
+      ` ${label}: ${state.input.value}` + sgr("_", SGR.dim, state.color),
+    );
   } else if (state.message !== "") {
     out.push("");
     out.push(` ${state.message}`);
   }
 
-  void slots;
   void width;
   while (out.length < height) out.push("");
+  return out;
+}
+
+function reviewLines(state: WizardState): string[] {
+  const out: string[] = [];
+  const overview = state.steps.find((
+    s,
+  ): s is Extract<Step, { kind: "overview" }> => s.kind === "overview");
+  const status = overview?.creating ? "new" : "update";
+  out.push(` Ready to apply (${status}).`);
+  out.push("");
+  out.push(" // devc:source");
+  const src = sourceRows(state);
+  if (src.length === 0) out.push("   " + sgr("(empty)", SGR.dim, state.color));
+  for (const r of src) out.push(`   "${serializeMount(r)}"`);
+  out.push("");
+  out.push(" // devc:skills");
+  const sk = skillsRows(state);
+  if (sk.length === 0) out.push("   " + sgr("(empty)", SGR.dim, state.color));
+  for (const r of sk) out.push(`   "${serializeMount(r)}"`);
+  out.push("");
+  out.push(" Press A to apply.");
   return out;
 }
 
@@ -131,16 +216,32 @@ function focused(state: WizardState, control: number, item: number): boolean {
     state.focus.control === control && state.focus.item === item;
 }
 
-function rowLine(state: WizardState, text: string, isFocused: boolean, indent: number): string {
+function rowLine(
+  state: WizardState,
+  text: string,
+  isFocused: boolean,
+  indent: number,
+): string {
   const gutter = isFocused ? ">" : " ";
   const body = `${gutter}${" ".repeat(indent)}${text}`;
   return isFocused ? reverse(body, state.color) : body;
 }
 
-const FOOTER =
-  " up/down or Tab focus  Enter add  Backspace/D remove  A apply  Q quit";
-
 function footerText(state: WizardState): string {
-  if (state.input !== null) return " type a path  Enter add  Esc cancel";
-  return FOOTER;
+  if (state.input !== null) return " type a value  Enter accept  Esc cancel";
+  if (state.rootPicker !== null) {
+    return " up/down choose  Enter open  Q/Esc cancel";
+  }
+  if (state.picker !== null) {
+    return " up/down move  Enter open/select  S select dir  Q/Esc cancel";
+  }
+  const step = state.steps[state.step];
+  if (step.kind === "global") {
+    return " up/down focus  Enter add  Backspace/D remove  A next  Q quit";
+  }
+  if (step.kind === "mounts") {
+    return " up/down  A add  E target  O readonly  D remove  N next  B back  Q quit";
+  }
+  if (step.kind === "review") return " A apply  B back  Q quit";
+  return " N next  B back  Q quit";
 }

@@ -70,6 +70,40 @@ export async function materializeDefaultConfig(
 }
 
 /**
+ * The bundled default assets the `config` wizard needs: the `devcontainer.json` text (used as
+ * the base for a first-creation), the `Dockerfile` bytes (copied verbatim), and the URL of the
+ * embedded `features/` subtree (copied into the project so `"./features/devc"` resolves).
+ */
+export interface BundledDefault {
+  /** The default `devcontainer.json` source text, exactly as embedded. */
+  devcontainerJson: string;
+  /** The default `Dockerfile` bytes, exactly as embedded. */
+  dockerfile: Uint8Array;
+  /** URL of the embedded `features/` directory, for a recursive copy. */
+  featuresDirUrl: URL;
+}
+
+/** Read the embedded default assets the wizard writes on first creation. */
+export async function loadBundledDefault(): Promise<BundledDefault> {
+  const devcontainerJson = await Deno.readTextFile(
+    new URL("devcontainer.json", DEFAULT_DIR_URL),
+  );
+  const dockerfile = await Deno.readFile(
+    new URL("Dockerfile", DEFAULT_DIR_URL),
+  );
+  return {
+    devcontainerJson,
+    dockerfile,
+    featuresDirUrl: new URL("features/", DEFAULT_DIR_URL),
+  };
+}
+
+/** Recursively copy the embedded `default/features/` subtree into `destDir` (`.../features`). */
+export async function copyBundledFeatures(destDir: string): Promise<void> {
+  await copyDir(new URL("features/", DEFAULT_DIR_URL), destDir);
+}
+
+/**
  * Substitutes `${localEnv:VARNAME}` and `${containerWorkspaceFolder}` in a
  * string value. These are the only two `devcontainer.json`-style variables
  * resolved here — values passed directly to Docker (e.g. `-e`) are not

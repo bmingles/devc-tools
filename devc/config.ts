@@ -66,6 +66,8 @@ export interface GlobalConfig {
   codeRoots: string[];
   /** Raw skills-folder roots, exactly as stored. */
   skillsRoots: string[];
+  /** Raw remembered skills host paths from the last project configured, as stored. */
+  recentSkills: string[];
   /** Unknown top-level keys, preserved so a rewrite never drops user data. */
   extra: Record<string, unknown>;
   /** Absolute path of the config file (whether or not it existed). */
@@ -74,6 +76,8 @@ export interface GlobalConfig {
   codeRootsExpanded(): string[];
   /** `skillsRoots` with `~` / `$VAR` expanded. */
   skillsRootsExpanded(): string[];
+  /** `recentSkills` with `~` / `$VAR` expanded. */
+  recentSkillsExpanded(): string[];
 }
 
 function stringList(value: unknown): string[] {
@@ -84,21 +88,26 @@ function stringList(value: unknown): string[] {
 function makeConfig(
   codeRoots: string[],
   skillsRoots: string[],
+  recentSkills: string[],
   extra: Record<string, unknown>,
   path: string,
 ): GlobalConfig {
   return {
     codeRoots,
     skillsRoots,
+    recentSkills,
     extra,
     path,
     codeRootsExpanded: () => codeRoots.map(expandPath),
     skillsRootsExpanded: () => skillsRoots.map(expandPath),
+    recentSkillsExpanded: () => recentSkills.map(expandPath),
   };
 }
 
 /** True when the global config file exists. */
-export async function globalConfigExists(path: string = GLOBAL_CONFIG_PATH): Promise<boolean> {
+export async function globalConfigExists(
+  path: string = GLOBAL_CONFIG_PATH,
+): Promise<boolean> {
   try {
     await Deno.stat(path);
     return true;
@@ -120,7 +129,9 @@ export async function loadGlobalConfig(
   try {
     const text = await Deno.readTextFile(path);
     const parsed = JSON.parse(text);
-    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+    if (
+      typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ) {
       raw = parsed as Record<string, unknown>;
     }
   } catch {
@@ -130,6 +141,7 @@ export async function loadGlobalConfig(
   const extra: Record<string, unknown> = {};
   let codeRoots: string[] = [];
   let skillsRoots: string[] = [];
+  let recentSkills: string[] = [];
   for (const [k, v] of Object.entries(raw)) {
     switch (k) {
       case "codeRoots":
@@ -138,11 +150,14 @@ export async function loadGlobalConfig(
       case "skillsRoots":
         skillsRoots = stringList(v);
         break;
+      case "recentSkills":
+        recentSkills = stringList(v);
+        break;
       default:
         extra[k] = v;
     }
   }
-  return makeConfig(codeRoots, skillsRoots, extra, path);
+  return makeConfig(codeRoots, skillsRoots, recentSkills, extra, path);
 }
 
 /**
@@ -159,6 +174,7 @@ export async function saveGlobalConfig(cfg: GlobalConfig): Promise<void> {
   const out = {
     codeRoots: cfg.codeRoots,
     skillsRoots: cfg.skillsRoots,
+    recentSkills: cfg.recentSkills,
     ...cfg.extra,
   };
   await Deno.writeTextFile(cfg.path, JSON.stringify(out, null, 2) + "\n");
@@ -170,6 +186,13 @@ export function makeGlobalConfig(
   skillsRoots: string[],
   path: string = GLOBAL_CONFIG_PATH,
   extra: Record<string, unknown> = {},
+  recentSkills: string[] = [],
 ): GlobalConfig {
-  return makeConfig([...codeRoots], [...skillsRoots], extra, path);
+  return makeConfig(
+    [...codeRoots],
+    [...skillsRoots],
+    [...recentSkills],
+    extra,
+    path,
+  );
 }
