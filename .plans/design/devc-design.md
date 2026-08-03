@@ -16,6 +16,22 @@ The tool ships with a **default `Dockerfile` + `devcontainer.json`** bundled ins
 
 When a user wants to customize the container for a particular project, they run `devc config`. This opens a TUI that edits a project-specific `.devcontainer/devcontainer.json` and `.devcontainer/Dockerfile`, which are then saved in the cwd project.
 
+### Container engine
+
+`devc` is a thin orchestrator over the [`@devcontainers/cli`](https://github.com/devcontainers/cli) and `docker`; it does not talk to the Docker daemon's build/run APIs directly.
+
+- **Create / start** (`up`, and the auto-start inside `attach`/`claude`/`exec`): shells out to `devcontainer up --workspace-folder <PATH>`. The final line of its JSON output carries the `containerId`, `remoteUser`, and `remoteWorkspaceFolder` used by the rest of the command. Build/`postCreate` output is streamed through, and dumped on failure.
+- **Identify**: a container is located by its `devcontainer.local_folder` label matching the resolved project path (via `docker ps`/`docker inspect`), so `status`, `stop`, `down`, and `mounts` never need to start anything.
+- **exec / attach**: `docker exec` (`-i` for `exec`, `-it` for `attach`), running under `remoteUser` in `remoteWorkspaceFolder`.
+- **Git worktrees**: when the project is a git worktree, `up` passes `--mount-git-worktree-common-dir` and the container-side workspace path is computed to match the CLI's own algorithm.
+- **Cosmetic reconciliation** (best-effort, never fatal): after a successful `up`, the container is renamed to a deterministic `devc-<basename>-<hash>` and its image is given a `<name>:latest` alias tag.
+
+### No hidden abstraction
+
+A guiding principle: **the config `devc` produces is a standard, spec-compliant `.devcontainer/` that a developer can read, understand, and hand-edit without learning anything `devc`-specific.** There is no overlay file, no `.devc/` layer, and no launch-time merge step — `devc config` writes a plain `devcontainer.json` + `Dockerfile`, and from that point on the project is a normal dev container that any devcontainer-aware tool (VS Code, the CLI, CI) understands. `devc`'s own baseline behavior is carried by a devcontainer **Feature** (see below), which is itself a standard, inspectable mechanism.
+
+**Managed mount blocks.** So that reconfiguring a project is surgical rather than destructive, the wizard marks the two mount groups it owns — extra source mounts and skills mounts — with comment fences inside the `mounts` array (`// devc:source … // /devc:source` and `// devc:skills … // /devc:skills`). These are ordinary JSONC comments: the devcontainer CLI ignores them and the file remains directly usable, so this is not a hidden abstraction — it is a bookmark. `devc config` only ever rewrites the contents of its two fences. Everything else — the infrastructure mounts written at first creation, the developer's own hand-edits, comments, formatting, and any keys `devc` knows nothing about — is preserved byte-for-byte and **never re-asserted**. In particular, infra mounts are written once when the file is first created; if the developer later edits or removes them, `devc` does not add them back.
+
 ### Configuration precedence
 
 When a `devc` command needs container configuration, it resolves in this order:
@@ -25,6 +41,19 @@ When a `devc` command needs container configuration, it resolves in this order:
 
 This means once a user applies a project-specific config via `devc config`, subsequent commands automatically use it.
 
+### Bundled default and the `devc` Feature
+
+`devc`'s baseline container behavior — installing the Claude CLI, preparing the isolated `~/.claude` volume (ownership + the per-workspace `~/.claude.json` symlink), and the shell additions (prompt, terminal title, `nvm` auto-use, first-prompt clear) — is **not** baked into a top-level `postCreateCommand` or into the Dockerfile. It is packaged as a **custom devcontainer Feature**.
+
+The reason: `postCreateCommand` is single-valued. If `devc` owned the top-level `postCreateCommand`, a developer who needs their own (e.g. `npm install`, a build step) would have to overwrite it and silently lose `devc`'s setup. Devcontainer **Features** each carry their own lifecycle hooks that run *in addition to* the top-level command, so packaging the baseline as a Feature lets it compose with — rather than be clobbered by — a project's own `postCreateCommand`.
+
+Consequences for the generated config:
+
+- The bundled default `devcontainer.json` references the `devc` Feature under `"features"`; the top-level `postCreateCommand` is left free for the developer.
+- The bundled `Dockerfile` stays minimal (base image + anything genuinely image-level), so it remains a clean extension point rather than a place where `devc` behavior hides.
+
+> **Open decision (implementation):** how the `devc` Feature is distributed — published to an OCI registry (`ghcr.io/...`, referenced by ref) versus materialized into the project's `.devcontainer/` as a local feature (referenced by relative path, fully self-contained, no network). This does not change the design above; it is resolved during implementation.
+
 ## Global user configuration
 
 The first time any `devc` command is executed, the tool enters a one-time **global config mode** before running the requested command. This mode prompts the user for:
@@ -32,7 +61,7 @@ The first time any `devc` command is executed, the tool enters a one-time **glob
 - **Code folder roots** — one or more directories where code projects live.
 - **Skills folder roots** — one or more directories where agent skills live.
 
-These values are saved as lists in a global config file, e.g. `~/.config/devc-tui/config.json`. Once that file exists, the global config prompt no longer runs automatically before other commands. The user can re-run it later via `devc config` (global settings step) if they want to change the root lists.
+These values are saved as lists in a global config file at `~/.config/devc-tui/config.json`. Once that file exists, the global config prompt no longer runs automatically before other commands. The user can re-run it later via `devc config` (global settings step) if they want to change the root lists.
 
 Example global config:
 
@@ -42,6 +71,10 @@ Example global config:
   "skillsRoots": ["~/.agents/skills", "~/team-skills"]
 }
 ```
+
+**Namespace vs. config directory.** The tool's namespace is `devc` (binary name, container-name prefix, Feature id, etc.). The global config directory, however, is `~/.config/devc-tui/` **for now**, to avoid colliding with any pre-existing `~/.config/devc/` from other `devc` tooling while this implementation matures. This path lives behind a single code-level constant. Once this tool is robust enough to replace existing tooling, that constant flips to `~/.config/devc/`.
+
+**No global template overrides for now.** The bundled default config is materialized directly (embedded assets → a cache dir passed to `devcontainer up --config`). There is no user-editable global template directory in this version; customization happens per-project via `devc config`.
 
 ## First-run flow
 
@@ -114,40 +147,42 @@ The current project directory is always mounted as the devcontainer workspace. T
 
 ### Step 3: Skills mounts
 
-Configure which agent skills folders are mounted into the container.
+Configure which agent skills folders are mounted into the container. Skills are **opt-in**: the bundled zero-config default mounts no skills, so a project gets skills only after they are configured here.
 
 - A mount table lists each skills mount:
   - **Host path** — absolute path on the host.
-  - **Container path** — defaults to `~/.agents/skills/<basename>`.
+  - **Container path** — defaults to `~/.claude/skills/<basename>` (where the in-container agent discovers skills).
   - **Read-only** toggle (default on, but editable).
 - **Add** prompts the user to pick one of the configured **skills folder roots**, then opens a directory picker rooted at that selection.
 - **Remove** deletes the selected mount.
 - Duplicate container paths are rejected.
+- **Remembered selection.** When the wizard applies, the resulting skills list is persisted as the user's *most recent* skills selection. A **new** project's Skills step is pre-seeded from that remembered list (entries whose host path no longer exists are dropped), so a user who mounts the same skills across projects does not re-pick them every time. Reconfiguring an existing project seeds from that project's own `devc:skills` fence instead. (Source mounts are not remembered — they are project-specific — so Step 2 starts empty for new projects.)
 
 ### Step 4: Review & apply
 
 Presents a final summary before anything is written to disk:
 
 - Path where files will be written: `PATH/.devcontainer/`
-- Whether `devcontainer.json` and/or `Dockerfile` are new or overwriting existing files
+- Whether `devcontainer.json` and/or `Dockerfile` are new or being updated in place
 - Full list of mounts
-- Preview of the `devcontainer.json` **mounts** section (the only part the wizard changes)
-- Note that the bundled/existing `Dockerfile` is copied as-is
+- Preview of the two managed fences (`devc:source`, `devc:skills`) — the only regions the wizard writes
+- Note that on first creation the base infra mounts and the `Dockerfile` are copied as-is, and are not touched again on later runs
 
 Actions: **Apply**, **Back**, **Cancel**.
 
 When the user selects **Apply**:
 
 1. Create `PATH/.devcontainer/` if it does not exist.
-2. Serialize the in-memory `devcontainer.json` (with the configured mounts) to `PATH/.devcontainer/devcontainer.json`.
-3. Write the unchanged base `Dockerfile` to `PATH/.devcontainer/Dockerfile`.
-4. Return to the shell with a success message.
+2. **First creation** (no existing `PATH/.devcontainer/devcontainer.json`): write the base `devcontainer.json` from the bundled default, with the two managed fences inserted into the `mounts` array and populated from the configured source/skills mounts. Write the base `Dockerfile` as-is.
+3. **Update in place** (file already exists): rewrite only the `devc:source` and `devc:skills` fence contents; preserve everything else byte-for-byte (infra mounts, hand-edits, comments, unknown keys). Do not rewrite the `Dockerfile`.
+4. Persist the applied skills list as the remembered selection (see Step 3).
+5. Return to the shell with a success message.
 
 If the user selects **Cancel** or quits, no files are written and the in-memory changes are discarded.
 
 ### Reconfiguring a project
 
-Running `devc config` again on a project that already has a `.devcontainer/devcontainer.json` loads that file as the base and lets the user edit the mounts. Applying overwrites the existing files with the new configuration.
+Running `devc config` again on a project that already has a `.devcontainer/devcontainer.json` reads its `devc:source` / `devc:skills` fences to recover the current selection, lets the user edit it, and on Apply rewrites only those fences. Base infra mounts and any hand-edits outside the fences are preserved and never re-asserted (see "No hidden abstraction").
 
 ## Top-level help
 
@@ -191,6 +226,8 @@ Options:
       --no-clear   Do not clear the screen before starting the TUI
   -h, --help       Print help
 ```
+
+On attach, `devc` drops into an interactive login shell in the container. It does **not** offer tmux or terminal control-mode (`--tmux` / `--CC`) attach modes — these are intentionally out of scope (see Implementation notes). The attach retains the terminal-quality behaviors described in Implementation notes (terminal identity propagation, session-distinguishing tint).
 
 ## `claude`
 
@@ -295,3 +332,26 @@ Arguments:
 Options:
   -h, --help  Print help
 ```
+
+## Implementation notes
+
+These behaviors are part of the intended implementation even though most are invisible in normal use. They are carried over from prior art and kept deliberately.
+
+**Kept — terminal quality on `attach`/`claude`:**
+
+- **Terminal identity propagation.** `docker exec -t` hardcodes `TERM=xterm` and strips the host's terminal identity. `devc` forwards `TERM`, `TERM_PROGRAM`, and `TERM_PROGRAM_VERSION` (each only when set on the host) so key handling negotiated against the outer terminal (e.g. shift+enter) keeps working inside the container.
+- **Session-distinguishing tint.** For the lifetime of an attach, the terminal is tinted so a container shell reads as visually distinct from a local one, and reset on detach.
+- **First-prompt clear.** A plain attach clears the noisy shell-init output on the first prompt (suppressible with `--no-clear`).
+
+**Kept — container lifecycle correctness:**
+
+- **Git worktree mounting** (`--mount-git-worktree-common-dir`) with a matching container-side workspace path.
+- **Deterministic container naming** (`devc-<basename>-<hash>`) and an image alias tag, reconciled best-effort after `up` and never fatal.
+
+**Dropped:**
+
+- **tmux and control-mode attach** (`--tmux`, `--CC`). The prior art supported attaching via an in-container tmux session and iTerm2/WezTerm control mode; `devc` only does a plain interactive login shell.
+
+## Self-containment
+
+`devc` is fully self-contained. At runtime it depends only on external CLIs it shells out to — `docker`, `devcontainer` (`@devcontainers/cli`), and `git` — plus its own embedded assets (the bundled default `devcontainer.json` / `Dockerfile` and the `devc` Feature). The embedded assets ship inside the binary (`deno compile --include`), so no part of the tool reaches outside the repository or the installed binary to find configuration or scripts it needs.
