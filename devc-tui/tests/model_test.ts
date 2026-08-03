@@ -11,9 +11,13 @@ import {
   deriveMounts,
   folderLines,
   mountLines,
+  mountSourceFor,
   readSelection,
+  readSkills,
+  skillMountLines,
   targetFor,
 } from "../model.ts";
+import { applyDevcontainer } from "../devcontainer.ts";
 import { applyWorkspace, WORKSPACE_TEMPLATE } from "../workspace.ts";
 import { makeExampleRoot, withTemp } from "./helpers.ts";
 
@@ -149,6 +153,61 @@ Deno.test("model: workspace folders are host paths relative to the workspace fil
       assertEquals(read.warnings, [], c.what);
     }
   });
+});
+
+Deno.test("model: mount sources under home are written as ${localEnv:HOME}", async () => {
+  await withTemp(async (home) => {
+    const root = join(home, "src");
+    await Deno.mkdir(root, { recursive: true });
+    await makeExampleRoot(root);
+    const previous = Deno.env.get("HOME");
+    try {
+      Deno.env.set("HOME", home);
+      const tree = await scanRoot(root, 3, { workspaceDir: join(home, "ws") });
+      const cfg = config(root);
+      const selection = new Set(["projecta"]);
+
+      // The emitted line is substituted...
+      assertEquals(mountLines(deriveMounts(tree, selection, cfg)), [
+        '"type=bind,source=${localEnv:HOME}/src/projecta,target=/workspaces/projecta"',
+      ]);
+      // ...while the derived mount keeps the real path, so warnings and `list` stay usable.
+      assertEquals(deriveMounts(tree, selection, cfg)[0].source, join(root, "projecta"));
+
+      // Skills mounts get the same treatment, and read back to the plain skill name.
+      const skills = [{ name: "alpha", path: join(home, ".claude", "skills", "alpha") }];
+      const lines = skillMountLines(cfg, skills);
+      assertEquals(lines, [
+        '"type=bind,source=${localEnv:HOME}/.claude/skills/alpha,target=/home/vscode/.claude/skills/alpha"',
+      ]);
+      assertEquals([...readSkills(applyDevcontainer("{}\n", [], lines, "dc.json"))], ["alpha"]);
+
+      // A path outside home stays absolute.
+      assertEquals(mountSourceFor("/opt/elsewhere/projecta"), "/opt/elsewhere/projecta");
+      // Home itself, with and without a trailing slash on HOME.
+      assertEquals(mountSourceFor(home), "${localEnv:HOME}");
+      Deno.env.set("HOME", home + "/");
+      assertEquals(mountSourceFor(join(home, "src")), "${localEnv:HOME}/src");
+      // A path that merely starts with the same characters is not "under" home.
+      assertEquals(mountSourceFor(home + "-other/x"), home + "-other/x");
+    } finally {
+      if (previous === undefined) Deno.env.delete("HOME");
+      else Deno.env.set("HOME", previous);
+    }
+  });
+});
+
+Deno.test("model: with HOME unset, mount sources stay absolute", async () => {
+  const previous = Deno.env.get("HOME");
+  try {
+    Deno.env.delete("HOME");
+    assertEquals(mountSourceFor("/home/x/src/projecta"), "/home/x/src/projecta");
+    Deno.env.set("HOME", "");
+    assertEquals(mountSourceFor("/home/x/src/projecta"), "/home/x/src/projecta");
+  } finally {
+    if (previous === undefined) Deno.env.delete("HOME");
+    else Deno.env.set("HOME", previous);
+  }
 });
 
 Deno.test("model: with no folders fence, the projects fence is the selection", async () => {

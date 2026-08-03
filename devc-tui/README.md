@@ -19,12 +19,18 @@ comment-fenced blocks:
     // my ssh agent, nothing to do with devc-tui   ← untouched, comments included
     "type=bind,source=/run/host-services/ssh-auth.sock,target=/ssh-agent",
     // >>> devc-tui:projects (managed - do not edit)
-    "type=bind,source=/Users/me/src/projectb,target=/workspaces/projectb",
-    "type=bind,source=/Users/me/src/projectb.worktrees/some-other,target=/workspaces/projectb.worktrees/some-other"
+    "type=bind,source=${localEnv:HOME}/src/projectb,target=/workspaces/projectb",
+    "type=bind,source=${localEnv:HOME}/src/projectb.worktrees/some-other,target=/workspaces/projectb.worktrees/some-other"
     // <<< devc-tui:projects
   ]
 }
 ```
+
+A `source=` at or under your home directory is written `${localEnv:HOME}/...`, which the Dev
+Containers extension expands on whichever machine opens the file — so a committed
+devcontainer.json is not pinned to one user's home. Paths outside home are written absolute,
+as is everything when `HOME` is unset. Workspace `folders` never get this treatment: VS Code
+does not expand `${localEnv:...}` there, and those entries are relative already.
 
 The `.code-workspace` is opened by VS Code **on the host**, so its `folders` entries are host
 paths — written relative to the workspace file, the same way you would write them by hand:
@@ -208,15 +214,47 @@ Created with these defaults on first run. Unknown keys are preserved.
 
 | Key | Meaning |
 | --- | --- |
-| `root` | Host dir scanned for projects. Unset ⇒ scanning commands exit 2. |
+| `root` | **Host** dir scanned for projects. Unset ⇒ scanning commands exit 2. |
 | `containerRoot` | Container-side parent for mounted projects. |
 | `maxDepth` | Levels below `root` to descend looking for projects. |
-| `skillsRoot` | Host dir whose immediate subdirectories are individually mountable skills. Unset ⇒ `skills` subcommands exit 2, and an existing `devc-tui:skills` fence is left as-is. |
+| `skillsRoot` | **Host** dir whose immediate subdirectories are individually mountable skills. Unset ⇒ `skills` subcommands exit 2, and an existing `devc-tui:skills` fence is left as-is. |
 | `skillsContainerRoot` | Container-side parent for mounted skills. |
 | `devcontainerPath` | Devcontainer file, relative to the workspace dir. |
 | `workspaceFile` | Workspace file relative to the workspace dir; `null` auto-detects. |
 
 `DEVC_TUI_CONFIG` (or `--config <path>`) overrides the config file path.
+
+### Home directories and variables
+
+The four **host** path keys — `root`, `skillsRoot`, `devcontainerPath` and `workspaceFile` —
+accept a leading `~` and `$VAR` / `${VAR}` anywhere:
+
+```json
+{
+  "root": "~/src",
+  "skillsRoot": "$HOME/.claude/skills"
+}
+```
+
+- A `~` only expands at the **start** of the value; anywhere else it is an ordinary character,
+  as in a shell.
+- An unset variable is a config error, not an empty string — a typo would otherwise turn
+  `$SRC/repos` into `/repos` and scan the wrong directory while reporting success:
+
+  ```
+  devc-tui: config "root": $SRC is not set (~/.config/devc-tui/config.json)
+  ```
+
+  A variable set to the empty string counts as unset.
+- `containerRoot` and `skillsContainerRoot` are **not** expanded. They are container-side, and
+  the container's `$HOME` is not yours — expanding them from your shell would silently write
+  the wrong mount target.
+- `config show` prints the expanded values, which is how you check an expansion did what you
+  meant. devc-tui never writes a loaded config back, so the file keeps what you typed.
+
+This is separate from `${localEnv:HOME}` in the devcontainer file below: `$HOME` is what
+devc-tui reads, `${localEnv:HOME}` is what the Dev Containers extension resolves. Neither
+understands the other's syntax.
 
 The **workspace dir** is the cwd (or `--workspace-dir <path>`) — the repo being configured.
 It is independent of `root`: it may sit inside it, outside it, or *be* it. If it falls inside

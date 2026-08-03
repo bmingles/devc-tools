@@ -6,6 +6,7 @@
 
 ### Completed
 
+- [devc-tui-home-paths](archived/devc-tui-home-paths.md) — Home directory support: expand `~`/`$HOME` in host-side config values, and write mount `source=` paths under home as `${localEnv:HOME}/...`.
 - [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md) — Fix the `devc-tui:folders` fence, which writes container paths into a workspace file VS Code opens on the host: write host paths relative to the workspace file, and move the selection read-back with them.
 - [devc-tui-folder-tree](archived/devc-tui-folder-tree.md) — Make the interactive tree mirror the scanned directory layout: worktree groups shown in place instead of re-parented under their primary, collapsed by default, and the fold column reserved for fold state.
 - [devc-tui-ui](archived/devc-tui-ui.md) — The interactive checkbox folder tree on top of the core: scrollable tri-state tree, filter, skills section, writing through the same apply path as the CLI.
@@ -23,3 +24,4 @@
 | devc-tui interactive UI — checkbox project tree | [devc-tui-ui](archived/devc-tui-ui.md) | complete |
 | devc-tui tree reshape — folder tree, collapsed by default | [devc-tui-folder-tree](archived/devc-tui-folder-tree.md) | complete |
 | devc-tui workspace folders — host paths, not container paths | [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md) | complete |
+| devc-tui home directory support — `$HOME` in config, `${localEnv:HOME}` in mounts | [devc-tui-home-paths](archived/devc-tui-home-paths.md) | complete |

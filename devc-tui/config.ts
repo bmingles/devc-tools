@@ -22,6 +22,14 @@ export class RuntimeError extends Error {
   }
 }
 
+/**
+ * The keys holding **host** paths — `root`, `skillsRoot`, `devcontainerPath` and
+ * `workspaceFile` — get `~` / `$VAR` expansion when the config is loaded.
+ *
+ * `containerRoot` and `skillsContainerRoot` deliberately do not: they are container-side, and
+ * the container's `$HOME` is not the host's, so expanding them from this process's
+ * environment would quietly produce the wrong mount target.
+ */
 export interface Config {
   /** Host dir scanned for projects. Empty ⇒ commands that need it fail. */
   root: string;
@@ -60,6 +68,36 @@ export interface LoadedConfig {
   extra: Record<string, unknown>;
   /** True when this call created the file. */
   created: boolean;
+}
+
+/** A variable set to the empty string counts as unset, as `DEVC_TUI_CONFIG` already does. */
+function envOrNull(name: string): string | null {
+  const value = Deno.env.get(name);
+  return value === undefined || value === "" ? null : value;
+}
+
+/**
+ * Expand a host path from the config: a leading `~` or `~/`, and `$VAR` / `${VAR}` anywhere.
+ * A `~` that is not the first character is a literal, exactly as in a shell.
+ *
+ * An unset variable throws rather than expanding to nothing: a typo that silently became
+ * `/repos` would scan the wrong directory and report success.
+ */
+export function expandPath(value: string, key: string, cfgPath: string): string {
+  const fail = (name: string): never => {
+    throw new UsageError(
+      `devc-tui: config ${JSON.stringify(key)}: $${name} is not set (${displayPath(cfgPath)})`,
+    );
+  };
+
+  let out = value;
+  if (out === "~" || out.startsWith("~/")) {
+    out = (envOrNull("HOME") ?? fail("HOME")) + out.slice(1);
+  }
+  return out.replace(/\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g, (_, a, b) => {
+    const name = a ?? b;
+    return envOrNull(name) ?? fail(name);
+  });
 }
 
 /** Resolve the config file path: `--config` > `DEVC_TUI_CONFIG` > ~/.config/devc-tui. */
@@ -119,6 +157,16 @@ export async function loadConfig(override?: string): Promise<LoadedConfig> {
       default:
         extra[k] = v;
     }
+  }
+
+  // Host paths only — see HOST_PATH_KEYS. Expanded after the whole file is read, so the error
+  // names the key the user actually wrote. Empty values expand to themselves.
+  const expand = (value: string, key: string) => expandPath(value, key, path);
+  cfg.root = expand(cfg.root, "root");
+  cfg.skillsRoot = expand(cfg.skillsRoot, "skillsRoot");
+  cfg.devcontainerPath = expand(cfg.devcontainerPath, "devcontainerPath");
+  if (cfg.workspaceFile !== null) {
+    cfg.workspaceFile = expand(cfg.workspaceFile, "workspaceFile");
   }
   return { cfg, path, extra, created };
 }

@@ -74,6 +74,29 @@ export function mountString(source: string, target: string): string {
   return `type=bind,source=${source},target=${target}`;
 }
 
+/** The devcontainer.json variable the Dev Containers extension resolves on the host. */
+export const LOCAL_HOME = "${localEnv:HOME}";
+
+/**
+ * A host path as a mount `source=` should spell it. Anything at or under the user's home is
+ * written `${localEnv:HOME}/...`, which the Dev Containers extension expands on whichever
+ * machine opens the file — so the devcontainer.json is not pinned to one user's home.
+ *
+ * Only the emitted line is substituted; `Mount.source` keeps the real path, so `list`,
+ * `status` and every warning still name something you can `cd` to. With `HOME` unset or
+ * empty, or a path outside it, this is the identity.
+ */
+export function mountSourceFor(hostPath: string): string {
+  const home = Deno.env.get("HOME");
+  if (home === undefined || home === "") return hostPath;
+  const trimmed = home.replace(/\/+$/, "");
+  if (trimmed === "") return hostPath;
+  if (hostPath === trimmed) return LOCAL_HOME;
+  return hostPath.startsWith(trimmed + "/")
+    ? LOCAL_HOME + hostPath.slice(trimmed.length)
+    : hostPath;
+}
+
 /** The path the devcontainer already mounts the workspace dir at, by convention. */
 export function workspaceMountTarget(tree: Tree): string {
   return joinPosix(WORKSPACE_MOUNT_ROOT, basename(tree.workspaceDir));
@@ -153,7 +176,7 @@ export function deriveFolders(tree: Tree, selection: Set<string>, cfg: Config): 
 
 /** JSONC lines for the `mounts` fences. */
 export function mountLines(mounts: Mount[]): string[] {
-  return mounts.map((m) => JSON.stringify(mountString(m.source, m.target)));
+  return mounts.map((m) => JSON.stringify(mountString(mountSourceFor(m.source), m.target)));
 }
 
 /** JSONC lines for the `devc-tui:skills` fence. */
@@ -161,7 +184,9 @@ export function skillMountLines(
   cfg: Config,
   skills: Array<{ name: string; path: string }>,
 ): string[] {
-  return skills.map((s) => JSON.stringify(mountString(s.path, skillTargetFor(cfg, s.name))));
+  return skills.map((s) =>
+    JSON.stringify(mountString(mountSourceFor(s.path), skillTargetFor(cfg, s.name)))
+  );
 }
 
 /** JSONC lines for the `devc-tui:folders` fence. */
