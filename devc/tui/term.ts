@@ -106,9 +106,11 @@ export class Terminal {
     }
     this.#closed = true;
     try {
-      await this.#writer.close();
+      this.#writer.releaseLock();
     } catch {
-      // A closed or detached stdout is not an error worth reporting on the way out.
+      // A detached stdout is not an error worth reporting on the way out. We release rather than
+      // close the writer so the underlying stream (stdout) stays open — the config flow reuses
+      // it across several steps (two pickers, a confirm, and plain prints).
     }
   }
 }
