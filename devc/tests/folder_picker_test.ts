@@ -194,13 +194,15 @@ Deno.test("render: the picks list sits above the browser and shows ticked folder
   );
 });
 
-Deno.test("the ▸ cursor sits in the focused panel; dividers split the panels", () => {
+Deno.test("the ▸ cursor is the only thing that marks the focused panel", () => {
   let s = feed(start(), " "); // tick .claude → one pick, browser still focused
   let frame = render(s, { columns: 60, rows: 20 });
   assert(frame.some((l) => l.startsWith("─".repeat(10))), "panels are split by a divider rule");
   // Browser focused: the cursor is on a browse entry (a folder name ending in "/").
   let cursorLine = frame.find((l) => l.includes("▸"))!;
   assert(cursorLine.includes(".claude/"), "cursor is on a browse row when the browser is focused");
+  const headers = () => frame.filter((l) => /SELECTED|BROWSE/.test(l));
+  const browseFocused = headers();
 
   s = feed(s, "\t"); // move focus to the picks panel
   frame = render(s, { columns: 60, rows: 20 });
@@ -209,6 +211,14 @@ Deno.test("the ▸ cursor sits in the focused panel; dividers split the panels",
     cursorLine.includes("/home/me/.claude") && !cursorLine.includes(".claude/"),
     "cursor is on a pick (an absolute path) when the picks panel is focused",
   );
+  // The headers themselves are identical either way — focus must not restyle a panel.
+  assertEquals(headers(), browseFocused, "panel headers do not change with focus");
+});
+
+Deno.test("the first line is the prompt, set off from the panels below", () => {
+  const frame = render(start(), { columns: 60, rows: 20 });
+  assertEquals(frame[0], " ? Pick folders", "the prompt leads with `?`");
+  assertEquals(frame[1], "", "a blank line separates the prompt from its inputs");
 });
 
 Deno.test("an invalid-worktree entry renders the ⚠ marker + reason", () => {
