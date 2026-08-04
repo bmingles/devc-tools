@@ -2,11 +2,12 @@
 // state machine (`reduce` + `render`, no IO) wrapped by a thin loop that owns the terminal, so
 // the whole interaction is scriptable headlessly (see `tests/folder_picker_test.ts`).
 //
-// Two panels stacked as one column and split by a divider: the picks list (top, everything
-// ticked so far) and the browser (below). The live panel has the bold header and the `▸`
-// cursor; the idle one is dimmed. ↑ off the top of the browser steps up into the picks; ↓ off
-// the bottom of the picks drops back down (tab toggles too). The picks pane lets you remove a
-// folder directly, without having to navigate back to it in the tree.
+// The frame reads as one prompt with two inputs: the question on the first line, then SELECTED
+// (everything ticked so far) over BROWSE, split by a divider. Both panels are always styled the
+// same; the live one is simply the one holding the `▸` cursor, so SELECTED never looks like a
+// read-only summary. ↑ off the top of the browser steps up into the picks; ↓ off the bottom of
+// the picks drops back down (tab toggles too). The picks pane lets you remove a folder directly,
+// without having to navigate back to it in the tree.
 //
 // Mental model (one axis per input, so the legend is a reminder, not a manual):
 //   browser  ↑/↓ move (↑ at top → picks) · → open · ← up · space tick/untick · ⏎ done · esc cancel
@@ -313,42 +314,42 @@ function foldHome(path: string): string {
   return path;
 }
 
-// ── Split-panel chrome ───────────────────────────────────────────────────────
+// ── Frame chrome ─────────────────────────────────────────────────────────────
 //
-// The frame is two stacked panels — SELECTED (picks) over BROWSE — divided by full-width
-// rules. The live panel has a bold header and undimmed rows; the idle panel is dimmed. The
-// row cursor is a `▸` arrow (reverse-video on its row) and only appears in the live panel, so
-// "which panel / where am I" reads off the header weight + cursor without any left gutter.
+// A prompt line, then two stacked panels — SELECTED (picks) over BROWSE — split by a full-width
+// rule. The prompt reads as a question (`? …` in bold) with a blank line under it, so the panels
+// below read as its inputs.
+//
+// Panel text never changes with focus: dimming SELECTED made it look like a read-out instead of
+// a place you can prune picks. The live panel is the one holding the `▸` row cursor (reverse-
+// video on its row) — nothing else moves. Weight: prompt (bold) > panel labels (plain) > meta,
+// hints and legend (dim).
 
 /** A full-width horizontal divider. */
 function hr(width: number, color: boolean): string {
   return DIM('─'.repeat(Math.max(1, width)), color);
 }
 
-/** A panel header: `TITLE  meta`, bold when the panel is the live one, dimmed when idle. */
-function panelHeader(
-  title: string,
-  meta: string,
-  active: boolean,
-  color: boolean,
-): string {
-  const name = active ? BOLD(title, color) : DIM(title, color);
-  return ` ${name}` + (meta ? '  ' + DIM(meta, color) : '');
+/** A panel header: `TITLE  meta` — same weight whether the panel is live or idle. */
+function panelHeader(title: string, meta: string, color: boolean): string {
+  return ` ${title}` + (meta ? '  ' + DIM(meta, color) : '');
 }
 
 /**
- * One panel row: `<cursor> <body>`. The `▸` marks the row cursor (reverse-video); an idle
- * panel's rows are dimmed. `suffix` (e.g. a worktree warning) trails outside the highlight so
+ * One panel row: `<cursor> <body>`. The `▸` marks the row cursor (reverse-video) and only
+ * appears in the live panel. `suffix` (e.g. a worktree warning) trails outside the highlight so
  * nested SGR codes don't clash.
  */
 function panelRow(
   body: string,
-  opts: { active: boolean; cursor: boolean; color: boolean; suffix?: string },
+  opts: { cursor: boolean; color: boolean; suffix?: string },
 ): string {
-  const { active, cursor, color, suffix } = opts;
+  const { cursor, color, suffix } = opts;
   const inner = `${cursor ? '▸' : ' '} ${body}`;
-  const shown = cursor ? REV(inner, color) : active ? inner : DIM(inner, color);
-  return ` ${shown}` + (suffix ? (cursor ? suffix : DIM(suffix, color)) : '');
+  return (
+    ` ${cursor ? REV(inner, color) : inner}` +
+    (suffix ? (cursor ? suffix : DIM(suffix, color)) : '')
+  );
 }
 
 export function render(state: PickerState, size: Size): string[] {
@@ -358,18 +359,15 @@ export function render(state: PickerState, size: Size): string[] {
   const list = visible(state);
   const out: string[] = [];
 
-  // Title bar.
-  out.push(' ' + BOLD(state.title, color));
-  out.push(hr(width, color));
+  // The prompt: the one line that asks something. A blank line separates it from the panels
+  // below, which are the answer to it.
+  out.push(' ' + BOLD('? ' + state.title, color));
+  out.push('');
 
   // ── SELECTED panel ──
-  out.push(
-    panelHeader('SELECTED', `${state.selected.length}`, picksActive, color),
-  );
+  out.push(panelHeader('SELECTED', `${state.selected.length}`, color));
   if (state.selected.length === 0) {
-    out.push(
-      '  ' + DIM('nothing picked yet — tick folders below with space', color),
-    );
+    out.push('  ' + DIM('none selected', color));
   } else {
     const cap = Math.max(3, Math.min(8, size.rows - 12));
     const shown = Math.min(state.selected.length, cap);
@@ -386,7 +384,6 @@ export function render(state: PickerState, size: Size): string[] {
       const idx = first + i;
       out.push(
         panelRow(`◉ ${foldHome(p)}`, {
-          active: picksActive,
           cursor: picksActive && idx === state.selCursor,
           color,
         }),
@@ -402,12 +399,7 @@ export function render(state: PickerState, size: Size): string[] {
   // ── BROWSE panel ──
   out.push(hr(width, color));
   out.push(
-    panelHeader(
-      'BROWSE',
-      atRoots ? 'roots' : foldHome(state.cwd) + '/',
-      !picksActive,
-      color,
-    ),
+    panelHeader('BROWSE', atRoots ? 'roots' : foldHome(state.cwd) + '/', color),
   );
   out.push(
     '  ' +
@@ -445,13 +437,11 @@ export function render(state: PickerState, size: Size): string[] {
           '  ⚠ primary not mounted' + (flag.reason ? ` (${flag.reason})` : '');
       }
     }
-    out.push(
-      panelRow(body, { active: !picksActive, cursor: isCursor, color, suffix }),
-    );
+    out.push(panelRow(body, { cursor: isCursor, color, suffix }));
   });
 
-  // Footer: a divider, then a short hint for the live panel — the header weight + cursor carry
-  // the rest, so this is a reminder, not a manual.
+  // Footer: a divider, then a short hint for the live panel — the cursor carries the rest, so
+  // this is a reminder, not a manual.
   while (out.length < size.rows - 2) out.push('');
   out.push(hr(width, color));
   const legend = picksActive
