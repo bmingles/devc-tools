@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "tasks": {
     "run": "deno run --allow-run=docker,devcontainer,git,tmux,tty --allow-read --allow-write --allow-env main.ts",
-    "check": "deno check main.ts args.ts container.ts config.ts default_config.ts help.ts paths.ts jsonc_edit.ts mounts.ts wizard_apply.ts tui/keys.ts tui/term.ts tui/folder_picker.ts tui/prompts.ts tui/config_flow.ts",
+    "check": "deno check main.ts args.ts container.ts config.ts default_config.ts help.ts paths.ts posix.ts jsonc_edit.ts mounts.ts worktree.ts wizard_apply.ts tui/keys.ts tui/term.ts tui/folder_picker.ts tui/prompts.ts tui/config_flow.ts",
     "test": "deno test --allow-run=git --allow-read --allow-write --allow-env",
     "build": "deno compile --allow-run=docker,devcontainer,git,tmux,tty --allow-read --allow-write --allow-env --include default --output devc main.ts"
   },

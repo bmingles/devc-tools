@@ -55,13 +55,30 @@ export function foldHome(
   return hostPath;
 }
 
-/** Default container path for a host folder in `kind`'s fence. */
-export function defaultTarget(kind: MountKind, hostPath: string): string {
-  const name = basename(hostPath);
-  const root = kind === "source"
+/**
+ * Default container path for a host folder in `kind`'s fence.
+ *
+ * For `source`, when `root` is a configured code root that `hostPath` sits under, the target
+ * keeps the sub-path relative to that root (`~/code` + `~/code/a/b` → `/workspaces/a/b`) so
+ * nested folders and worktree layouts are preserved. Otherwise (skills, or no matching root)
+ * the target is `<container-root>/<basename>`. `hostPath`/`root` must be absolute for the
+ * relative form — `$HOME` folding is applied to the `source=`, never to the target.
+ */
+export function defaultTarget(
+  kind: MountKind,
+  hostPath: string,
+  root?: string,
+): string {
+  const containerRoot = kind === "source"
     ? SOURCE_CONTAINER_ROOT
     : SKILLS_CONTAINER_ROOT;
-  return `${root}/${name}`;
+  if (
+    kind === "source" && root !== undefined && root !== "" &&
+    hostPath.startsWith(root + "/")
+  ) {
+    return `${containerRoot}/${hostPath.slice(root.length + 1)}`;
+  }
+  return `${containerRoot}/${basename(hostPath)}`;
 }
 
 /** Default read-only flag: off for source, on for skills. */
@@ -72,12 +89,17 @@ export function defaultReadonly(kind: MountKind): boolean {
 /**
  * Build a row for a freshly-picked host folder: fold `$HOME`, default target + read-only for
  * the step. `hostPath` is the raw path the picker/user supplied (absolute or `${localEnv:HOME}`).
+ * `root` is the configured code root `hostPath` falls under (source only), used to keep the
+ * container target's sub-path — the target is computed from the unfolded `hostPath`/`root`.
  */
-export function rowForHostPath(kind: MountKind, hostPath: string): MountRow {
-  const folded = foldHome(hostPath);
+export function rowForHostPath(
+  kind: MountKind,
+  hostPath: string,
+  root?: string,
+): MountRow {
   return {
-    source: folded,
-    target: defaultTarget(kind, folded),
+    source: foldHome(hostPath),
+    target: defaultTarget(kind, hostPath, root),
     readonly: defaultReadonly(kind),
   };
 }

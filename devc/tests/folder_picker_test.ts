@@ -5,10 +5,12 @@
 import { assert, assertEquals } from "jsr:@std/assert@^1";
 import { decodeAll } from "../tui/keys.ts";
 import {
+  type EntryFlag,
   initialState,
   type PickerState,
   reduce,
   render,
+  setFlags,
   setListing,
   visible,
 } from "../tui/folder_picker.ts";
@@ -108,6 +110,123 @@ Deno.test("preselected paths render as ticked", () => {
   assert(frame.includes("◯ downloads/"), "unselected 'downloads' should be empty");
 });
 
+// ── Picks pane (the selected list above the browser, editable in place) ─────────
+
+Deno.test("tab enters the picks pane and space removes the focused pick", () => {
+  // open .claude, tick plugins, down, tick skills → two picks, still in the tree
+  let s = feed(start(), "cla\x1b[C \x1b[B ");
+  assertEquals(s.selected, [
+    "/home/me/.claude/plugins",
+    "/home/me/.claude/skills",
+  ]);
+  assertEquals(s.focus, "tree");
+
+  s = feed(s, "\t"); // tab → picks pane, cursor on the first pick
+  assertEquals(s.focus, "selected");
+  assertEquals(s.selCursor, 0);
+
+  s = feed(s, " "); // remove the focused pick (plugins)
+  assertEquals(s.selected, ["/home/me/.claude/skills"]);
+  assertEquals(s.focus, "selected");
+
+  s = feed(s, " "); // removing the last pick drops back to the browser
+  assertEquals(s.selected, []);
+  assertEquals(s.focus, "tree");
+});
+
+Deno.test("↑ off the top of the browser steps into the picks pane; ↓ returns", () => {
+  // tick .claude, down, tick downloads → two picks, browser cursor on "downloads"
+  let s = feed(start(), " \x1b[B ");
+  assertEquals(s.selected, ["/home/me/.claude", "/home/me/downloads"]);
+  assertEquals(s.focus, "tree");
+
+  s = feed(s, "\x1b[A"); // up → browser cursor back to the top row
+  assertEquals(s.focus, "tree");
+  assertEquals(s.cursor, 0);
+
+  s = feed(s, "\x1b[A"); // up at the top → cross into the picks, on the pick nearest the browser
+  assertEquals(s.focus, "selected");
+  assertEquals(s.selCursor, 1);
+
+  s = feed(s, "\x1b[B"); // down off the bottom of the picks → back into the browser
+  assertEquals(s.focus, "tree");
+  assertEquals(s.cursor, 0);
+});
+
+Deno.test("picks pane: ↑↓ move the pick cursor; backspace removes that one", () => {
+  // tick .claude, down, tick downloads
+  let s = feed(start(), " \x1b[B ");
+  assertEquals(s.selected, ["/home/me/.claude", "/home/me/downloads"]);
+
+  s = feed(s, "\t\x1b[B\x7f"); // tab in, down to the 2nd pick, backspace removes it
+  assertEquals(s.selected, ["/home/me/.claude"]);
+  assertEquals(s.focus, "selected");
+});
+
+Deno.test("tab / left leave the picks pane without removing anything", () => {
+  let s = feed(start(), " \t"); // tick .claude, tab into picks
+  assertEquals(s.focus, "selected");
+  s = feed(s, "\x1b[D"); // left → back to the browser
+  assertEquals(s.focus, "tree");
+  assertEquals(s.selected, ["/home/me/.claude"]);
+});
+
+Deno.test("tab is a no-op when nothing is picked", () => {
+  const s = feed(start(), "\t");
+  assertEquals(s.focus, "tree");
+});
+
+Deno.test("render: the picks list sits above the browser and shows ticked folders", () => {
+  const s = setListing(
+    initialState("/home/me", false, ["/home/me/work"]),
+    "/home/me",
+    list("/home/me"),
+  );
+  const frame = render(s, { columns: 60, rows: 20 });
+  const picksIdx = frame.findIndex((l) => l.includes("SELECTED"));
+  const browserIdx = frame.findIndex((l) => l.includes("BROWSE"));
+  assert(picksIdx >= 0, "picks header present");
+  assert(browserIdx >= 0, "browser header present");
+  assert(picksIdx < browserIdx, "picks panel is rendered above the browser");
+  assert(
+    frame.join("\n").includes("◉ /home/me/work"),
+    "the pick is listed in the picks pane",
+  );
+});
+
+Deno.test("the ▸ cursor sits in the focused panel; dividers split the panels", () => {
+  let s = feed(start(), " "); // tick .claude → one pick, browser still focused
+  let frame = render(s, { columns: 60, rows: 20 });
+  assert(frame.some((l) => l.startsWith("─".repeat(10))), "panels are split by a divider rule");
+  // Browser focused: the cursor is on a browse entry (a folder name ending in "/").
+  let cursorLine = frame.find((l) => l.includes("▸"))!;
+  assert(cursorLine.includes(".claude/"), "cursor is on a browse row when the browser is focused");
+
+  s = feed(s, "\t"); // move focus to the picks panel
+  frame = render(s, { columns: 60, rows: 20 });
+  cursorLine = frame.find((l) => l.includes("▸"))!;
+  assert(
+    cursorLine.includes("/home/me/.claude") && !cursorLine.includes(".claude/"),
+    "cursor is on a pick (an absolute path) when the picks panel is focused",
+  );
+});
+
+Deno.test("an invalid-worktree entry renders the ⚠ marker + reason", () => {
+  const flags = new Map<string, EntryFlag>([
+    ["projects", { worktree: true, valid: false, reason: "worktree uses absolute paths" }],
+    ["work", { worktree: true, valid: true }], // valid worktree → no marker
+  ]);
+  const s = setFlags(start(), flags);
+  const frame = render(s, { columns: 100, rows: 20 }).join("\n");
+  assert(
+    frame.includes("projects/  ⚠ primary not mounted (worktree uses absolute paths)"),
+    "invalid worktree is flagged with its reason",
+  );
+  // A valid worktree and a plain folder carry no marker.
+  assert(!frame.includes("work/  ⚠"), "valid worktree is not flagged");
+  assert(!frame.includes("downloads/  ⚠"), "plain folder is not flagged");
+});
+
 Deno.test("render has no ANSI escapes when colour is off", () => {
   const frame = render(start(), { columns: 60, rows: 20 }).join("\n");
   // deno-lint-ignore no-control-regex
@@ -119,6 +238,21 @@ Deno.test("render has no ANSI escapes when colour is off", () => {
 
 const ROOTS = ["/home/me/code", "/home/me/skills"];
 const bounded = () => initialState("/unused", false, [], ROOTS);
+
+Deno.test("bounded with a single root opens inside it, not on a roots list", () => {
+  const s = initialState("/unused", false, [], ["/home/me/code"]);
+  assert(!s.atRoots, "a single root starts inside the root");
+  assertEquals(s.cwd, "/home/me/code");
+});
+
+Deno.test("bounded single root: ← at the root is a no-op (no roots list to return to)", () => {
+  const base = initialState("/unused", false, [], ["/home/me/code"]);
+  const s = setListing(base, base.cwd, list(base.cwd));
+  assertEquals(visible(s), ["app", "lib"]); // opened straight into the root
+  const s2 = feed(s, "\x1b[D"); // ← at the root
+  assertEquals(s2.cwd, "/home/me/code");
+  assert(!s2.atRoots);
+});
 
 Deno.test("bounded: opens on the roots list, not a directory", () => {
   const s = bounded();

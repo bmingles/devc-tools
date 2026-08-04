@@ -93,6 +93,52 @@ Deno.test("basename + default targets and readonly for each step", () => {
   assertEquals(defaultReadonly("skills"), true);
 });
 
+Deno.test("defaultTarget: source keeps the sub-path under a matching root", () => {
+  // nested folder under the root → the sub-path is preserved
+  assertEquals(
+    defaultTarget("source", "/home/me/code/team/proj", "/home/me/code"),
+    `${SOURCE_CONTAINER_ROOT}/team/proj`,
+  );
+  // worktree layout under the root
+  assertEquals(
+    defaultTarget(
+      "source",
+      "/home/me/code/myproject.worktrees/feature1",
+      "/home/me/code",
+    ),
+    `${SOURCE_CONTAINER_ROOT}/myproject.worktrees/feature1`,
+  );
+  // top-level folder under the root → same as basename
+  assertEquals(
+    defaultTarget("source", "/home/me/code/proj", "/home/me/code"),
+    `${SOURCE_CONTAINER_ROOT}/proj`,
+  );
+  // no matching root → basename fallback
+  assertEquals(
+    defaultTarget("source", "/srv/repos/team/proj", "/home/me/code"),
+    `${SOURCE_CONTAINER_ROOT}/proj`,
+  );
+  // skills ignore the root and always use the basename
+  assertEquals(
+    defaultTarget("skills", "/home/me/code/team/agent", "/home/me/code"),
+    `${SKILLS_CONTAINER_ROOT}/agent`,
+  );
+});
+
+Deno.test("rowForHostPath threads the root into a relative source target", () => {
+  const home = Deno.env.get("HOME")!;
+  const row = rowForHostPath(
+    "source",
+    `${home}/code/team/proj`,
+    `${home}/code`,
+  );
+  assertEquals(row, {
+    source: "${localEnv:HOME}/code/team/proj",
+    target: `${SOURCE_CONTAINER_ROOT}/team/proj`,
+    readonly: false,
+  });
+});
+
 Deno.test("rowForHostPath folds home and applies step defaults", () => {
   const home = Deno.env.get("HOME")!;
   const src = rowForHostPath("source", `${home}/code/p`);
