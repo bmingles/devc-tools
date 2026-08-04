@@ -5,12 +5,13 @@
 /** CLI version. Single source of truth — the compiled binary cannot read `deno.json` at runtime. */
 export const VERSION = "0.1.0";
 
-/** The nine subcommands, in the order they appear in the top-level `Commands:` list. */
+/** The ten subcommands, in the order they appear in the top-level `Commands:` list. */
 export const COMMANDS: { name: string; summary: string }[] = [
   { name: "config", summary: "Configure the dev container for the current project (TUI)" },
   { name: "attach", summary: "Attach to the dev container for the current project" },
   { name: "claude", summary: "Launch Claude inside the dev container for the current project" },
   { name: "up", summary: "Start the dev container for the current project" },
+  { name: "build", summary: "Rebuild the dev container for the current project" },
   { name: "exec", summary: "Execute a command inside the dev container for the current project" },
   { name: "mounts", summary: "List container mounts for the current project" },
   { name: "stop", summary: "Stop the dev container for the current project" },
@@ -83,6 +84,18 @@ export const COMMAND_HELP: Record<string, string> = {
     "Options:",
     "      --json   Output container status as JSON",
     "  -h, --help   Print help",
+  ].join("\n"),
+
+  build: [
+    "Usage: devc build [PATH] [OPTIONS]",
+    "",
+    "Arguments:",
+    "  [PATH]  Path to the project (default: current directory)",
+    "",
+    "Options:",
+    "      --no-cache   Rebuild the image without the Docker layer cache",
+    "      --json       Output container status as JSON",
+    "  -h, --help       Print help",
   ].join("\n"),
 
   exec: [

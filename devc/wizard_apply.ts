@@ -45,6 +45,13 @@ export function applyFences(src: string, selection: WizardSelection): string {
 export interface ApplyResult {
   /** True when the project had no existing config (first creation). */
   created: boolean;
+  /**
+   * True when the apply actually altered the config on disk — either it was created, or the
+   * rewritten text differs from what was there. False means the selection round-tripped to
+   * byte-identical text (e.g. a folder toggled off and back on), the file was left untouched,
+   * and the container therefore needs no rebuild.
+   */
+  changed: boolean;
   /** Absolute path of the written `devcontainer.json`. */
   configPath: string;
   /** Paths of every file/dir written (for the success message). */
@@ -77,7 +84,8 @@ export interface ApplyDeps {
  * shell scripts are made executable.
  *
  * Update in place: only the two fences are rewritten on the existing file text; the copied
- * assets are left untouched.
+ * assets are left untouched. When the rewrite yields the exact bytes already on disk, the file
+ * is not written at all and `changed` is false.
  *
  * Then the applied skills host paths are persisted to `recentSkills` in the global config.
  */
@@ -113,7 +121,11 @@ export async function applySelection(
     }
     throw e;
   }
-  await Deno.writeTextFile(configPath, out);
+
+  // An apply that produces the same bytes leaves the file completely alone — not even its
+  // mtime moves — so `devc config` can honestly report "no changes, no rebuild needed".
+  const changed = created || out !== baseText;
+  if (changed) await Deno.writeTextFile(configPath, out);
 
   if (created) {
     await copyBundledAssets(devcontainerDir);
@@ -141,7 +153,7 @@ export async function applySelection(
 
   await persistRecentSkills(selection.skills, deps.globalConfigPath);
 
-  return { created, configPath, written };
+  return { created, changed, configPath, written };
 }
 
 /** Store the applied skills host paths (raw) as the remembered list for the next project. */

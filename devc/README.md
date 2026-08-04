@@ -13,6 +13,7 @@ positional overrides it. The resolved path identifies the project and its contai
 ```text
 devc config  [PATH]                                   Configure the project's dev container (TUI)
 devc up      [PATH] [--json]                          Create/start the container; print its status
+devc build   [PATH] [--no-cache] [--json]             Recreate the container from scratch
 devc attach  [PATH] [--build] [--no-clear]            Start (creating if needed) and attach a login shell
 devc claude  [PATH] [EXTRA_ARGS...]                   Start and run `claude` (+ forwarded args) in a login shell
 devc exec    [PATH] [--cwd DIR] [--env K=V]... -- CMD Start and run CMD directly (no shell)
@@ -29,7 +30,11 @@ Notes:
 
 - `up` prints `<containerId> running — workspace <remoteWorkspaceFolder>`, or the
   `ContainerInfo` JSON with `--json`.
-- `attach --build` forces a rebuild (`--remove-existing-container`); `--no-clear` keeps the
+- `build` recreates the container (`up --remove-existing-container`) without attaching, and
+  prints the same line as `up`. Mounts are bound when the container is *created*, so this — not
+  an image-only build — is what makes a `devcontainer.json` change take effect. `--no-cache`
+  also rebuilds the image without the Docker layer cache.
+- `attach --build` forces the same rebuild before attaching; `--no-clear` keeps the
   shell-init output on screen instead of clearing on the first prompt.
 - `exec` runs the command after `--` directly (no shell) and exits with the command's own
   exit code; `devc`/`docker` infra failures exit 125. `--env` is repeatable and a value
@@ -128,6 +133,14 @@ folders — no typing paths:
   selectable (you pick folders *inside* them).
 - A **review** summary then a single `Apply?` confirm writes the two managed mount blocks
   (`devc:source`, `devc:skills`); everything else in the file is left untouched.
+- Afterwards, `devc config` compares what it wrote to what was already on disk and only then
+  offers a rebuild, since mounts take effect at container-create time:
+  - **Changed**, container exists → `Rebuild now? [Y/n]`, which runs the same recreate as
+    `devc build`.
+  - **Changed**, no container yet → `Build it now? [Y/n]`.
+  - **Unchanged** → `No config changes — no rebuild needed.` and no prompt. Ticking a folder off
+    and back on ends at the same bytes, so it counts as no change and the file is not even
+    rewritten. Declining a rebuild prints a reminder to run `devc build` later.
 
 **Roots** (where the pickers are scoped) live in `~/.config/devc/config.json`, stored folded
 to `~/…`. On first run — or any time roots are missing — `devc config` collects them first with

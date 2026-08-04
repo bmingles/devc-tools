@@ -10,6 +10,8 @@
 
 ### Completed
 
+- [devc-build-command](archived/devc-build-command.md) — Add a top-level `devc build` (recreate the container, `--no-cache` to drop the layer cache) and make `devc config` change-aware: it prompts for a rebuild only when the apply actually altered `devcontainer.json`, so toggling folders back to their original state prints "no changes" instead.
+
 - [devc-drop-feature](archived/devc-drop-feature.md) — Remove the local devcontainer Feature entirely; deliver the baseline via the bundled Dockerfile (build-time) + a top-level `postCreateCommand` running `scripts/post-create.sh` (create-time), so zero-config and `devc config` projects share one transform-free `.devcontainer/` shape. Composition is preserved via a `post-create.user.sh` hook devc never regenerates. Publishing a standalone OCI feature is explicitly dropped as a goal.
 
 - [devc-worktree-mounts](archived/devc-worktree-mounts.md) — Worktree-aware `devc config` bind mounts: keep the source target's sub-path relative to the configured code root, and for a picked git worktree also mount the primary repo's `.git` at the mirror location (only when the worktree uses relative paths and the primary lives under the same root). Invalid worktrees are flagged live in the folder picker and skip the primary mount.
@@ -51,3 +53,4 @@
 | devc worktree-aware mounts — root-relative source targets + primary `.git` mount | [devc-worktree-mounts](archived/devc-worktree-mounts.md) | complete |
 | devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate | [devc-claude-seed-dir](devc-claude-seed-dir.md) | in progress |
 | devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook | [devc-drop-feature](archived/devc-drop-feature.md) | complete |
+| devc `build` command + change-aware `config` rebuild prompt | [devc-build-command](archived/devc-build-command.md) | complete |

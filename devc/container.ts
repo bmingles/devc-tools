@@ -483,9 +483,16 @@ export function assertLocalFolderExists(localFolder: string): void {
   }
 }
 
+/** Extra knobs for the image build performed by `devcontainer up`. */
+export interface StartOptions {
+  /** Pass `--build-no-cache`, so the image is rebuilt from scratch. */
+  noCache?: boolean;
+}
+
 export async function startContainer(
   localFolder: string,
   rebuild = false,
+  opts: StartOptions = {},
 ): Promise<ContainerInfo> {
   // Guard before any git/docker/devcontainer work so a bad path fails fast
   // instead of spinning up a container for it.
@@ -506,6 +513,7 @@ export async function startContainer(
   const args = ["up", "--workspace-folder", localFolder];
   if (worktree) args.push("--mount-git-worktree-common-dir");
   if (rebuild) args.push("--remove-existing-container");
+  if (opts.noCache) args.push("--build-no-cache");
 
   let remoteEnv: Record<string, string> = {};
   if (!(await hasOwnDevcontainerConfig(localFolder))) {
@@ -568,6 +576,21 @@ export async function startContainer(
     remoteWorkspaceFolder: result.remoteWorkspaceFolder,
     remoteEnv,
   };
+}
+
+/**
+ * Recreate the container for `localFolder` from scratch: `devcontainer up` with
+ * `--remove-existing-container` (plus `--build-no-cache` when asked). This — not an
+ * image-only build — is what makes a `devcontainer.json` change take effect, because
+ * mounts are bound at container-create time.
+ *
+ * Backs both `devc build` and the `devc config` post-apply rebuild prompt.
+ */
+export function rebuildContainer(
+  localFolder: string,
+  opts: StartOptions = {},
+): Promise<ContainerInfo> {
+  return startContainer(localFolder, true, opts);
 }
 
 export async function stopContainer(localFolder: string): Promise<void> {
