@@ -44,7 +44,7 @@
 
     // Host ~/.claude config seed: agents-setup.sh symlinks every top-level *file* from here
     // into ~/.claude. Directories are ignored — the devc:skills fence owns ~/.claude/skills/.
-    "type=bind,source=${localEnv:HOME}/.config/devc-tui/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
+    "type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
 
     // ~/.claude.json (auth) persisted per-workspace via volume, mounted in devc's namespace
     // (alongside claude-seed, out of ~); agents-setup.sh symlinks ~/.claude.json to it

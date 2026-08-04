@@ -4,14 +4,8 @@
 // virtual filesystem.
 const DEFAULT_DIR_URL = new URL("./default/", import.meta.url);
 
-/**
- * The global config directory. `~/.config/devc-tui` **for now**, to avoid
- * colliding with any pre-existing `~/.config/devc/` from other `devc` tooling
- * while this implementation matures. This lives behind this single constant;
- * once this tool is robust enough to replace existing tooling, it flips to
- * `~/.config/devc`.
- */
-export const CONFIG_DIR = `${homeDir()}/.config/devc-tui`;
+/** The global config directory, `~/.config/devc`. */
+export const CONFIG_DIR = `${homeDir()}/.config/devc`;
 
 /**
  * Host directory holding the user's `~/.claude` config for containers. Bind-mounted read-only

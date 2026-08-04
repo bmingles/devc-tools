@@ -59,16 +59,16 @@ Notes:
 `TERM_PROGRAM_VERSION`, `$TMUX`) and tint the terminal for the duration of the attach so a
 container shell reads as visually distinct from a local one.
 
-## Claude config: `~/.config/devc-tui/.claude`
+## Claude config: `~/.config/devc/.claude`
 
-Anything you want the in-container agent to see goes in `~/.config/devc-tui/.claude`. The
+Anything you want the in-container agent to see goes in `~/.config/devc/.claude`. The
 directory is bind-mounted read-only at `/usr/local/share/devc/claude-seed`, and on every
 container create `scripts/agents-setup.sh` (run by `post-create.sh`) symlinks each entry into the container's `~/.claude`:
 
 ```text
-~/.config/devc-tui/.claude/CLAUDE.md      →  /home/vscode/.claude/CLAUDE.md
-~/.config/devc-tui/.claude/settings.json  →  /home/vscode/.claude/settings.json
-~/.config/devc-tui/.claude/statusline.sh  →  /home/vscode/.claude/statusline.sh
+~/.config/devc/.claude/CLAUDE.md      →  /home/vscode/.claude/CLAUDE.md
+~/.config/devc/.claude/settings.json  →  /home/vscode/.claude/settings.json
+~/.config/devc/.claude/statusline.sh  →  /home/vscode/.claude/statusline.sh
 ```
 
 - **Top-level files only.** Directories are ignored — the `devc:skills` fence owns
@@ -90,9 +90,9 @@ binds — `devc` writes infra mounts once at creation and never re-asserts them,
 by hand with:
 
 ```jsonc
-"initializeCommand": "mkdir -p \"$HOME/.config/devc-tui/.claude\"",
+"initializeCommand": "mkdir -p \"$HOME/.config/devc/.claude\"",
 // …and in "mounts", replacing the three ~/.claude/* bind lines:
-"type=bind,source=${localEnv:HOME}/.config/devc-tui/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
+"type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
 ```
 
 The `initializeCommand` is what creates the mount source on a machine without `devc` installed
@@ -129,6 +129,6 @@ folders — no typing paths:
 - A **review** summary then a single `Apply?` confirm writes the two managed mount blocks
   (`devc:source`, `devc:skills`); everything else in the file is left untouched.
 
-**Roots** (where the pickers are scoped) live in `~/.config/devc-tui/config.json`, stored folded
+**Roots** (where the pickers are scoped) live in `~/.config/devc/config.json`, stored folded
 to `~/…`. On first run — or any time roots are missing — `devc config` collects them first with
 a free-navigation picker. Run **`devc config --global`** to reconfigure them at any time.

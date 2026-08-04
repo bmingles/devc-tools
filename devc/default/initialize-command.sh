@@ -9,4 +9,4 @@
 #
 # Idempotent; also runs on subsequent starts.
 set -e
-mkdir -p "$HOME/.config/devc-tui/.claude"
+mkdir -p "$HOME/.config/devc/.claude"
