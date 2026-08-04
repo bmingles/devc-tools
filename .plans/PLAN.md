@@ -8,6 +8,8 @@
 
 ### Completed
 
+- [devc-worktree-mounts](archived/devc-worktree-mounts.md) — Worktree-aware `devc config` bind mounts: keep the source target's sub-path relative to the configured code root, and for a picked git worktree also mount the primary repo's `.git` at the mirror location (only when the worktree uses relative paths and the primary lives under the same root). Invalid worktrees are flagged live in the folder picker and skip the primary mount.
+
 - [devc-container-feature-fix](archived/devc-container-feature-fix.md) — Fix zero-config `devc up`: a local Feature can't load from devc's out-of-tree bundled config, so the bundled default carries its baseline itself (Dockerfile build-time + top-level postCreateCommand runtime) while `devc config` projects keep the composable Feature. Also drops in-container tmux.
 
 - [devc-help-output](archived/devc-help-output.md) — Clap-style `--help`/`--version`: structured top-level help with a `Commands:` list, `-V`/`--version`, and per-command `devc <cmd> --help` blocks (verbatim from the design doc), in a new pure `help.ts` module.
@@ -42,3 +44,4 @@
 | devc help output — clap-style `--help`/`--version` + per-command help | [devc-help-output](archived/devc-help-output.md) | complete |
 | devc container baseline fix — out-of-tree Feature + drop in-container tmux | [devc-container-feature-fix](archived/devc-container-feature-fix.md) | complete |
 | devc wizard modernize — inline sequential flow + multi-select folder picker | [devc-wizard-modernize](devc-wizard-modernize.md) | in progress |
+| devc worktree-aware mounts — root-relative source targets + primary `.git` mount | [devc-worktree-mounts](archived/devc-worktree-mounts.md) | complete |

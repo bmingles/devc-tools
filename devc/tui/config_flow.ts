@@ -33,7 +33,17 @@ import {
 } from "../mounts.ts";
 import { applySelection, type ApplyResult, type WizardSelection } from "../wizard_apply.ts";
 import { findArraySpan, findFence, parseFenceEntries } from "../jsonc_edit.ts";
-import { pickFolders, type PickerDeps } from "./folder_picker.ts";
+import {
+  type FsProbe,
+  longestRootAncestor,
+  realFsProbe,
+  resolveWorktree,
+} from "../worktree.ts";
+import {
+  type EntryFlag,
+  pickFolders,
+  type PickerDeps,
+} from "./folder_picker.ts";
 import { runConfirm } from "./prompts.ts";
 import type { Size } from "./term.ts";
 
@@ -54,6 +64,8 @@ export interface FlowDeps {
   err?: (msg: string) => void;
   /** Apply the selection. Defaults to `applySelection` (real writes). */
   apply?: (dir: string, sel: WizardSelection) => Promise<ApplyResult>;
+  /** Filesystem probe for worktree resolution. Defaults to `realFsProbe`. */
+  fsProbe?: FsProbe;
 }
 
 function pickerDeps(deps: FlowDeps): PickerDeps {
@@ -124,6 +136,55 @@ function buildRows(
   return rows;
 }
 
+/**
+ * Build source rows from picked absolute paths. Each folder's container target keeps its
+ * sub-path under the configured code root it falls under (so `~/code/a/b` → `/workspaces/a/b`).
+ * A picked git worktree additionally contributes a mount of its primary repo's `.git` at the
+ * mirror location, but only when that is safe (relative paths + primary under the same root);
+ * unsafe worktrees are already flagged in the picker and just skip the primary mount. The
+ * primary `.git` mount is skipped when its target is already present (worktrees sharing one
+ * primary) or when the primary working tree is itself a picked source (already mounted).
+ */
+async function buildSourceRows(
+  paths: string[],
+  codeRoots: string[],
+  warn: (msg: string) => void,
+  fs: FsProbe,
+): Promise<MountRow[]> {
+  const rows: MountRow[] = [];
+  const picked = new Set(paths);
+  const add = (row: MountRow, onDup: () => void): void => {
+    try {
+      assertNoDuplicateTarget(rows, row);
+      rows.push(row);
+    } catch (e) {
+      if (e instanceof DuplicateTargetError) onDup();
+      else throw e;
+    }
+  };
+
+  for (const p of paths) {
+    const root = longestRootAncestor(p, codeRoots) ?? undefined;
+    add(
+      rowForHostPath("source", p, root),
+      () => warn(`  skipped ${p} — target already in use`),
+    );
+
+    const wt = await resolveWorktree(p, root ?? null, fs);
+    if (wt.isWorktree && wt.valid && !picked.has(wt.primaryRoot!)) {
+      add(
+        {
+          source: foldHome(wt.primaryGitDir!),
+          target: wt.primaryGitTarget!,
+          readonly: false,
+        },
+        () => {}, // shared primary → mount it once, silently
+      );
+    }
+  }
+  return rows;
+}
+
 function reviewLines(sel: WizardSelection): string[] {
   const lines: string[] = ["", "Review:"];
   const block = (title: string, rows: MountRow[]) => {
@@ -161,11 +222,36 @@ export async function runProjectFlow(
 ): Promise<FlowResult> {
   const apply = deps.apply ?? applySelection;
   const warn = deps.err ?? ((m: string) => console.error(m));
+  const fs = deps.fsProbe ?? realFsProbe;
 
   await writeLines(deps.output, [
     `Configuring devcontainer at ${opts.configPath}`,
     `  (${opts.creating ? "creating a new config" : "updating the existing config"})`,
   ]);
+
+  // Flag each browsed subfolder that is a git worktree whose primary repo can't be mounted.
+  const annotateSource = async (
+    dir: string,
+    names: string[],
+  ): Promise<Map<string, EntryFlag>> => {
+    const flags = new Map<string, EntryFlag>();
+    await Promise.all(names.map(async (name) => {
+      const abs = resolve(dir, name);
+      const wt = await resolveWorktree(
+        abs,
+        longestRootAncestor(abs, opts.codeRoots),
+        fs,
+      );
+      if (wt.isWorktree) {
+        flags.set(name, {
+          worktree: true,
+          valid: wt.valid,
+          reason: wt.reason,
+        });
+      }
+    }));
+    return flags;
+  };
 
   const sourcePicked = await pickFolders({
     title: "Pick source folders to mount",
@@ -174,6 +260,7 @@ export async function runProjectFlow(
     preselected: opts.sourceRows.map((r) => expandToAbsolute(r.source)).filter(
       (p): p is string => p !== null,
     ),
+    annotate: annotateSource,
     color: opts.color,
   }, pickerDeps(deps));
   if (sourcePicked === null) {
@@ -196,7 +283,7 @@ export async function runProjectFlow(
   }
 
   const selection: WizardSelection = {
-    source: buildRows("source", sourcePicked, warn),
+    source: await buildSourceRows(sourcePicked, opts.codeRoots, warn, fs),
     skills: buildRows("skills", skillsPicked, warn),
   };
 
