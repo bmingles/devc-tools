@@ -238,3 +238,68 @@ Deno.test("saveGlobalConfig round-trips recentSkills and preserves unknown keys"
     assertEquals(loaded.extra, { misc: 1 });
   });
 });
+
+Deno.test("changed: true on creation, false when the selection round-trips identically", async () => {
+  await withTemp(async (dir) => {
+    const cfgPath = `${dir}/config.json`;
+    const first = await applySelection(dir, SEL, { globalConfigPath: cfgPath });
+    assert(first.created);
+    assert(first.changed, "first creation must count as a change");
+
+    const path = `${dir}/.devcontainer/devcontainer.json`;
+    const before = await Deno.readTextFile(path);
+    const beforeMtime = (await Deno.stat(path)).mtime;
+
+    // Re-applying the same rows produces the same bytes: no change, and no write at all.
+    const again = await applySelection(dir, SEL, { globalConfigPath: cfgPath });
+    assert(!again.created);
+    assertEquals(again.changed, false);
+    assertEquals(await Deno.readTextFile(path), before);
+    assertEquals(
+      (await Deno.stat(path)).mtime?.getTime(),
+      beforeMtime?.getTime(),
+    );
+  });
+});
+
+Deno.test("changed: true when the selection differs from what is on disk", async () => {
+  await withTemp(async (dir) => {
+    const cfgPath = `${dir}/config.json`;
+    await applySelection(dir, SEL, { globalConfigPath: cfgPath });
+
+    const edited: WizardSelection = {
+      source: SEL.source,
+      skills: [], // drop the skills mount
+    };
+    const result = await applySelection(dir, edited, {
+      globalConfigPath: cfgPath,
+    });
+    assert(result.changed, "dropping a mount must count as a change");
+    const rows = fenceRows(
+      await Deno.readTextFile(`${dir}/.devcontainer/devcontainer.json`),
+    );
+    assertEquals(rows.skills, []);
+  });
+});
+
+Deno.test("changed: false leaves the fences and a toggled-and-restored row intact", async () => {
+  await withTemp(async (dir) => {
+    const cfgPath = `${dir}/config.json`;
+    await applySelection(dir, SEL, { globalConfigPath: cfgPath });
+    const path = `${dir}/.devcontainer/devcontainer.json`;
+
+    // Toggle the skills mount off, then back on — the end state matches the start state, so
+    // the second apply reports no change even though the user did touch the selection.
+    await applySelection(dir, { source: SEL.source, skills: [] }, {
+      globalConfigPath: cfgPath,
+    });
+    const restored = await applySelection(dir, SEL, {
+      globalConfigPath: cfgPath,
+    });
+    assert(restored.changed, "restoring the row is itself a change from disk");
+
+    const noop = await applySelection(dir, SEL, { globalConfigPath: cfgPath });
+    assertEquals(noop.changed, false);
+    assertEquals(fenceRows(await Deno.readTextFile(path)).skills, SEL.skills);
+  });
+});

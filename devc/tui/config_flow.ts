@@ -32,6 +32,11 @@ import {
   serializeMount,
 } from "../mounts.ts";
 import { applySelection, type ApplyResult, type WizardSelection } from "../wizard_apply.ts";
+import {
+  type ContainerStatus,
+  getContainerStatus,
+  rebuildContainer,
+} from "../container.ts";
 import { findArraySpan, findFence, parseFenceEntries } from "../jsonc_edit.ts";
 import {
   type FsProbe,
@@ -66,6 +71,17 @@ export interface FlowDeps {
   apply?: (dir: string, sel: WizardSelection) => Promise<ApplyResult>;
   /** Filesystem probe for worktree resolution. Defaults to `realFsProbe`. */
   fsProbe?: FsProbe;
+  /**
+   * Look up the project's container status, to word the post-apply rebuild prompt. Omitted
+   * (tests, no-Docker contexts) ⇒ the flow reports that a rebuild is needed but does not offer
+   * to run one.
+   */
+  containerStatus?: (dir: string) => Promise<ContainerStatus>;
+  /**
+   * Recreate the container, resolving to a one-line summary for the flow to print. Throws on
+   * failure. Omitted ⇒ no rebuild is offered (see `containerStatus`).
+   */
+  rebuild?: (dir: string) => Promise<string>;
 }
 
 function pickerDeps(deps: FlowDeps): PickerDeps {
@@ -213,6 +229,10 @@ export interface ProjectFlowOptions {
 /** Outcome of a flow run. */
 export interface FlowResult {
   applied: boolean;
+  /** Whether the apply actually altered the config on disk (see `ApplyResult.changed`). */
+  changed: boolean;
+  /** Whether a container rebuild was run as part of this flow. */
+  rebuilt: boolean;
 }
 
 /** The testable project-config flow core. */
@@ -265,7 +285,7 @@ export async function runProjectFlow(
   }, pickerDeps(deps));
   if (sourcePicked === null) {
     await writeLines(deps.output, ["Cancelled."]);
-    return { applied: false };
+    return { applied: false, changed: false, rebuilt: false };
   }
 
   const skillsPicked = await pickFolders({
@@ -279,7 +299,7 @@ export async function runProjectFlow(
   }, pickerDeps(deps));
   if (skillsPicked === null) {
     await writeLines(deps.output, ["Cancelled."]);
-    return { applied: false };
+    return { applied: false, changed: false, rebuilt: false };
   }
 
   const selection: WizardSelection = {
@@ -295,11 +315,15 @@ export async function runProjectFlow(
   });
   if (!ok) {
     await writeLines(deps.output, ["Cancelled — nothing written."]);
-    return { applied: false };
+    return { applied: false, changed: false, rebuilt: false };
   }
 
   const result = await apply(opts.projectDir, selection);
-  const msg = [`${result.created ? "Created" : "Updated"} ${result.configPath}`];
+  const msg = [
+    result.changed
+      ? `${result.created ? "Created" : "Updated"} ${result.configPath}`
+      : `Unchanged ${result.configPath}`,
+  ];
   if (result.created) {
     // List the bundled assets written alongside the config (skip the config itself).
     for (const path of result.written) {
@@ -307,7 +331,73 @@ export async function runProjectFlow(
     }
   }
   await writeLines(deps.output, msg);
-  return { applied: true };
+
+  const rebuilt = await maybeRebuild(opts.projectDir, result.changed, deps);
+  return { applied: true, changed: result.changed, rebuilt };
+}
+
+/**
+ * Post-apply rebuild step. Mounts are bound when the container is *created*, so a changed
+ * config only takes effect after a recreate — but a selection that round-tripped to identical
+ * bytes needs nothing, and saying otherwise would train the user to ignore the prompt. So the
+ * notice and the offer appear only when `changed`.
+ */
+async function maybeRebuild(
+  projectDir: string,
+  changed: boolean,
+  deps: FlowDeps,
+): Promise<boolean> {
+  if (!changed) {
+    await writeLines(deps.output, ["No config changes — no rebuild needed."]);
+    return false;
+  }
+
+  // No status lookup / rebuild action (tests), or the lookup itself failed (no docker on
+  // PATH, daemon down) ⇒ say what is needed and let the user run it, rather than offering a
+  // build that cannot work.
+  const status = deps.containerStatus;
+  const rebuild = deps.rebuild;
+  const state = status === undefined
+    ? null
+    : await status(projectDir).catch(() => null);
+  if (state === null || rebuild === undefined) {
+    await writeLines(deps.output, [
+      "Config changed — run `devc build` to rebuild the dev container.",
+    ]);
+    return false;
+  }
+
+  const existing = state !== "missing";
+  await writeLines(deps.output, [
+    "",
+    existing
+      ? "Config changed — the dev container must be rebuilt for the new mounts to take effect."
+      : "No dev container exists for this project yet.",
+  ]);
+  const go = await runConfirm(existing ? "Rebuild now?" : "Build it now?", true, {
+    input: deps.input,
+    output: deps.output,
+    raw: deps.raw,
+  });
+  if (!go) {
+    await writeLines(deps.output, [
+      "Skipped — run `devc build` when you're ready.",
+    ]);
+    return false;
+  }
+
+  // The config is already written, so a failed build is not a failed `devc config`: report it
+  // and return normally rather than throwing out of the flow.
+  try {
+    const summary = await rebuild(projectDir);
+    await writeLines(deps.output, [summary]);
+    return true;
+  } catch (e) {
+    (deps.err ?? ((m: string) => console.error(m)))(
+      `devc: ${e instanceof Error ? e.message : e}`,
+    );
+    return false;
+  }
 }
 
 /** The testable global-roots flow core: pick code roots, then skills roots (stored `~/…`). */
@@ -437,7 +527,16 @@ export async function runProjectConfigWizard(
   io: WizardIo,
   includeGlobalStep: boolean,
 ): Promise<void> {
-  const deps = { ...realDeps(), err: io.err };
+  const deps: FlowDeps = {
+    ...realDeps(),
+    err: io.err,
+    containerStatus: getContainerStatus,
+    rebuild: async (dir) => {
+      console.log(`Rebuilding dev container for ${dir}...`);
+      const info = await rebuildContainer(dir);
+      return `${info.containerId} running — workspace ${info.remoteWorkspaceFolder}`;
+    },
+  };
 
   // Bounded pickers need roots as their top level, so ensure roots exist first: on an explicit
   // first run, or whenever either root list is empty/unresolvable.

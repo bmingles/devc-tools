@@ -4,12 +4,13 @@ import {
   execInContainer,
   getContainerMounts,
   getContainerStatus,
+  rebuildContainer,
   resolveLocalFolder,
   sessionNameForWorkspaceFolder,
   startContainer,
   stopContainer,
 } from "./container.ts";
-import { parseAttachArgs } from "./args.ts";
+import { parseAttachArgs, parseBuildArgs } from "./args.ts";
 import {
   globalConfigExists,
   runGlobalConfigWizard,
@@ -151,6 +152,24 @@ if (subcommand === "up") {
   const json = rest.includes("--json");
   const target = resolveLocalFolder(rest.find((a) => !a.startsWith("--")));
   const info = await startContainer(target, false).catch(fail);
+  if (json) {
+    console.log(JSON.stringify(info));
+  } else {
+    console.log(
+      `${info.containerId} running — workspace ${info.remoteWorkspaceFolder}`,
+    );
+  }
+  Deno.exit(0);
+}
+
+// `devc build [PATH]`: recreate the container from scratch, without attaching. This is the
+// operation that makes a `devcontainer.json` change take effect, since mounts are bound at
+// container-create time; `--no-cache` also rebuilds the image without the layer cache.
+if (subcommand === "build") {
+  const { target: rawTarget, noCache, json } = parseBuildArgs(Deno.args.slice(1));
+  const target = resolveLocalFolder(rawTarget);
+  if (!json) console.log(`Rebuilding dev container for ${target}...`);
+  const info = await rebuildContainer(target, { noCache }).catch(fail);
   if (json) {
     console.log(JSON.stringify(info));
   } else {

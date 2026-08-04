@@ -197,7 +197,24 @@ When the user selects **Apply**:
 2. **First creation** (no existing `PATH/.devcontainer/devcontainer.json`): write the base `devcontainer.json` from the bundled default, with the two managed fences inserted into the `mounts` array and populated from the configured source/skills mounts. Write the base `Dockerfile` as-is.
 3. **Update in place** (file already exists): rewrite only the `devc:source` and `devc:skills` fence contents; preserve everything else byte-for-byte (infra mounts, hand-edits, comments, unknown keys). Do not rewrite the `Dockerfile`.
 4. Persist the applied skills list as the remembered selection (see Step 3).
-5. Return to the shell with a success message.
+5. Report whether the config actually changed, and offer a rebuild when it did (see below).
+6. Return to the shell with a success message.
+
+### Rebuild prompt
+
+Mounts are bound at container-create time, so a config change is inert until the container is recreated. `config` therefore ends by comparing the bytes it would write against the bytes already on disk — an exact comparison that needs no separate model diffing — and reports one of three outcomes:
+
+| Situation | Message | Prompt |
+| --- | --- | --- |
+| Text identical to what is on disk | `No config changes — no rebuild needed.` | none |
+| Changed, container `running` / `stopped` | `Config changed — the dev container must be rebuilt for the new mounts to take effect.` | `Rebuild now? [Y/n]` |
+| Changed, container `missing` | `No dev container exists for this project yet.` | `Build it now? [Y/n]` |
+
+Accepting runs the same recreate as [`build`](#build) and prints its summary line; declining prints a reminder to run `devc build` later. A failed rebuild is reported but does not fail `devc config` — the config was still written.
+
+The "no changes" case is the point of the comparison: a user who ticks a folder off and back on, or re-runs `config` and confirms the same selection, ends at byte-identical text. That is not a change, the file is not even rewritten (its mtime does not move), and no rebuild is offered. Only genuine edits prompt, so the prompt stays meaningful.
+
+Global roots (`devc config --global`) never prompt — `codeRoots`/`skillsRoots` and the remembered skills list scope the pickers and do not affect the container.
 
 If the user selects **Cancel** or quits, no files are written and the in-memory changes are discarded.
 
@@ -220,6 +237,7 @@ Commands:
   attach   Attach to the dev container for the current project
   claude   Launch Claude inside the dev container for the current project
   up       Start the dev container for the current project
+  build    Rebuild the dev container for the current project
   exec     Execute a command inside the dev container for the current project
   mounts   List container mounts for the current project
   stop     Stop the dev container for the current project
@@ -279,6 +297,26 @@ Options:
       --json   Output container status as JSON
   -h, --help   Print help
 ```
+
+## `build`
+
+Recreate the dev container for the project in the current working directory, without attaching.
+
+Bind mounts are established when a container is **created**, so a `devcontainer.json` change only takes effect after a recreate — `build` is that operation (`devcontainer up --remove-existing-container`), not an image-only build. `--no-cache` additionally passes `--build-no-cache` for the case where the image itself must be rebuilt from scratch (a changed base image, a stale layer).
+
+```text
+Usage: devc build [PATH] [OPTIONS]
+
+Arguments:
+  [PATH]  Path to the project (default: current directory)
+
+Options:
+      --no-cache   Rebuild the image without the Docker layer cache
+      --json       Output container status as JSON
+  -h, --help       Print help
+```
+
+Output matches `up`: `<containerId> running — workspace <remoteWorkspaceFolder>`, or the `ContainerInfo` JSON with `--json`. `attach --build` performs the same recreate before attaching.
 
 ## `exec`
 
