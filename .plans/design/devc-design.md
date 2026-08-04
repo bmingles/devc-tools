@@ -52,6 +52,18 @@ Consequences for the generated config:
 - The bundled default `devcontainer.json` references the `devc` Feature under `"features"`; the top-level `postCreateCommand` is left free for the developer.
 - The bundled `Dockerfile` stays minimal (base image + anything genuinely image-level), so it remains a clean extension point rather than a place where `devc` behavior hides.
 
+### Host `~/.claude` config: the seed directory
+
+The user's Claude config reaches the container through **one read-only directory bind mount** of `~/.config/devc-tui/.claude` at `/usr/local/share/devc/claude-seed`, not through per-file bind mounts of `~/.claude/*`. The Feature's `post-create.sh` then symlinks every top-level *file* from the seed into the `~/.claude` volume, pruning links whose seed file has gone away.
+
+Why a directory plus symlinks rather than per-file binds or a copy:
+
+- **Per-file binds assume the files exist.** `mounts` takes Docker `--mount` semantics, where a missing bind source is a hard create-time error (unlike `-v`, which auto-creates a directory). A user lacking any one file could not create a container. A directory source can always be created ahead of time, and an empty one is valid.
+- **Symlinks, not copies.** `~/.claude` is a persistent per-workspace volume, so a copy would be additive — a file deleted on the host would survive in the container forever, and recovering deletion would need a manifest of what was copied. Symlinks make deletion fall out of pruning, and preserve the live-edit and read-only semantics of the original binds along with host file modes.
+- **Files only; directories ignored.** The `devc:skills` fence mounts per-skill binds under `~/.claude/skills/`, and Docker materializes that intermediate directory at create time — before `postCreate` runs. Linking or copying a seed `skills/` over it would silently nest, or fail on a busy mountpoint or a read-only bind. Ignoring directories removes the whole class of conflict; directory-shaped config is added later as its own fence, not by recursing here.
+
+The one part of the baseline that **cannot** compose through the Feature is `initializeCommand`, which creates the mount source on machines without `devc`. The spec allows Features only the five container-side hooks (`onCreateCommand`, `updateContentCommand`, `postCreateCommand`, `postStartCommand`, `postAttachCommand`), and `initializeCommand` is the only host-side hook — the others run after mounts are established, structurally too late. So it sits top-level in the bundled default and inherits the single-valued clobbering problem described above; a project overriding it keeps the `mkdir -p` or drops the seed mount with it. `devc` also calls `ensureClaudeSeedDir` on every `up`, which owns what a shell one-liner cannot: the not-a-directory guard and the one-time migration off the old per-file layout.
+
 > **Open decision (implementation):** how the `devc` Feature is distributed — published to an OCI registry (`ghcr.io/...`, referenced by ref) versus materialized into the project's `.devcontainer/` as a local feature (referenced by relative path, fully self-contained, no network). This does not change the design above; it is resolved during implementation.
 
 ## Global user configuration

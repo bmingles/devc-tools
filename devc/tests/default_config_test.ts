@@ -1,5 +1,6 @@
-import { assertEquals } from "jsr:@std/assert@^1";
+import { assertEquals, assertRejects } from "jsr:@std/assert@^1";
 import {
+  ensureClaudeSeedDir,
   hasOwnDevcontainerConfig,
   loadResolvedRemoteEnv,
   materializeDefaultConfig,
@@ -254,4 +255,129 @@ Deno.test("materializeDefaultConfig writes the embedded tree to real disk (defau
     const siblingStat = await Deno.stat(`${dir}/${sibling}`);
     assertEquals(siblingStat.isFile, true);
   }
+});
+
+Deno.test("materializeDefaultConfig preserves initializeCommand for the zero-config path", async () => {
+  await withTempDir(async (tmp) => {
+    const configPath = await materializeDefaultConfig(`${tmp}/cache`);
+    const config = JSON.parse(await Deno.readTextFile(configPath));
+    // Host-side hook that creates the ~/.claude seed mount source; a Feature cannot carry it,
+    // so the zero-config transform must not drop it.
+    assertEquals(
+      config.initializeCommand,
+      'mkdir -p "$HOME/.config/devc-tui/.claude"',
+    );
+  });
+});
+
+Deno.test("ensureClaudeSeedDir creates the directory and reports it", async () => {
+  await withTempDir(async (tmp) => {
+    const seed = `${tmp}/seed`;
+    const result = await ensureClaudeSeedDir(seed, `${tmp}/claude`);
+    assertEquals(result.created, true);
+    assertEquals(result.migrated, []);
+    assertEquals((await Deno.stat(seed)).isDirectory, true);
+  });
+});
+
+Deno.test("ensureClaudeSeedDir is idempotent on an existing directory", async () => {
+  await withTempDir(async (tmp) => {
+    const seed = `${tmp}/seed`;
+    await ensureClaudeSeedDir(seed, `${tmp}/claude`);
+    const second = await ensureClaudeSeedDir(seed, `${tmp}/claude`);
+    assertEquals(second.created, false);
+    assertEquals(second.migrated, []);
+  });
+});
+
+Deno.test("ensureClaudeSeedDir migrates the three ~/.claude files on first creation", async () => {
+  await withTempDir(async (tmp) => {
+    const claude = `${tmp}/claude`;
+    await mkdir(claude);
+    await Deno.writeTextFile(`${claude}/CLAUDE.md`, "# instructions\n");
+    await Deno.writeTextFile(`${claude}/settings.devc.json`, '{"a":1}\n');
+    await Deno.writeTextFile(`${claude}/statusline.sh`, "#!/bin/sh\necho hi\n");
+    await Deno.chmod(`${claude}/statusline.sh`, 0o755);
+    // Not in the migration list — a directory must not come along.
+    await mkdir(`${claude}/skills`);
+
+    const seed = `${tmp}/seed`;
+    const result = await ensureClaudeSeedDir(seed, claude);
+
+    assertEquals(result.created, true);
+    assertEquals(result.migrated, [
+      "CLAUDE.md",
+      "settings.json",
+      "statusline.sh",
+    ]);
+    // settings.devc.json is renamed; the .devc suffix is no longer needed.
+    assertEquals(await Deno.readTextFile(`${seed}/settings.json`), '{"a":1}\n');
+    assertEquals(
+      await Deno.readTextFile(`${seed}/CLAUDE.md`),
+      "# instructions\n",
+    );
+    assertEquals(
+      await Deno.stat(`${seed}/settings.devc.json`).then(() => true).catch(
+        () => false,
+      ),
+      false,
+    );
+    assertEquals(
+      await Deno.stat(`${seed}/skills`).then(() => true).catch(() => false),
+      false,
+    );
+    // copyFile carries permissions on Unix, so the statusline stays executable.
+    assertEquals(
+      (await Deno.stat(`${seed}/statusline.sh`)).mode! & 0o111,
+      0o111,
+    );
+    // The host originals are copied, not moved.
+    assertEquals((await Deno.stat(`${claude}/CLAUDE.md`)).isFile, true);
+  });
+});
+
+Deno.test("ensureClaudeSeedDir skips migration when the seed directory already exists", async () => {
+  await withTempDir(async (tmp) => {
+    const claude = `${tmp}/claude`;
+    await mkdir(claude);
+    await Deno.writeTextFile(`${claude}/CLAUDE.md`, "# instructions\n");
+    const seed = `${tmp}/seed`;
+    await mkdir(seed);
+
+    const result = await ensureClaudeSeedDir(seed, claude);
+
+    assertEquals(result.created, false);
+    assertEquals(result.migrated, []);
+    // A file the user deleted from the seed is not resurrected.
+    assertEquals(
+      await Deno.stat(`${seed}/CLAUDE.md`).then(() => true).catch(() => false),
+      false,
+    );
+  });
+});
+
+Deno.test("ensureClaudeSeedDir rejects a seed path that is not a directory", async () => {
+  await withTempDir(async (tmp) => {
+    const seed = `${tmp}/seed`;
+    await Deno.writeTextFile(seed, "oops\n");
+    await assertRejects(
+      () => ensureClaudeSeedDir(seed, `${tmp}/claude`),
+      Error,
+      "is not a directory",
+    );
+  });
+});
+
+Deno.test("ensureClaudeSeedDir rejects a dangling symlink at the seed path", async () => {
+  await withTempDir(async (tmp) => {
+    const seed = `${tmp}/seed`;
+    // Recursive mkdir reports AlreadyExists here rather than following through, so the
+    // not-a-directory guard is what turns this into a readable error.
+    await Deno.symlink(`${tmp}/nonexistent`, seed);
+    await assertRejects(
+      () => ensureClaudeSeedDir(seed, `${tmp}/claude`),
+      Error,
+      "is not a directory",
+    );
+  });
 });

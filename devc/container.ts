@@ -1,10 +1,13 @@
 import { normalizePath as _normalizePath } from "./paths.ts";
 import { basenamePosix, dirnamePosix, resolvePosix } from "./posix.ts";
 import {
+  CLAUDE_SEED_HOST_DIR,
+  ensureClaudeSeedDir,
   hasOwnDevcontainerConfig,
   loadResolvedRemoteEnv,
   materializeDefaultConfig,
 } from "./default_config.ts";
+import { displayPath } from "./config.ts";
 
 export type ContainerStatus = "running" | "stopped" | "missing";
 
@@ -487,6 +490,17 @@ export async function startContainer(
   // Guard before any git/docker/devcontainer work so a bad path fails fast
   // instead of spinning up a container for it.
   assertLocalFolderExists(localFolder);
+
+  // The ~/.claude seed mount's source must exist before `devcontainer up` runs: a bind mount
+  // with a missing source is a hard error, not an auto-created directory.
+  const seed = await ensureClaudeSeedDir();
+  if (seed.migrated.length > 0) {
+    console.log(
+      `devc: moved ${seed.migrated.join(", ")} into ${
+        displayPath(CLAUDE_SEED_HOST_DIR)
+      }`,
+    );
+  }
 
   const worktree = await isGitWorktree(localFolder);
   const args = ["up", "--workspace-folder", localFolder];
