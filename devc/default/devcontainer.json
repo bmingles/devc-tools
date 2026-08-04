@@ -5,7 +5,6 @@
     "context": "."
   },
   "features": {
-    "./features/devc": {},
     "ghcr.io/devcontainers-community/features/deno:1": {},
     "ghcr.io/devcontainers/features/go:1": { "version": "latest" },
     "ghcr.io/devcontainers/features/node:1": {
@@ -27,24 +26,29 @@
     // task, so the project-name title set in bashrc-additions.sh persists.
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
   },
-  // Ensures the host-side ~/.claude seed directory exists before the mounts below are
-  // established: `--mount type=bind` errors on a missing source, so without this a clone of
-  // this config fails at create for anyone who has not run `devc`. Idempotent — this hook
-  // also runs on subsequent starts. A Feature cannot carry it (the spec allows Features only
-  // the five container-side hooks), so it has to live here, top-level. If a project overrides
-  // it, either keep the mkdir or drop the claude-seed mount below alongside it.
-  "initializeCommand": "mkdir -p \"$HOME/.config/devc-tui/.claude\"",
+  // devc's create-time runtime setup (post-create.sh delegates to scripts/*). Runs after all
+  // features finish installing, so the nvm install ordering is preserved. Points at the copy
+  // in this .devcontainer/, so editing post-create.sh or its scripts/ takes effect on the next
+  // container create — no image rebuild. (In zero-config `devc` rewrites this to the image-baked
+  // path, since there is no project .devcontainer/ to run.)
+  "postCreateCommand": "bash \"${containerWorkspaceFolder}/.devcontainer/post-create.sh\"",
+  // Host-side hook (runs on the host, before create): ensures the ~/.claude seed directory
+  // exists, since `--mount type=bind` errors on a missing source. See initialize-command.sh.
+  // It is the only host-side lifecycle hook, so it has to live here, top-level. In zero-config
+  // `devc` rewrites this path to the cache copy (the script isn't in the user's workspace). If
+  // a project overrides it, either keep this call or drop the claude-seed mount alongside it.
+  "initializeCommand": "bash \"${localWorkspaceFolder}/.devcontainer/initialize-command.sh\"",
   "mounts": [
     // ~/.claude folder
     "type=volume,source=claude-code-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
 
-    // Host ~/.claude config seed: the devc Feature's postCreateCommand symlinks every
-    // top-level *file* from here into ~/.claude. Directories are ignored — the devc:skills
-    // fence owns ~/.claude/skills/.
+    // Host ~/.claude config seed: agents-setup.sh symlinks every top-level *file* from here
+    // into ~/.claude. Directories are ignored — the devc:skills fence owns ~/.claude/skills/.
     "type=bind,source=${localEnv:HOME}/.config/devc-tui/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
 
-    // ~/.claude.json (auth) persisted per-workspace via volume; the devc Feature's postCreateCommand sets up the symlink
-    "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/home/vscode/.claude-json-vol",
+    // ~/.claude.json (auth) persisted per-workspace via volume, mounted in devc's namespace
+    // (alongside claude-seed, out of ~); agents-setup.sh symlinks ~/.claude.json to it
+    "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/usr/local/share/devc/claude-json",
 
     "type=volume,source=go-cache-${localWorkspaceFolderBasename},target=/home/vscode/go/pkg",
     "type=volume,source=go-build-cache-${localWorkspaceFolderBasename},target=/root/.cache/go-build",

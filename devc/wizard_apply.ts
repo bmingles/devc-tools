@@ -2,11 +2,16 @@
 //
 // The wizard owns exactly two regions of the project `devcontainer.json`'s `mounts` array:
 // the `devc:source` and `devc:skills` fences. Everything else — infra mounts, the Dockerfile,
-// `features/` — is written once, at first creation, from the bundled default and never
-// re-asserted. On reconfigure only the two fences are rewritten (`writeBlocks`), so anything
-// the user hand-edited outside them survives byte-for-byte.
+// the `post-create.sh`/`initialize-command.sh` entry scripts, and the `scripts/` subtree — is
+// written once, at first creation, from the bundled default and never re-asserted. On
+// reconfigure only the two fences are rewritten (`writeBlocks`), so anything the user
+// hand-edited outside them — including edits to post-create.sh or its scripts/ — survives
+// byte-for-byte.
 
-import { copyBundledFeatures, loadBundledDefault } from "./default_config.ts";
+import {
+  copyBundledAssets,
+  loadBundledDevcontainerJson,
+} from "./default_config.ts";
 import {
   loadGlobalConfig,
   makeGlobalConfig,
@@ -67,11 +72,12 @@ export interface ApplyDeps {
  * Apply `selection` to `projectDir/.devcontainer/`.
  *
  * First creation (no existing `devcontainer.json`): the bundled default text is the base; its
- * two fences are inserted + populated; the `Dockerfile` and the `features/` subtree are copied
- * verbatim (the local Feature reference `"./features/devc"` needs the subtree present).
+ * two fences are inserted + populated; every other bundled asset (`Dockerfile`, `post-create.sh`,
+ * `initialize-command.sh`, `scripts/`) is copied verbatim via `copyBundledAssets`, and the
+ * shell scripts are made executable.
  *
- * Update in place: only the two fences are rewritten on the existing file text; `Dockerfile`
- * and `features/` are left untouched.
+ * Update in place: only the two fences are rewritten on the existing file text; the copied
+ * assets are left untouched.
  *
  * Then the applied skills host paths are persisted to `recentSkills` in the global config.
  */
@@ -91,8 +97,7 @@ export async function applySelection(
 
   let baseText: string;
   if (created) {
-    const bundled = await loadBundledDefault();
-    baseText = bundled.devcontainerJson;
+    baseText = await loadBundledDevcontainerJson();
   } else {
     baseText = await Deno.readTextFile(configPath);
   }
@@ -111,13 +116,27 @@ export async function applySelection(
   await Deno.writeTextFile(configPath, out);
 
   if (created) {
-    const bundled = await loadBundledDefault();
-    const dockerfilePath = `${devcontainerDir}/Dockerfile`;
-    await Deno.writeFile(dockerfilePath, bundled.dockerfile);
-    written.push(dockerfilePath);
-    const featuresDir = `${devcontainerDir}/features`;
-    await copyBundledFeatures(featuresDir);
-    written.push(featuresDir);
+    await copyBundledAssets(devcontainerDir);
+    written.push(
+      `${devcontainerDir}/Dockerfile`,
+      `${devcontainerDir}/post-create.sh`,
+      `${devcontainerDir}/initialize-command.sh`,
+      `${devcontainerDir}/scripts`,
+    );
+    // copyBundledAssets writes files 0644; restore the exec bit on the entry scripts and
+    // their scripts/ delegates so a dev can run them by hand (post-create.sh also invokes
+    // its steps via `bash`, so this is for cleanliness rather than correctness).
+    const scriptsDir = `${devcontainerDir}/scripts`;
+    const exe = [
+      `${devcontainerDir}/post-create.sh`,
+      `${devcontainerDir}/initialize-command.sh`,
+    ];
+    for await (const entry of Deno.readDir(scriptsDir)) {
+      if (entry.isFile && entry.name.endsWith(".sh")) {
+        exe.push(`${scriptsDir}/${entry.name}`);
+      }
+    }
+    for (const path of exe) await Deno.chmod(path, 0o755);
   }
 
   await persistRecentSkills(selection.skills, deps.globalConfigPath);

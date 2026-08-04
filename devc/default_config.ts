@@ -15,8 +15,8 @@ export const CONFIG_DIR = `${homeDir()}/.config/devc-tui`;
 
 /**
  * Host directory holding the user's `~/.claude` config for containers. Bind-mounted read-only
- * at `CLAUDE_SEED_TARGET`; the devc Feature's `post-create.sh` symlinks every top-level *file*
- * from it into the `~/.claude` volume (directories are ignored — the `devc:skills` fence owns
+ * at `CLAUDE_SEED_TARGET`; `post-create.sh` symlinks every top-level *file* from it into the
+ * `~/.claude` volume (directories are ignored — the `devc:skills` fence owns
  * `~/.claude/skills/`).
  */
 export const CLAUDE_SEED_HOST_DIR = `${CONFIG_DIR}/.claude`;
@@ -137,24 +137,31 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
 }
 
 /**
- * Copies the embedded `devc/default/` tree flat into `cacheDir` (default
- * `~/.cache/devc/default`), overwriting any existing copy, then rewrites the
- * copied `devcontainer.json` for zero-config use and returns its path — suitable
- * for `devcontainer up --config <path>`. There is no user-editable global
- * template override dir — customization happens per-project via `devc config`.
+ * Copies the embedded `devc/default/` tree verbatim into `cacheDir` (default
+ * `~/.cache/devc/default`), overwriting any existing copy, and returns the path
+ * to the copied `devcontainer.json` — suitable for `devcontainer up --config
+ * <path>`. There is no user-editable global template override dir — customization
+ * happens per-project via `devc config`.
  *
- * **Zero-config transform.** The bundled default references the devc baseline as
- * a local Feature (`"./features/devc"`), but `@devcontainers/cli` validates a
- * local Feature against `<workspaceRoot>/.devcontainer` (the user's repo), not
- * the config's own directory. Since `devc up` loads this config out-of-tree via
- * `--config`, the Feature can never resolve here (no path form reaches the cache;
- * absolute paths are rejected outright). So the Feature reference is stripped and
- * the same baseline is delivered another way: build-time bits are baked by the
- * bundled `Dockerfile`, and the runtime bits run via a top-level
- * `postCreateCommand` pointing at the script the Dockerfile installed. The
- * `features/` subtree is still materialized (the Dockerfile `COPY`s scripts from
- * it) — it is simply not referenced by the transformed config. The cache copy is
- * machine-only, so rewriting it as comment-free JSON is fine.
+ * The copy is near-verbatim: the bundled default carries no local Feature, so
+ * zero-config and `devc config` projects share the same `.devcontainer/` shape. The
+ * baseline is delivered by the bundled `Dockerfile` (build-time) plus the top-level
+ * `postCreateCommand` running `post-create.sh` → `scripts/*` (create-time), both of which
+ * the source config already spells out. `@devcontainers/cli` accepts JSONC, so the copied
+ * config keeps its comments.
+ *
+ * Two path rewrites are applied, because both entry scripts are referenced relative to a
+ * project `.devcontainer/` that does not exist in the zero-config path (the workspace is the
+ * user's project, and this cache dir is not mounted into the container):
+ *
+ * - `initializeCommand` runs on the *host* → resolved to `initialize-command.sh` in this
+ *   cache dir.
+ * - `postCreateCommand` runs in the *container* → resolved to the image-baked
+ *   `post-create.sh` (which the Dockerfile `COPY`s in for exactly this case).
+ *
+ * Plain string replaces preserve the config's comments; the tokens match the source verbatim.
+ * These rewrites are why the project-mode config can reference clean in-project paths (so edits
+ * apply on recreate) while the hidden zero-config copy still resolves.
  *
  * `cacheDir` defaults to the real `~/.cache/devc/default` and only needs
  * overriding in tests.
@@ -168,49 +175,49 @@ export async function materializeDefaultConfig(
 
   const configPath = `${cacheDir}/devcontainer.json`;
   const raw = await Deno.readTextFile(configPath);
-  // deno-lint-ignore no-explicit-any
-  const config: any = JSON.parse(stripLineComments(raw));
-  if (config.features && typeof config.features === "object") {
-    delete config.features["./features/devc"];
-  }
-  config.postCreateCommand = "/usr/local/share/devc/post-create.sh";
-  await Deno.writeTextFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  const rewritten = raw
+    .replaceAll(
+      "${localWorkspaceFolder}/.devcontainer/initialize-command.sh",
+      `${cacheDir}/initialize-command.sh`,
+    )
+    .replaceAll(
+      "${containerWorkspaceFolder}/.devcontainer/post-create.sh",
+      "/usr/local/share/devc/post-create.sh",
+    );
+  if (rewritten !== raw) await Deno.writeTextFile(configPath, rewritten);
 
   return configPath;
 }
 
 /**
- * The bundled default assets the `config` wizard needs: the `devcontainer.json` text (used as
- * the base for a first-creation), the `Dockerfile` bytes (copied verbatim), and the URL of the
- * embedded `features/` subtree (copied into the project so `"./features/devc"` resolves).
+ * Read the embedded `default/devcontainer.json` text — the base a first-creation `devc config`
+ * inserts its two fences into. Every *other* bundled file (Dockerfile, `post-create.sh`,
+ * `initialize-command.sh`, `scripts/`) is written by {@link copyBundledAssets}.
  */
-export interface BundledDefault {
-  /** The default `devcontainer.json` source text, exactly as embedded. */
-  devcontainerJson: string;
-  /** The default `Dockerfile` bytes, exactly as embedded. */
-  dockerfile: Uint8Array;
-  /** URL of the embedded `features/` directory, for a recursive copy. */
-  featuresDirUrl: URL;
+export async function loadBundledDevcontainerJson(): Promise<string> {
+  return await Deno.readTextFile(new URL("devcontainer.json", DEFAULT_DIR_URL));
 }
 
-/** Read the embedded default assets the wizard writes on first creation. */
-export async function loadBundledDefault(): Promise<BundledDefault> {
-  const devcontainerJson = await Deno.readTextFile(
-    new URL("devcontainer.json", DEFAULT_DIR_URL),
-  );
-  const dockerfile = await Deno.readFile(
-    new URL("Dockerfile", DEFAULT_DIR_URL),
-  );
-  return {
-    devcontainerJson,
-    dockerfile,
-    featuresDirUrl: new URL("features/", DEFAULT_DIR_URL),
-  };
-}
-
-/** Recursively copy the embedded `default/features/` subtree into `destDir` (`.../features`). */
-export async function copyBundledFeatures(destDir: string): Promise<void> {
-  await copyDir(new URL("features/", DEFAULT_DIR_URL), destDir);
+/**
+ * Copy every embedded `default/` asset *except* `devcontainer.json` into `destDir`
+ * (a project's `.devcontainer/`): the `Dockerfile`, the `post-create.sh` and
+ * `initialize-command.sh` lifecycle entry scripts, and the `scripts/` sub-dependency
+ * subtree. `devcontainer.json` is skipped because the wizard writes it itself (fenced).
+ */
+export async function copyBundledAssets(destDir: string): Promise<void> {
+  await Deno.mkdir(destDir, { recursive: true });
+  for await (const entry of Deno.readDir(DEFAULT_DIR_URL)) {
+    if (entry.name === "devcontainer.json") continue;
+    if (entry.isDirectory) {
+      await copyDir(
+        new URL(`${entry.name}/`, DEFAULT_DIR_URL),
+        `${destDir}/${entry.name}`,
+      );
+    } else {
+      const bytes = await Deno.readFile(new URL(entry.name, DEFAULT_DIR_URL));
+      await Deno.writeFile(`${destDir}/${entry.name}`, bytes);
+    }
+  }
 }
 
 /**

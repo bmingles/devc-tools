@@ -11,6 +11,11 @@ async function mkdir(path: string) {
   await Deno.mkdir(path, { recursive: true });
 }
 
+/** Drop `//`-to-end-of-line comment lines so a JSONC config parses as JSON. */
+function stripLineComments(text: string): string {
+  return text.split("\n").filter((line) => !/^\s*\/\//.test(line)).join("\n");
+}
+
 async function withTempDir(fn: (tmp: string) => Promise<void>) {
   const tmp = await Deno.makeTempDir();
   try {
@@ -142,19 +147,19 @@ Deno.test("loadResolvedRemoteEnv strips // line comments from config before pars
 Deno.test("materializeDefaultConfig copies the embedded tree flat to cacheDir and returns the config path", async () => {
   await withTempDir(async (cacheDir) => {
     const path = await materializeDefaultConfig(cacheDir);
-    // Flat layout: zero-config references no local Feature, so no `.devcontainer/`
-    // nesting is needed (and it would not help — the CLI validates local Features
-    // against the workspace root, not the config dir).
+    // Flat layout: zero-config uses no project `.devcontainer/`, so the cache holds the
+    // config, Dockerfile, the two lifecycle entry scripts, and `scripts/` directly.
     assertEquals(path, `${cacheDir}/devcontainer.json`);
 
     for (
       const file of [
         "devcontainer.json",
         "Dockerfile",
-        "features/devc/devcontainer-feature.json",
-        "features/devc/install.sh",
-        "features/devc/post-create.sh",
-        "features/devc/bashrc-additions.sh",
+        "post-create.sh",
+        "initialize-command.sh",
+        "scripts/agents-setup.sh",
+        "scripts/node-setup.sh",
+        "scripts/bashrc-additions.sh",
       ]
     ) {
       assertEquals((await Deno.stat(`${cacheDir}/${file}`)).isFile, true);
@@ -162,63 +167,40 @@ Deno.test("materializeDefaultConfig copies the embedded tree flat to cacheDir an
   });
 });
 
-Deno.test("materializeDefaultConfig materializes the devc Feature subtree (for the Dockerfile COPY)", async () => {
-  await withTempDir(async (cacheDir) => {
-    await materializeDefaultConfig(cacheDir);
-    // The subtree is still copied even though the transformed config no longer
-    // references it — the bundled Dockerfile COPYs the scripts from it.
-    for (
-      const file of [
-        "features/devc/devcontainer-feature.json",
-        "features/devc/install.sh",
-        "features/devc/post-create.sh",
-        "features/devc/bashrc-additions.sh",
-      ]
-    ) {
-      assertEquals((await Deno.stat(`${cacheDir}/${file}`)).isFile, true);
-    }
-  });
-});
-
-Deno.test("materialized (zero-config) devcontainer.json strips the local Feature and adds a top-level postCreateCommand", async () => {
+Deno.test("materialized (zero-config) devcontainer.json has no Feature and a top-level postCreateCommand", async () => {
   await withTempDir(async (cacheDir) => {
     await materializeDefaultConfig(cacheDir);
 
-    // The transform rewrites the cache config as plain (comment-free) JSON.
+    // The cache copy is verbatim JSONC — strip line comments before parsing.
     const dc = JSON.parse(
-      await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
+      stripLineComments(await Deno.readTextFile(`${cacheDir}/devcontainer.json`)),
     );
-    // Local Feature reference removed (it cannot resolve out-of-tree)...
+    // No local Feature reference (the baseline is delivered another way)...
     assertEquals(Object.hasOwn(dc.features, "./features/devc"), false);
     // ...ghcr features kept...
     assertEquals(Object.hasOwn(dc.features, "ghcr.io/devcontainers/features/node:1"), true);
-    // ...and the baseline runtime runs via a top-level postCreateCommand instead.
-    assertEquals(dc.postCreateCommand, "/usr/local/share/devc/post-create.sh");
-
-    // devcontainer-feature.json still parses as plain JSON.
-    const feat = JSON.parse(
-      await Deno.readTextFile(
-        `${cacheDir}/features/devc/devcontainer-feature.json`,
-      ),
+    // ...and the baseline runtime runs via a top-level postCreateCommand, rewritten from the
+    // in-project workspace path to the image-baked path (the cache dir is not mounted in).
+    assertEquals(
+      dc.postCreateCommand,
+      'bash "/usr/local/share/devc/post-create.sh"',
     );
-    assertEquals(feat.id, "devc");
   });
 });
 
-Deno.test("canonical default devcontainer.json keeps the Feature and no top-level postCreateCommand", async () => {
-  // The embedded source (used verbatim by `devc config` for a project) is the
-  // Feature-based, composable form — the transform above is applied only to the
-  // out-of-tree cache copy.
+Deno.test("canonical default devcontainer.json has no Feature and a project-relative postCreateCommand", async () => {
+  // The embedded source is what `devc config` writes into a project: it references the copies
+  // in the project's own .devcontainer/, so edits apply on recreate. (The zero-config cache
+  // rewrites this to the baked path — see the materialize test above.)
   const text = await Deno.readTextFile(
     new URL("../default/devcontainer.json", import.meta.url),
   );
-  const noComments = text
-    .split("\n")
-    .filter((line) => !/^\s*\/\//.test(line))
-    .join("\n");
-  const dc = JSON.parse(noComments);
-  assertEquals(Object.hasOwn(dc.features, "./features/devc"), true);
-  assertEquals(Object.hasOwn(dc, "postCreateCommand"), false);
+  const dc = JSON.parse(stripLineComments(text));
+  assertEquals(Object.hasOwn(dc.features, "./features/devc"), false);
+  assertEquals(
+    dc.postCreateCommand,
+    'bash "${containerWorkspaceFolder}/.devcontainer/post-create.sh"',
+  );
 });
 
 Deno.test("materializeDefaultConfig overwrites an existing copy without erroring", async () => {
@@ -247,9 +229,11 @@ Deno.test("materializeDefaultConfig writes the embedded tree to real disk (defau
   for (
     const sibling of [
       "Dockerfile",
-      "features/devc/install.sh",
-      "features/devc/post-create.sh",
-      "features/devc/bashrc-additions.sh",
+      "post-create.sh",
+      "initialize-command.sh",
+      "scripts/agents-setup.sh",
+      "scripts/node-setup.sh",
+      "scripts/bashrc-additions.sh",
     ]
   ) {
     const siblingStat = await Deno.stat(`${dir}/${sibling}`);
@@ -257,16 +241,21 @@ Deno.test("materializeDefaultConfig writes the embedded tree to real disk (defau
   }
 });
 
-Deno.test("materializeDefaultConfig preserves initializeCommand for the zero-config path", async () => {
+Deno.test("materializeDefaultConfig rewrites the initializeCommand host path to the cache copy", async () => {
   await withTempDir(async (tmp) => {
-    const configPath = await materializeDefaultConfig(`${tmp}/cache`);
-    const config = JSON.parse(await Deno.readTextFile(configPath));
-    // Host-side hook that creates the ~/.claude seed mount source; a Feature cannot carry it,
-    // so the zero-config transform must not drop it.
+    const cacheDir = `${tmp}/cache`;
+    const configPath = await materializeDefaultConfig(cacheDir);
+    const config = JSON.parse(
+      stripLineComments(await Deno.readTextFile(configPath)),
+    );
+    // initializeCommand runs on the host before create; in zero-config the workspace is the
+    // user's project (no `.devcontainer/`), so the `${localWorkspaceFolder}` reference is
+    // resolved to this cache dir where initialize-command.sh actually lives.
     assertEquals(
       config.initializeCommand,
-      'mkdir -p "$HOME/.config/devc-tui/.claude"',
+      `bash "${cacheDir}/initialize-command.sh"`,
     );
+    assertEquals((await Deno.stat(`${cacheDir}/initialize-command.sh`)).isFile, true);
   });
 });
 

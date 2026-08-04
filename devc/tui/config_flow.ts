@@ -18,7 +18,7 @@ import {
   makeGlobalConfig,
   saveGlobalConfig,
 } from "../config.ts";
-import { loadBundledDefault } from "../default_config.ts";
+import { loadBundledDevcontainerJson } from "../default_config.ts";
 import {
   assertNoDuplicateTarget,
   defaultReadonly,
@@ -301,8 +301,10 @@ export async function runProjectFlow(
   const result = await apply(opts.projectDir, selection);
   const msg = [`${result.created ? "Created" : "Updated"} ${result.configPath}`];
   if (result.created) {
-    msg.push(`  + ${opts.projectDir}/.devcontainer/Dockerfile`);
-    msg.push(`  + ${opts.projectDir}/.devcontainer/features/`);
+    // List the bundled assets written alongside the config (skip the config itself).
+    for (const path of result.written) {
+      if (path !== result.configPath) msg.push(`  + ${path}`);
+    }
   }
   await writeLines(deps.output, msg);
   return { applied: true };
@@ -455,7 +457,7 @@ export async function runProjectConfigWizard(
     baseText = await Deno.readTextFile(configPath);
     creating = false;
   } catch {
-    baseText = (await loadBundledDefault()).devcontainerJson;
+    baseText = await loadBundledDevcontainerJson();
     creating = true;
   }
 
