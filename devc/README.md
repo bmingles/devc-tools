@@ -63,7 +63,7 @@ container shell reads as visually distinct from a local one.
 
 Anything you want the in-container agent to see goes in `~/.config/devc-tui/.claude`. The
 directory is bind-mounted read-only at `/usr/local/share/devc/claude-seed`, and on every
-container create the devc Feature symlinks each entry into the container's `~/.claude`:
+container create `scripts/agents-setup.sh` (run by `post-create.sh`) symlinks each entry into the container's `~/.claude`:
 
 ```text
 ~/.config/devc-tui/.claude/CLAUDE.md      →  /home/vscode/.claude/CLAUDE.md
@@ -97,9 +97,9 @@ by hand with:
 
 The `initializeCommand` is what creates the mount source on a machine without `devc` installed
 (a bind mount with a missing source is a hard error, not an auto-created directory). It has to
-be top-level — the devcontainer spec doesn't let a Feature declare it — so a project that needs
-its own `initializeCommand` should either keep the `mkdir -p` in it or drop the `claude-seed`
-mount alongside it.
+be top-level — it is the only host-side lifecycle hook — so a project that needs its own
+`initializeCommand` should either keep the `mkdir -p` in it or drop the `claude-seed` mount
+alongside it.
 
 ## Development
 
@@ -109,9 +109,9 @@ deno task test                         # unit tests
 deno task check                        # type-check
 deno task build                        # compile the `devc` binary (embeds default/)
 
-# The ~/.claude seed prune+link logic is bash inside the Feature's post-create.sh, so it is
+# The ~/.claude seed prune+link logic is bash inside scripts/agents-setup.sh, so it is
 # covered by a shell harness rather than `deno task test`:
-bash tests/seed_link_test.sh default/features/devc/post-create.sh
+bash tests/seed_link_test.sh default/scripts/agents-setup.sh
 ```
 
 ### `devc config`

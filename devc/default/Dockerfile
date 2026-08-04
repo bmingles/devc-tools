@@ -1,15 +1,21 @@
 FROM mcr.microsoft.com/devcontainers/base:noble
 
-# devc baseline (build-time, cached image layers). Runtime setup that depends on
-# volumes/workspace lives in post-create.sh, invoked at container-create time
-# (by the devc Feature's postCreateCommand in a project, or by the bundled
-# default's top-level postCreateCommand in the zero-config case).
+# devc baseline (build-time, cached image layers). No devcontainer Feature is involved:
+# the baseline is this Dockerfile plus a top-level "postCreateCommand" (in devcontainer.json)
+# running post-create.sh, which only delegates to scripts/*.
 #
-# The scripts are the devc Feature's own files; the Dockerfile reaches into the
-# feature dir so the zero-config path (which cannot reference the local Feature)
-# still gets the same baseline. Feature install.sh also stages post-create.sh, so
-# the Feature stays self-contained; the duplicate is idempotent.
-COPY features/devc/bashrc-additions.sh features/devc/post-create.sh /tmp/devc/
+# scripts/bashrc-additions.sh is consumed here at build time (below). post-create.sh and the
+# create-time scripts are baked so the zero-config path — which has no project .devcontainer/
+# to run them from — can invoke them by absolute path. In `devc config` mode the top-level
+# postCreateCommand runs the copies in the project's own .devcontainer/ instead (so edits apply
+# on the next create, no rebuild), and these baked copies simply go unused. initialize-command.sh
+# is not copied — it runs on the host, before this image is ever built.
+COPY post-create.sh /usr/local/share/devc/post-create.sh
+COPY scripts/ /usr/local/share/devc/scripts/
+
+USER root
+RUN chmod 0755 /usr/local/share/devc/post-create.sh \
+    && chmod -R 0755 /usr/local/share/devc/scripts
 
 USER vscode
 
@@ -24,14 +30,6 @@ RUN BASHRC="$HOME/.bashrc"; \
     MARKER="# >>> devc bashrc-additions >>>"; \
     if ! grep -qF "$MARKER" "$BASHRC" 2>/dev/null; then \
       { printf '%s\n' "$MARKER"; \
-        cat /tmp/devc/bashrc-additions.sh; \
+        cat /usr/local/share/devc/scripts/bashrc-additions.sh; \
         printf '%s\n' "# <<< devc bashrc-additions <<<"; } >> "$BASHRC"; \
     fi
-
-# Runtime setup script, placed where both the top-level (zero-config) and the
-# Feature's postCreateCommand expect it.
-USER root
-RUN install -d -m 0755 /usr/local/share/devc \
-    && install -m 0755 /tmp/devc/post-create.sh /usr/local/share/devc/post-create.sh \
-    && rm -rf /tmp/devc
-USER vscode

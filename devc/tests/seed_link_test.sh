@@ -1,17 +1,16 @@
 #!/bin/bash
-# Exercises the ~/.claude seed prune+link block from post-create.sh against temp dirs,
+# Exercises the ~/.claude seed prune+link block from agents-setup.sh against temp dirs,
 # with no container involved. Extracts the block from the real script so the test cannot
 # drift from the implementation.
 set -euo pipefail
 
-SCRIPT="${1:?usage: seed_link_test.sh /path/to/post-create.sh}"
+SCRIPT="${1:?usage: seed_link_test.sh /path/to/agents-setup.sh}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Pull the block out: from the SEED= assignment to the line before `cd "${PROJECT_PATH...`
+# Pull the block out: everything strictly between the `devc:seed-link` fence markers.
 BLOCK="$WORK/block.sh"
-awk '/^SEED=\/usr\/local\/share\/devc\/claude-seed$/,/^cd "\$\{PROJECT_PATH/' "$SCRIPT" \
-  | sed '$d' > "$BLOCK"
+awk '/# devc:seed-link \(start\)/{f=1;next} /# devc:seed-link \(end\)/{f=0} f' "$SCRIPT" > "$BLOCK"
 grep -q 'ln -sfn' "$BLOCK" || { echo "FAIL: could not extract link block"; exit 1; }
 
 fails=0

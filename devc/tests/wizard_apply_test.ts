@@ -35,7 +35,7 @@ function fenceRows(text: string) {
   };
 }
 
-Deno.test("first creation: populated fences, infra intact, Dockerfile + features copied", async () => {
+Deno.test("first creation: populated fences, infra intact, Dockerfile + entry scripts + scripts/ copied", async () => {
   await withTemp(async (dir) => {
     const cfgPath = `${dir}/config.json`;
     const result = await applySelection(dir, SEL, {
@@ -66,24 +66,52 @@ Deno.test("first creation: populated fences, infra intact, Dockerfile + features
       "~/.claude seed bind missing",
     );
 
-    // Project base keeps the composable Feature and leaves the top-level
-    // postCreateCommand free (the Feature runs devc's runtime setup).
+    // No local Feature; the baseline runs via a top-level postCreateCommand.
     const dc = parseJsonc(text) as {
       features?: Record<string, unknown>;
       postCreateCommand?: unknown;
+      initializeCommand?: unknown;
     };
-    assert(
+    assertEquals(
       Object.hasOwn(dc.features ?? {}, "./features/devc"),
-      "devc Feature reference missing",
+      false,
     );
-    assertEquals(Object.hasOwn(dc, "postCreateCommand"), false);
+    // Project mode references the copies in the project's own .devcontainer/, so edits
+    // apply on recreate (the zero-config cache rewrites these to baked/cache paths).
+    assertEquals(
+      dc.postCreateCommand,
+      'bash "${containerWorkspaceFolder}/.devcontainer/post-create.sh"',
+    );
+    assertEquals(
+      dc.initializeCommand,
+      'bash "${localWorkspaceFolder}/.devcontainer/initialize-command.sh"',
+    );
 
-    // Dockerfile + features subtree copied.
+    // Bundled assets copied and made executable: Dockerfile + the two root entry scripts +
+    // the factored scripts/ delegates; no features/ dir and no post-create.user.sh.
     assert((await Deno.stat(`${dir}/.devcontainer/Dockerfile`)).isFile);
-    assert((await Deno.stat(`${dir}/.devcontainer/features/devc`)).isDirectory);
-    assert(
-      (await Deno.stat(`${dir}/.devcontainer/features/devc/install.sh`)).isFile,
-    );
+    for (
+      const rel of [
+        "post-create.sh",
+        "initialize-command.sh",
+        "scripts/agents-setup.sh",
+        "scripts/node-setup.sh",
+        "scripts/bashrc-additions.sh",
+      ]
+    ) {
+      const st = await Deno.stat(`${dir}/.devcontainer/${rel}`);
+      assert(st.isFile, `${rel} missing`);
+      assertEquals(st.mode! & 0o111, 0o111, `${rel} not executable`);
+    }
+    for (const gone of ["features", "post-create.user.sh"]) {
+      assertEquals(
+        await Deno.stat(`${dir}/.devcontainer/${gone}`).then(() => true).catch(
+          () => false,
+        ),
+        false,
+        `${gone} should not exist`,
+      );
+    }
 
     // recentSkills persisted (raw host paths).
     const cfg = await loadGlobalConfig(cfgPath);
