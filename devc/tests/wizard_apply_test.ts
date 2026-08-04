@@ -60,8 +60,10 @@ Deno.test("first creation: populated fences, infra intact, Dockerfile + features
       "claude-config volume mount missing",
     );
     assert(
-      parsed.mounts.some((m) => m.includes("/home/vscode/.claude/CLAUDE.md")),
-      "CLAUDE.md bind missing",
+      parsed.mounts.some((m) =>
+        m.includes("target=/usr/local/share/devc/claude-seed")
+      ),
+      "~/.claude seed bind missing",
     );
 
     // Project base keeps the composable Feature and leaves the top-level

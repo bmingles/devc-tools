@@ -14,6 +14,90 @@ const DEFAULT_DIR_URL = new URL("./default/", import.meta.url);
 export const CONFIG_DIR = `${homeDir()}/.config/devc-tui`;
 
 /**
+ * Host directory holding the user's `~/.claude` config for containers. Bind-mounted read-only
+ * at `CLAUDE_SEED_TARGET`; the devc Feature's `post-create.sh` symlinks every top-level *file*
+ * from it into the `~/.claude` volume (directories are ignored — the `devc:skills` fence owns
+ * `~/.claude/skills/`).
+ */
+export const CLAUDE_SEED_HOST_DIR = `${CONFIG_DIR}/.claude`;
+
+/** Container path the seed directory is bind-mounted at (mirrors the bundled default). */
+export const CLAUDE_SEED_TARGET = "/usr/local/share/devc/claude-seed";
+
+/**
+ * Files copied out of `~/.claude` into the seed directory the first time it is created, so an
+ * existing setup keeps working after the switch from three per-file bind mounts. The rename
+ * drops the `.devc` suffix, which only existed to avoid colliding with the real
+ * `~/.claude/settings.json`; a dedicated directory removes the collision.
+ */
+const CLAUDE_SEED_MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
+  ["CLAUDE.md", "CLAUDE.md"],
+  ["settings.devc.json", "settings.json"],
+  ["statusline.sh", "statusline.sh"],
+];
+
+/** Outcome of `ensureClaudeSeedDir`. */
+export interface ClaudeSeedResult {
+  /** True when this call created the directory (false when it already existed). */
+  created: boolean;
+  /** Seed-side names copied from `~/.claude` (empty unless this call created the directory). */
+  migrated: string[];
+}
+
+/**
+ * Create the host seed directory if absent, and on first creation only, copy the three files
+ * the old per-file bind mounts referenced out of `migrateFrom`.
+ *
+ * The bundled default's `initializeCommand` also creates this directory, so a project config
+ * works without `devc` installed. This function still runs on every `up` because it owns the
+ * things a shell one-liner cannot: the not-a-directory guard and the one-time migration.
+ *
+ * Migration is gated on *this call* having created the directory, so files the user later
+ * deletes from the seed are not resurrected on the next `up`. Host originals are left in
+ * place. `Deno.copyFile` copies permissions on Unix, so `statusline.sh` keeps its exec bit.
+ *
+ * `seedDir` / `migrateFrom` default to the real paths and only need overriding in tests.
+ */
+export async function ensureClaudeSeedDir(
+  seedDir: string = CLAUDE_SEED_HOST_DIR,
+  migrateFrom: string = `${homeDir()}/.claude`,
+): Promise<ClaudeSeedResult> {
+  // Whether we created it has to be decided before the mkdir: recursive mkdir succeeds
+  // silently on an existing directory, so it cannot report the difference. lstat (not stat) so
+  // a dangling symlink counts as present and falls into the guard below rather than looking
+  // like a fresh creation.
+  const created = await Deno.lstat(seedDir).then(() => false).catch(() => true);
+  try {
+    await Deno.mkdir(seedDir, { recursive: true });
+  } catch (err) {
+    // Recursive mkdir is not quite `mkdir -p`: it reports AlreadyExists when the path is a
+    // regular file or a dangling symlink. Fall through to the guard, which says why.
+    if (!(err instanceof Deno.errors.AlreadyExists)) throw err;
+  }
+
+  // Verify we actually have a directory — otherwise the problem resurfaces later as an opaque
+  // "bind source path does not exist" from Docker.
+  const stat = await Deno.stat(seedDir).catch(() => null);
+  if (stat === null || !stat.isDirectory) {
+    throw new Error(
+      `${seedDir} exists but is not a directory (expected the devc ~/.claude config folder)`,
+    );
+  }
+  if (!created) return { created, migrated: [] };
+
+  const migrated: string[] = [];
+  for (const [from, to] of CLAUDE_SEED_MIGRATIONS) {
+    try {
+      await Deno.copyFile(`${migrateFrom}/${from}`, `${seedDir}/${to}`);
+      migrated.push(to);
+    } catch (err) {
+      if (!(err instanceof Deno.errors.NotFound)) throw err;
+    }
+  }
+  return { created, migrated };
+}
+
+/**
  * True if `localFolder` has its own devcontainer config
  * (`.devcontainer/devcontainer.json` or `.devcontainer.json`), i.e. "project mode"
  * should be used.

@@ -27,12 +27,21 @@
     // task, so the project-name title set in bashrc-additions.sh persists.
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
   },
+  // Ensures the host-side ~/.claude seed directory exists before the mounts below are
+  // established: `--mount type=bind` errors on a missing source, so without this a clone of
+  // this config fails at create for anyone who has not run `devc`. Idempotent — this hook
+  // also runs on subsequent starts. A Feature cannot carry it (the spec allows Features only
+  // the five container-side hooks), so it has to live here, top-level. If a project overrides
+  // it, either keep the mkdir or drop the claude-seed mount below alongside it.
+  "initializeCommand": "mkdir -p \"$HOME/.config/devc-tui/.claude\"",
   "mounts": [
     // ~/.claude folder
     "type=volume,source=claude-code-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
-    "type=bind,source=${localEnv:HOME}/.claude/CLAUDE.md,target=/home/vscode/.claude/CLAUDE.md,consistency=cached,readonly",
-    "type=bind,source=${localEnv:HOME}/.claude/settings.devc.json,target=/home/vscode/.claude/settings.json,consistency=cached,readonly",
-    "type=bind,source=${localEnv:HOME}/.claude/statusline.sh,target=/home/vscode/.claude/statusline.sh,consistency=cached,readonly",
+
+    // Host ~/.claude config seed: the devc Feature's postCreateCommand symlinks every
+    // top-level *file* from here into ~/.claude. Directories are ignored — the devc:skills
+    // fence owns ~/.claude/skills/.
+    "type=bind,source=${localEnv:HOME}/.config/devc-tui/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
 
     // ~/.claude.json (auth) persisted per-workspace via volume; the devc Feature's postCreateCommand sets up the symlink
     "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/home/vscode/.claude-json-vol",

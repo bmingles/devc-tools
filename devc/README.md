@@ -59,6 +59,48 @@ Notes:
 `TERM_PROGRAM_VERSION`, `$TMUX`) and tint the terminal for the duration of the attach so a
 container shell reads as visually distinct from a local one.
 
+## Claude config: `~/.config/devc-tui/.claude`
+
+Anything you want the in-container agent to see goes in `~/.config/devc-tui/.claude`. The
+directory is bind-mounted read-only at `/usr/local/share/devc/claude-seed`, and on every
+container create the devc Feature symlinks each entry into the container's `~/.claude`:
+
+```text
+~/.config/devc-tui/.claude/CLAUDE.md      →  /home/vscode/.claude/CLAUDE.md
+~/.config/devc-tui/.claude/settings.json  →  /home/vscode/.claude/settings.json
+~/.config/devc-tui/.claude/statusline.sh  →  /home/vscode/.claude/statusline.sh
+```
+
+- **Top-level files only.** Directories are ignored — the `devc:skills` fence owns
+  `~/.claude/skills/`, and per-skill mounts are configured through `devc config` instead.
+- **Read-only, and live.** Edits on the host show up immediately; no rebuild, no recreate. File
+  modes carry over, so `statusline.sh` keeps its exec bit.
+- **Deletions are honored.** Remove a file here and its link disappears on the next container
+  create.
+- **Missing is fine.** `devc` creates the directory if absent; an empty one is valid. Files that
+  aren't there simply aren't linked.
+- The container's own `~/.claude` stays a per-workspace volume, so `projects/`, `todos/`, and
+  credentials persist per project and are never touched by this.
+
+Migrating from an older `devc`: the first time the directory is created, `devc` copies
+`~/.claude/CLAUDE.md`, `~/.claude/settings.devc.json` (→ `settings.json`), and
+`~/.claude/statusline.sh` into it, leaving the originals in place. Projects whose
+`.devcontainer/devcontainer.json` was written by an earlier `devc` still carry three per-file
+binds — `devc` writes infra mounts once at creation and never re-asserts them, so replace them
+by hand with:
+
+```jsonc
+"initializeCommand": "mkdir -p \"$HOME/.config/devc-tui/.claude\"",
+// …and in "mounts", replacing the three ~/.claude/* bind lines:
+"type=bind,source=${localEnv:HOME}/.config/devc-tui/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
+```
+
+The `initializeCommand` is what creates the mount source on a machine without `devc` installed
+(a bind mount with a missing source is a hard error, not an auto-created directory). It has to
+be top-level — the devcontainer spec doesn't let a Feature declare it — so a project that needs
+its own `initializeCommand` should either keep the `mkdir -p` in it or drop the `claude-seed`
+mount alongside it.
+
 ## Development
 
 ```sh
@@ -66,6 +108,10 @@ deno task run    -- <command> [args]   # run from source
 deno task test                         # unit tests
 deno task check                        # type-check
 deno task build                        # compile the `devc` binary (embeds default/)
+
+# The ~/.claude seed prune+link logic is bash inside the Feature's post-create.sh, so it is
+# covered by a shell harness rather than `deno task test`:
+bash tests/seed_link_test.sh default/features/devc/post-create.sh
 ```
 
 ### `devc config`

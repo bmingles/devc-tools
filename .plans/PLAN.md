@@ -4,6 +4,8 @@
 
 ### Pending
 
+- [devc-claude-seed-dir](devc-claude-seed-dir.md) — Replace the three brittle per-file `~/.claude/*` host binds with one read-only directory bind of `~/.config/devc-tui/.claude`, symlinked into the `.claude` volume by `post-create.sh` (top-level files only; directories ignored so the `devc:skills` fence is untouched). Deletion and live host edits both work; existing host files are migrated on first run.
+
 - [devc-wizard-modernize](devc-wizard-modernize.md) — Replace the full-screen sidebar wizard (mnemonic `N`/`B`/`A` keys) with a modern inline sequential flow plus a multi-select, type-to-filter folder picker, zero new dependencies, on the existing `tui/term.ts`+`tui/keys.ts`.
 
 ### Completed
@@ -45,3 +47,4 @@
 | devc container baseline fix — out-of-tree Feature + drop in-container tmux | [devc-container-feature-fix](archived/devc-container-feature-fix.md) | complete |
 | devc wizard modernize — inline sequential flow + multi-select folder picker | [devc-wizard-modernize](devc-wizard-modernize.md) | in progress |
 | devc worktree-aware mounts — root-relative source targets + primary `.git` mount | [devc-worktree-mounts](archived/devc-worktree-mounts.md) | complete |
+| devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate | [devc-claude-seed-dir](devc-claude-seed-dir.md) | in progress |
