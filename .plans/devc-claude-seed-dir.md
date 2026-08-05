@@ -65,7 +65,7 @@ wanted later, the natural move is a second managed fence, not recursion here.
 
 ## Contract
 
-**Host config dir:** `~/.config/devc-tui/.claude` — i.e. `${CONFIG_DIR}/.claude`, using the
+**Host config dir:** `~/.config/devc/.claude` — i.e. `${CONFIG_DIR}/.claude`, using the
 existing `CONFIG_DIR` constant in `default_config.ts`. Created by `devc` if absent.
 
 **Container mount target:** `/usr/local/share/devc/claude-seed`
@@ -75,7 +75,7 @@ existing `CONFIG_DIR` constant in `default_config.ts`. Created by `devc` if abse
 `claude-code-config-*` volume mount:
 
 ```jsonc
-"type=bind,source=${localEnv:HOME}/.config/devc-tui/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
+"type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
 ```
 
 **Host-side file names.** Plain `settings.json`, not `settings.devc.json`. The `.devc` suffix
@@ -86,7 +86,7 @@ removes the collision.
 committed project config works for a developer who does not have `devc` installed:
 
 ```jsonc
-"initializeCommand": "mkdir -p \"$HOME/.config/devc-tui/.claude\"",
+"initializeCommand": "mkdir -p \"$HOME/.config/devc/.claude\"",
 ```
 
 This is what makes the mount safe to commit. Since `--mount type=bind` hard-errors on a missing
@@ -257,7 +257,7 @@ edit, documented in `devc/README.md`; `devc` does not detect or rewrite them.
       (`/home/vscode/.claude/CLAUDE.md`) to assert the seed mount target instead.
 - [x] `devc/tests/default_config_test.ts`: assert `materializeDefaultConfig` preserves
       `initializeCommand` in the cached zero-config copy.
-- [x] `devc/README.md`: document `~/.config/devc-tui/.claude` — top-level files only,
+- [x] `devc/README.md`: document `~/.config/devc/.claude` — top-level files only,
       directories ignored, read-only in-container, deletion honored on next create — plus the
       manual replacement snippet for projects configured by an earlier `devc`, and the note that
       a project overriding the top-level `initializeCommand` should either keep the `mkdir -p`
@@ -281,21 +281,21 @@ Run from `/workspaces/devc-tools/devc` unless noted.
 - [x] `bash -n default/features/devc/post-create.sh` parses.
 - [x] `grep -c 'localEnv:HOME}/.claude/' default/devcontainer.json` reports `0` — no per-file
       `~/.claude` binds remain.
-- [x] `grep -c 'devc-tui/.claude,target=/usr/local/share/devc/claude-seed' default/devcontainer.json`
+- [x] `grep -c 'devc/.claude,target=/usr/local/share/devc/claude-seed' default/devcontainer.json`
       reports `1`.
 - [x] Seed-link logic, exercised directly against fake dirs (no container needed) — a
       throwaway script that sources the block's logic with `SEED`/`CLAUDE_DIR` pointed at temp
       dirs, asserting: a top-level file is linked; a directory is not; a removed seed file's
       link is pruned on the next run; a non-seed symlink in `CLAUDE_DIR` survives the prune; a
       pre-existing plain file at the destination is replaced by the link.
-- [ ] End-to-end, zero-config: with `~/.config/devc-tui/.claude` absent and
+- [ ] End-to-end, zero-config: with `~/.config/devc/.claude` absent and
       `~/.claude/{CLAUDE.md,settings.devc.json,statusline.sh}` present, `devc up` in a folder
       with no `.devcontainer/` succeeds, prints the migration line, and afterwards
       `devc exec . -- ls -l /home/vscode/.claude` shows `CLAUDE.md`, `settings.json`, and
       `statusline.sh` as symlinks into `/usr/local/share/devc/claude-seed`.
-- [ ] End-to-end, missing files: with `~/.config/devc-tui/.claude` empty, `devc up` succeeds
+- [ ] End-to-end, missing files: with `~/.config/devc/.claude` empty, `devc up` succeeds
       (this is the case that fails today).
-- [ ] **No-`devc` path:** delete `~/.config/devc-tui/.claude` entirely, then bring a
+- [ ] **No-`devc` path:** delete `~/.config/devc/.claude` entirely, then bring a
       `devc config`-generated project up with the upstream CLI only —
       `devcontainer up --workspace-folder <project>` — and confirm it succeeds, that
       `initializeCommand` recreated the directory, and that `~/.claude` contains no seed

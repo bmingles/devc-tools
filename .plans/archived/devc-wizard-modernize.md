@@ -1,5 +1,11 @@
 # devc config — modern sequential wizard
 
+> **Closed 2026-08-05 (shipped).** Phases 1–6 are in `main`; the flow has since been iterated on
+> twice (`devc-worktree-mounts`, `devc-wizard-screens`). The one item never formally ticked is
+> the manual TTY walkthrough in Validation — it needs a human at a terminal, and the automated
+> end-to-end harness covers apply correctness. For the picker's current screens, read
+> `.plans/design/wizard/` and `.plans/archived/devc-wizard-screens.md`, not the sketch below.
+
 Replace the full-screen sidebar wizard (mnemonic `N`/`B`/`A` keys) with a modern, discoverable
 flow: inline sequential prompts on the normal screen, plus a full-screen **multi-select,
 type-to-filter folder picker** for the folder-selection steps. Zero new dependencies — built on

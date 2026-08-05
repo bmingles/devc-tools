@@ -65,7 +65,7 @@ Consequences for the generated config:
 
 ### Host `~/.claude` config: the seed directory
 
-The user's Claude config reaches the container through **one read-only directory bind mount** of `~/.config/devc-tui/.claude` at `/usr/local/share/devc/claude-seed`, not through per-file bind mounts of `~/.claude/*`. `scripts/agents-setup.sh` (run by `post-create.sh`) then symlinks every top-level *file* from the seed into the `~/.claude` volume, pruning links whose seed file has gone away.
+The user's Claude config reaches the container through **one read-only directory bind mount** of `~/.config/devc/.claude` at `/usr/local/share/devc/claude-seed`, not through per-file bind mounts of `~/.claude/*`. `scripts/agents-setup.sh` (run by `post-create.sh`) then symlinks every top-level *file* from the seed into the `~/.claude` volume, pruning links whose seed file has gone away.
 
 Why a directory plus symlinks rather than per-file binds or a copy:
 
@@ -82,7 +82,7 @@ The first time any `devc` command is executed, the tool enters a one-time **glob
 - **Code folder roots** — one or more directories where code projects live.
 - **Skills folder roots** — one or more directories where agent skills live.
 
-These values are saved as lists in a global config file at `~/.config/devc-tui/config.json`. Once that file exists, the global config prompt no longer runs automatically before other commands. The user can re-run it later via `devc config` (global settings step) if they want to change the root lists.
+These values are saved as lists in a global config file at `~/.config/devc/config.json`. Once that file exists, the global config prompt no longer runs automatically before other commands. The user can re-run it later via `devc config` (global settings step) if they want to change the root lists.
 
 Example global config:
 
@@ -93,14 +93,14 @@ Example global config:
 }
 ```
 
-**Namespace vs. config directory.** The tool's namespace is `devc` (binary name, container-name prefix, image path under `/usr/local/share/devc`, etc.). The global config directory, however, is `~/.config/devc-tui/` **for now**, to avoid colliding with any pre-existing `~/.config/devc/` from other `devc` tooling while this implementation matures. This path lives behind a single code-level constant. Once this tool is robust enough to replace existing tooling, that constant flips to `~/.config/devc/`.
+**Namespace.** One namespace throughout: `devc` — binary name, container-name prefix, image path under `/usr/local/share/devc`, and the global config directory `~/.config/devc/` (a single code-level constant, `CONFIG_DIR`). An earlier revision parked the config directory at `~/.config/devc-tui/` to avoid colliding with other `devc` tooling; that is gone, and any doc still saying `devc-tui` predates the move.
 
 **No global template overrides for now.** The bundled default config is materialized directly (embedded assets → a cache dir passed to `devcontainer up --config`). There is no user-editable global template directory in this version; customization happens per-project via `devc config`.
 
 ## First-run flow
 
 1. User runs `devc <command>` for the first time.
-2. If `~/.config/devc-tui/config.json` does not exist, the TUI global config prompt appears.
+2. If `~/.config/devc/config.json` does not exist, the TUI global config prompt appears.
 3. User adds one or more code roots and one or more skills roots.
 4. The global config file is saved.
 5. The originally requested command continues.
@@ -152,7 +152,7 @@ folder — see Step 2). Keys:
 When the user runs `devc config [PATH]`:
 
 1. Resolve the project directory (`PATH` or cwd).
-2. If `~/.config/devc-tui/config.json` is missing, run the **Global config** step first and persist the code/skills root lists.
+2. If `~/.config/devc/config.json` is missing, run the **Global config** step first and persist the code/skills root lists.
 3. Load the base container configuration into memory:
    - If `PATH/.devcontainer/devcontainer.json` exists, load it (and a sibling `Dockerfile` if present).
    - Otherwise, start from the bundled default `devcontainer.json` + `Dockerfile`.
