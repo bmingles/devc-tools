@@ -1,0 +1,14 @@
+GLOBAL CONFIG
+
+ Source Folder Roots
+
+   ◉ ~/code
+
+ Add Roots  ~/
+  > type to filter folders
+ ▸ ◯ apps/
+   ◉ code/
+   ◯ demos/
+   ◯ devcontainers/
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ space pick · → open · ← up · ↑ into selected · ⏎ done · esc cancel

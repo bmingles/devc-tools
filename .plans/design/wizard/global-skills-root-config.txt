@@ -1,0 +1,21 @@
+GLOBAL CONFIG
+
+ Skills Folder Roots
+
+   ◉ ~/.agents/skills
+
+ Add Roots  ~/.agents/skills/
+  > type to filter folders
+ ▸ ◯ agent-browser/
+   ◯ agent-cmd/
+   ◯ bug-planning/
+   ◯ chat-transcripting/
+   ◯ claude-docs-searching/
+   ◯ cli-writing/
+   ◯ container-workspace-managing/
+   ◯ create-mcp-app/
+   ◯ deephaven-agent-docs/
+   ◯ deephaven-core-query-writing/
+   ◯ deephaven-docs-searching/
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ space pick · → open · ← up · ↑ into selected · ⏎ done · esc cancel

@@ -10,6 +10,8 @@
 
 ### Completed
 
+- [devc-wizard-screens](archived/devc-wizard-screens.md) — Re-skin the folder-picker screens to the mockups in `.plans/design/wizard/` (screen banner, Title Case section headings, no mid divider, `>` filter line, `◎` pinned marker), and retire the superseded sidebar/step-table wizard description in the design doc.
+
 - [devc-build-command](archived/devc-build-command.md) — Add a top-level `devc build` (recreate the container, `--no-cache` to drop the layer cache) and make `devc config` change-aware: it prompts for a rebuild only when the apply actually altered `devcontainer.json`, so toggling folders back to their original state prints "no changes" instead.
 
 - [devc-drop-feature](archived/devc-drop-feature.md) — Remove the local devcontainer Feature entirely; deliver the baseline via the bundled Dockerfile (build-time) + a top-level `postCreateCommand` running `scripts/post-create.sh` (create-time), so zero-config and `devc config` projects share one transform-free `.devcontainer/` shape. Composition is preserved via a `post-create.user.sh` hook devc never regenerates. Publishing a standalone OCI feature is explicitly dropped as a goal.
@@ -54,3 +56,4 @@
 | devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate | [devc-claude-seed-dir](devc-claude-seed-dir.md) | in progress |
 | devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook | [devc-drop-feature](archived/devc-drop-feature.md) | complete |
 | devc `build` command + change-aware `config` rebuild prompt | [devc-build-command](archived/devc-build-command.md) | complete |
+| devc wizard screens — picker chrome per `.plans/design/wizard/` mockups | [devc-wizard-screens](archived/devc-wizard-screens.md) | complete |

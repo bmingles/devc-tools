@@ -201,14 +201,21 @@ async function buildSourceRows(
   return rows;
 }
 
-function reviewLines(sel: WizardSelection): string[] {
+function reviewLines(sel: WizardSelection, projectDir: string): string[] {
   const lines: string[] = ["", "Review:"];
-  const block = (title: string, rows: MountRow[]) => {
+  // `note` is a mount the container makes on its own (the project folder) — it isn't written to
+  // the fence, but listing it keeps an empty source fence from reading as "no source mounts".
+  const block = (title: string, rows: MountRow[], note?: string) => {
     lines.push(`  ${title}`);
-    if (rows.length === 0) lines.push("    (none)");
+    if (note) lines.push(`    ${note}`);
+    if (rows.length === 0 && note === undefined) lines.push("    (none)");
     for (const r of rows) lines.push(`    ${serializeMount(r)}`);
   };
-  block("devc:source", sel.source);
+  block(
+    "devc:source",
+    sel.source,
+    `${foldHome(projectDir)} — this project (always mounted)`,
+  );
   block("devc:skills", sel.skills);
   return lines;
 }
@@ -274,12 +281,22 @@ export async function runProjectFlow(
   };
 
   const sourcePicked = await pickFolders({
-    title: "Pick source folders to mount",
+    labels: {
+      screen: "WORKSPACE CONFIG",
+      picks: "Source Folders",
+      browse: "Add Source Folders",
+    },
     start: opts.codeRoots[0] ?? HOME(),
     roots: opts.codeRoots.length ? opts.codeRoots : undefined,
     preselected: opts.sourceRows.map((r) => expandToAbsolute(r.source)).filter(
       (p): p is string => p !== null,
     ),
+    // The dev container binds the project folder itself, so picking nothing here still mounts
+    // it. Show it as a fixed row rather than letting the picker read as zero source mounts.
+    pinned: {
+      path: resolve(opts.projectDir),
+      note: "this project (always mounted)",
+    },
     annotate: annotateSource,
     color: opts.color,
   }, pickerDeps(deps));
@@ -289,7 +306,11 @@ export async function runProjectFlow(
   }
 
   const skillsPicked = await pickFolders({
-    title: "Pick skills folders to mount",
+    labels: {
+      screen: "WORKSPACE CONFIG",
+      picks: "Skills",
+      browse: "Add Skills",
+    },
     start: opts.skillsRoots[0] ?? HOME(),
     roots: opts.skillsRoots.length ? opts.skillsRoots : undefined,
     preselected: opts.skillsRows.map((r) => expandToAbsolute(r.source)).filter(
@@ -307,7 +328,7 @@ export async function runProjectFlow(
     skills: buildRows("skills", skillsPicked, warn),
   };
 
-  await writeLines(deps.output, reviewLines(selection));
+  await writeLines(deps.output, reviewLines(selection, opts.projectDir));
   const ok = await runConfirm("Apply?", true, {
     input: deps.input,
     output: deps.output,
@@ -420,7 +441,11 @@ export async function runGlobalFlow(
 
   const codePre = expandedOrEmpty(cfg.codeRoots);
   const codeAbs = await pickFolders({
-    title: "Pick your code folder root(s)",
+    labels: {
+      screen: "GLOBAL CONFIG",
+      picks: "Source Folder Roots",
+      browse: "Add Roots",
+    },
     start: codePre[0] ?? HOME(),
     preselected: codePre,
     color,
@@ -429,7 +454,11 @@ export async function runGlobalFlow(
 
   const skillsPre = expandedOrEmpty(cfg.skillsRoots);
   const skillsAbs = await pickFolders({
-    title: "Pick your skills root(s)",
+    labels: {
+      screen: "GLOBAL CONFIG",
+      picks: "Skills Folder Roots",
+      browse: "Add Roots",
+    },
     start: skillsPre[0] ?? HOME(),
     preselected: skillsPre,
     color,

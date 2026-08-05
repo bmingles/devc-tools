@@ -183,42 +183,35 @@ Deno.test("render: the picks list sits above the browser and shows ticked folder
     list("/home/me"),
   );
   const frame = render(s, { columns: 60, rows: 20 });
-  const picksIdx = frame.findIndex((l) => l.includes("SELECTED"));
-  const browserIdx = frame.findIndex((l) => l.includes("BROWSE"));
-  assert(picksIdx >= 0, "picks header present");
-  assert(browserIdx >= 0, "browser header present");
-  assert(picksIdx < browserIdx, "picks panel is rendered above the browser");
+  const picksIdx = frame.findIndex((l) => l.includes("Selected"));
+  const browserIdx = frame.findIndex((l) => l.includes("Add Folders"));
+  assert(picksIdx >= 0, "picks heading present");
+  assert(browserIdx >= 0, "browse heading present");
+  assert(picksIdx < browserIdx, "the picks list is rendered above the browser");
   assert(
     frame.join("\n").includes("◉ /home/me/work"),
-    "the pick is listed in the picks pane",
+    "the pick is listed in the picks section",
   );
 });
 
-Deno.test("the ▸ cursor is the only thing that marks the focused panel", () => {
+Deno.test("the ▸ cursor is the only thing that marks the focused section", () => {
   let s = feed(start(), " "); // tick .claude → one pick, browser still focused
   let frame = render(s, { columns: 60, rows: 20 });
-  assert(frame.some((l) => l.startsWith("─".repeat(10))), "panels are split by a divider rule");
   // Browser focused: the cursor is on a browse entry (a folder name ending in "/").
   let cursorLine = frame.find((l) => l.includes("▸"))!;
   assert(cursorLine.includes(".claude/"), "cursor is on a browse row when the browser is focused");
-  const headers = () => frame.filter((l) => /SELECTED|BROWSE/.test(l));
-  const browseFocused = headers();
+  const headings = () => frame.filter((l) => /Selected|Add Folders/.test(l));
+  const browseFocused = headings();
 
-  s = feed(s, "\t"); // move focus to the picks panel
+  s = feed(s, "\t"); // move focus to the picks list
   frame = render(s, { columns: 60, rows: 20 });
   cursorLine = frame.find((l) => l.includes("▸"))!;
   assert(
     cursorLine.includes("/home/me/.claude") && !cursorLine.includes(".claude/"),
-    "cursor is on a pick (an absolute path) when the picks panel is focused",
+    "cursor is on a pick (an absolute path) when the picks list is focused",
   );
-  // The headers themselves are identical either way — focus must not restyle a panel.
-  assertEquals(headers(), browseFocused, "panel headers do not change with focus");
-});
-
-Deno.test("the first line is the prompt, set off from the panels below", () => {
-  const frame = render(start(), { columns: 60, rows: 20 });
-  assertEquals(frame[0], " ? Pick folders", "the prompt leads with `?`");
-  assertEquals(frame[1], "", "a blank line separates the prompt from its inputs");
+  // The headings themselves are identical either way — focus must not restyle a section.
+  assertEquals(headings(), browseFocused, "section headings do not change with focus");
 });
 
 Deno.test("an invalid-worktree entry renders the ⚠ marker + reason", () => {
@@ -306,11 +299,108 @@ Deno.test("bounded: folders inside a root are selectable and persist across root
   assertEquals(done.selected, ["/home/me/code/app"]);
 });
 
-Deno.test("the title is the heading, not a hardcoded string", () => {
-  const s = initialState("/home/me", false, [], null, "Pick your code folder root(s)");
-  const frame = render(s, { columns: 60, rows: 20 }).join("\n");
-  assert(frame.includes("Pick your code folder root(s)"));
-  assert(!frame.includes("pick folders to mount"));
+Deno.test("the labels are the screen's copy, not hardcoded strings", () => {
+  const s = setListing(
+    initialState("/home/me", false, [], null, {
+      screen: "GLOBAL CONFIG",
+      picks: "Source Folder Roots",
+      browse: "Add Roots",
+    }),
+    "/home/me",
+    list("/home/me"),
+  );
+  const frame = render(s, { columns: 60, rows: 20 });
+  assertEquals(frame[0], "GLOBAL CONFIG", "the banner is the first line, flush left");
+  assertEquals(frame[1], "", "a blank line sets the banner off from the sections");
+  assertEquals(frame[2], " Source Folder Roots");
+  assert(
+    frame.some((l) => l.startsWith(" Add Roots  /home/me/")),
+    "the browse heading carries the current folder",
+  );
+  assert(!frame.join("\n").includes("Pick folders"), "no leftover default heading");
+});
+
+Deno.test("frame: banner, two sections split by blank lines, one rule above the legend", () => {
+  const s = setListing(
+    initialState("/home/me", false, ["/home/me/work"], null, {
+      screen: "WORKSPACE CONFIG",
+      picks: "Source Folders",
+      browse: "Add Source Folders",
+    }),
+    "/home/me",
+    list("/home/me"),
+  );
+  const frame = render(s, { columns: 60, rows: 20 });
+  assertEquals(frame.slice(0, 6), [
+    "WORKSPACE CONFIG",
+    "",
+    " Source Folders",
+    "",
+    "   ◉ /home/me/work",
+    "",
+  ]);
+  assertEquals(frame[6], " Add Source Folders  /home/me/");
+  assertEquals(frame[7], "  > type to filter folders", "the filter line is a `>` prompt");
+  // Exactly one divider, and it sits directly above the legend.
+  const rules = frame.filter((l) => l.startsWith("─"));
+  assertEquals(rules.length, 1, "no rule between the two sections");
+  assertEquals(frame.indexOf(rules[0]), frame.length - 2);
+  assert(frame[frame.length - 1].includes("⏎ done"), "the legend is the last line");
+});
+
+Deno.test("frame: typing replaces the filter placeholder", () => {
+  const s = feed(start(), "cla");
+  const frame = render(s, { columns: 60, rows: 20 });
+  assert(frame.includes("  > cla"), "the typed filter shows after the prompt");
+  assert(!frame.some((l) => l.includes("type to filter folders")), "placeholder is gone");
+});
+
+Deno.test("frame: an empty picks list says so only when nothing is pinned", () => {
+  const frame = render(start(), { columns: 60, rows: 20 }).join("\n");
+  assert(frame.includes("  (none yet)"));
+});
+
+// ── Pinned folder (mounted implicitly, never a pick) ────────────────────────────
+
+const PIN = { path: "/home/me/projects", note: "this project (always mounted)" };
+
+/** Browsing /home/me with `projects` pinned. */
+function withPin(preselected: string[] = []): PickerState {
+  const s = initialState("/home/me", false, preselected, null, undefined, PIN);
+  return setListing(s, "/home/me", list("/home/me"));
+}
+
+Deno.test("pinned: heads the picks list, so an empty one isn't 'nothing mounted'", () => {
+  const frame = render(withPin(), { columns: 80, rows: 20 }).join("\n");
+  assert(
+    frame.includes("◎ /home/me/projects  this project (always mounted)"),
+    "the pinned folder is listed with its reason",
+  );
+  assert(
+    !frame.includes("(none yet)"),
+    "an empty-list placeholder would contradict the pinned row",
+  );
+});
+
+Deno.test("pinned: the tree row is marked and inert — space cannot tick it", () => {
+  const frame = render(withPin(), { columns: 80, rows: 20 }).join("\n");
+  assert(
+    frame.includes("◎ projects/  this project (always mounted)"),
+    "the pinned folder is marked in the tree too",
+  );
+  const s = feed(withPin(), "\x1b[B\x1b[B "); // down to "projects", space
+  assertEquals(s.selected, [], "the pinned folder never becomes a pick");
+  assertEquals(feed(s, "\t").focus, "tree", "with no picks, tab still cannot enter the pane");
+  // A neighbouring folder still ticks normally.
+  assertEquals(feed(s, "\x1b[B ").selected, ["/home/me/work"]);
+});
+
+Deno.test("pinned: a preselected path equal to the pin is not also shown as a pick", () => {
+  const s = withPin(["/home/me/projects", "/home/me/work"]);
+  assertEquals(s.selected, ["/home/me/work"]);
+  const frame = render(s, { columns: 80, rows: 20 }).join("\n");
+  assert(!frame.includes("◉ /home/me/projects"), "the pin is not duplicated as a pick");
+  assert(frame.includes("◎ projects/"), "and it keeps the pinned marker in the tree");
 });
 
 Deno.test("bounded: roots render without a checkbox (they are boundaries, not picks)", () => {

@@ -1,0 +1,35 @@
+WORKSPACE CONFIG
+ 
+ Source Folders
+
+   ◎ ~/code/spikes/dh-agent-studio-spike
+   ◉ ~/code/apps
+   ◉ ~/code/deephaven-core-broken
+
+ Add Source Folders  ~/code/
+  > type to filter folders
+ ▸ ◯ _timespent/
+   ◯ apps/
+   ◯ deephaven-core/
+   ◯ deephaven-core-broken/
+   ◯ deephaven-core.worktrees/
+   ◯ deephaven-examples/
+   ◯ deephaven-mcp/
+   ◯ deephaven-plugins/
+   ◯ deephaven-plugins.worktrees/
+   ◯ demos/
+   ◯ devcontainers/
+   ◯ dh/
+   ◯ dh-notebooks/
+   ◯ dh-npm-deploy/
+   ◯ dh-web-wksp/
+   ◯ dhe-dev/
+   ◯ empty/
+   ◯ IdeaProjects/
+   ◯ interviews/
+   ◯ iris/
+   ◯ iris.worktrees/
+   ◯ js-plugin-template/
+   ◯ notebooks/
+────────────────────────────────────────────────────────
+ space pick · → open · ← up · ↑ into selected · ⏎ done · esc cancel

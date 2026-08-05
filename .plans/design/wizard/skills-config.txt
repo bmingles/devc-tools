@@ -1,0 +1,40 @@
+WORKSPACE CONFIG
+
+ Skills
+
+ ▸ ◉ ~/.agents/skills/agent-cmd
+   ◉ ~/.agents/skills/bug-planning
+
+ Add Skills ~/.agents/skills/
+  > filter: (type to narrow)
+ ▸ ◯ agent-browser/
+   ◉ agent-cmd/
+   ◉ bug-planning/
+   ◯ chat-transcripting/
+   ◯ claude-docs-searching/
+   ◯ cli-writing/
+   ◯ container-workspace-managing/
+   ◯ create-mcp-app/
+   ◯ deephaven-agent-docs/
+   ◯ deephaven-core-query-writing/
+   ◯ deephaven-docs-searching/
+   ◯ deephaven-docs-writing/
+   ◯ deephaven-layout-inspecting/
+   ◯ docs-reading/
+   ◯ find-skills/
+   ◯ golang-coding/
+   ◯ layout-inspecting/
+   ◯ marp-writing/
+   ◯ mcp-builder/
+   ◯ mcp-session-implementing/
+   ◯ notify-me/
+   ◯ plan-orchestrating/
+   ◯ playwright-cli/
+   ◯ sdlc/
+   ◯ skill-authoring/
+   ◯ skill-creator/
+   ◯ task-managing/
+   ◯ task-planning/
+   ◯ task-tracking/
+─────────────────────────────────────────
+space remove · ↓ back to browse · ⏎ done · esc cancel
