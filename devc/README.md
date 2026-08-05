@@ -137,10 +137,12 @@ folders — no typing paths:
   labelled "this project (always mounted)"): the dev container binds it on its own, so it heads
   the picked list and picking nothing still mounts it. It also appears in the review, above the
   `devc:source` rows.
-- Markers: `◯` not picked · `◉` picked · `◎` mounted regardless (the project folder).
-- Selection is **scoped to your configured roots**: the picker opens on the list of roots, and
-  each root is a boundary — you can't navigate above it, and the roots themselves aren't
-  selectable (you pick folders *inside* them).
+- Markers: `◯` not picked · `◉` picked · `◎` mounted regardless (the project folder, or a mount
+  another pick drags in — such as a picked worktree's primary repo `.git`).
+- Your configured roots are **shortcuts, not boundaries**: the picker opens on the list of roots,
+  but `←` walks above a root like any other folder, and at the filesystem root it wraps back to the
+  shortcut list — so you can mount a folder from anywhere on the machine. The roots themselves
+  aren't selectable; tick one from its parent folder.
 - A **review** summary then a single `Apply?` confirm writes the two managed mount blocks
   (`devc:source`, `devc:skills`); everything else in the file is left untouched.
 - Afterwards, `devc config` compares what it wrote to what was already on disk and only then

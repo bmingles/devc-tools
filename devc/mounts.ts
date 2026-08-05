@@ -6,6 +6,8 @@
 // where `${localEnv:HOME}` folding happens. `jsonc_edit.ts` does the text surgery; this
 // module produces the JSON-string element text that goes inside a fence.
 
+import { relativeUnderPosix } from "./posix.ts";
+
 /** Container mount root for source-code folders. */
 export const SOURCE_CONTAINER_ROOT = "/workspaces";
 /** Container mount root for per-folder skills (where the in-container agent looks). */
@@ -72,11 +74,9 @@ export function defaultTarget(
   const containerRoot = kind === "source"
     ? SOURCE_CONTAINER_ROOT
     : SKILLS_CONTAINER_ROOT;
-  if (
-    kind === "source" && root !== undefined && root !== "" &&
-    hostPath.startsWith(root + "/")
-  ) {
-    return `${containerRoot}/${hostPath.slice(root.length + 1)}`;
+  if (kind === "source" && root !== undefined) {
+    const rel = relativeUnderPosix(root, hostPath);
+    if (rel !== null) return `${containerRoot}/${rel}`;
   }
   return `${containerRoot}/${basename(hostPath)}`;
 }

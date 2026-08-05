@@ -18,6 +18,36 @@ export function basenamePosix(p: string): string {
   return idx < 0 ? trimmed : trimmed.slice(idx + 1);
 }
 
+/**
+ * The deepest directory that is `a`, `b`, or an ancestor of both (posix). `/` when they share no
+ * leading segment. Used to pick a base two mounts can mirror from when no configured root holds both.
+ */
+export function commonAncestorPosix(a: string, b: string): string {
+  const as = a.split("/");
+  const bs = b.split("/");
+  const shared: string[] = [];
+  for (let i = 0; i < Math.min(as.length, bs.length); i++) {
+    if (as[i] !== bs[i]) break;
+    shared.push(as[i]);
+  }
+  // A single empty segment is all that two disjoint absolute paths share — that is the root.
+  return shared.join("/") || "/";
+}
+
+/**
+ * `path`'s location relative to `base`, or null when `path` is not strictly under `base`. `base` of
+ * `/` is handled: the naive `base + "/"` prefix would be `//` and never match.
+ */
+export function relativeUnderPosix(base: string, path: string): string | null {
+  if (base === "") return null;
+  const prefix = base.endsWith("/") ? base : base + "/";
+  if (!path.startsWith(prefix)) return null;
+  // `path === base` leaves nothing to mirror — and with a `/` base it leaves an empty segment that
+  // would build a target ending in a bare slash.
+  const rel = path.slice(prefix.length);
+  return rel === "" ? null : rel;
+}
+
 /** True when `p` is an absolute posix path (or a `C:/`-style Windows drive path). */
 export function isAbsolutePosix(p: string): boolean {
   return p.startsWith("/") || /^[a-zA-Z]:\//.test(p);

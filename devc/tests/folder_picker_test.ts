@@ -2,14 +2,16 @@
 // plus a `render` frame assertion with colour off. No TTY involved — same style as the other
 // pure-state suites.
 
-import { assert, assertEquals } from "jsr:@std/assert@^1";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@^1";
 import { decodeAll } from "../tui/keys.ts";
 import {
+  type DerivedEntry,
   type EntryFlag,
   initialState,
   type PickerState,
   reduce,
   render,
+  setDerived,
   setFlags,
   setListing,
   visible,
@@ -242,19 +244,21 @@ Deno.test("render has no ANSI escapes when colour is off", () => {
 const ROOTS = ["/home/me/code", "/home/me/skills"];
 const bounded = () => initialState("/unused", false, [], ROOTS);
 
-Deno.test("bounded with a single root opens inside it, not on a roots list", () => {
+Deno.test("shortcuts: a single root opens inside it, not on a roots list", () => {
   const s = initialState("/unused", false, [], ["/home/me/code"]);
   assert(!s.atRoots, "a single root starts inside the root");
   assertEquals(s.cwd, "/home/me/code");
 });
 
-Deno.test("bounded single root: ← at the root is a no-op (no roots list to return to)", () => {
+Deno.test("shortcuts: ← at a root opens its parent — roots are not walls", () => {
   const base = initialState("/unused", false, [], ["/home/me/code"]);
   const s = setListing(base, base.cwd, list(base.cwd));
   assertEquals(visible(s), ["app", "lib"]); // opened straight into the root
-  const s2 = feed(s, "\x1b[D"); // ← at the root
-  assertEquals(s2.cwd, "/home/me/code");
-  assert(!s2.atRoots);
+  const up = feed(s, "\x1b[D"); // ← at the root
+  assertEquals(up.cwd, "/home/me", "walked above the configured root");
+  assert(!up.atRoots);
+  // And a folder up there is an ordinary, selectable entry.
+  assertEquals(feed(up, " ").selected, ["/home/me/.claude"]);
 });
 
 Deno.test("bounded: opens on the roots list, not a directory", () => {
@@ -276,27 +280,62 @@ Deno.test("bounded: roots are not selectable (space is a no-op at the roots list
   assert(s.atRoots);
 });
 
-Deno.test("bounded: left never escapes a root — it stops at the roots list", () => {
-  // code → app (deeper), then walk back up: app → code → roots → (stays) roots
+Deno.test("shortcuts: ← keeps walking up past the root, and / wraps to the shortcut list", () => {
+  // code → app (deeper), then walk all the way out: app → code → ~ → /home → / → shortcut list
   let s = feed(bounded(), "\x1b[C\x1b[C"); // into code, then into app
   assertEquals(s.cwd, "/home/me/code/app");
-  s = feed(s, "\x1b[D"); // up to the root itself
+  s = feed(s, "\x1b[D");
   assertEquals(s.cwd, "/home/me/code");
+  s = feed(s, "\x1b[D");
+  assertEquals(s.cwd, "/home/me", "past the configured root");
+  s = feed(s, "\x1b[D\x1b[D");
+  assertEquals(s.cwd, "/", "up to the filesystem root");
   assert(!s.atRoots);
-  s = feed(s, "\x1b[D"); // at the root, left returns to the roots list
+  s = feed(s, "\x1b[D"); // at `/`, ← wraps back to the shortcuts
   assert(s.atRoots);
-  s = feed(s, "\x1b[D"); // already at the top: no-op, never above a root
+  assertEquals(visible(s), ROOTS);
+  s = feed(s, "\x1b[D"); // nothing is above the shortcut list
   assert(s.atRoots);
 });
 
-Deno.test("bounded: folders inside a root are selectable and persist across roots", () => {
+Deno.test("shortcuts: with no roots configured, ← at / is a no-op (nothing to wrap to)", () => {
+  let s = feed(start(), "\x1b[D\x1b[D"); // /home/me → /home → /
+  assertEquals(s.cwd, "/");
+  s = feed(s, "\x1b[D");
+  assertEquals(s.cwd, "/");
+  assert(!s.atRoots);
+});
+
+Deno.test("shortcuts: picks survive leaving the root and reaching the shortcut list", () => {
   let s = feed(bounded(), "\x1b[C "); // open code, tick "app"
   assertEquals(s.selected, ["/home/me/code/app"]);
-  s = feed(s, "\x1b[D"); // back to roots
+  s = feed(s, "\x1b[D\x1b[D\x1b[D\x1b[D"); // code → ~ → /home → / → shortcuts
   assert(s.atRoots);
-  assertEquals(s.selected, ["/home/me/code/app"]); // survives leaving the root
+  assertEquals(s.selected, ["/home/me/code/app"]);
   const done = feed(s, "\r");
   assertEquals(done.selected, ["/home/me/code/app"]);
+});
+
+Deno.test("shortcuts: the browse heading at / reads `/`, not `//`", () => {
+  const s = feed(bounded(), "\x1b[C\x1b[D\x1b[D\x1b[D"); // code → ~ → /home → /
+  assertEquals(s.cwd, "/");
+  const frame = render(s, { columns: 60, rows: 20 });
+  assertEquals(
+    frame.find((l) => l.includes("Add Folders")),
+    " Add Folders  /",
+  );
+});
+
+Deno.test("shortcuts: the legend says `← up` inside a folder and `← roots` at /", () => {
+  const legend = (s: PickerState) =>
+    render(s, { columns: 90, rows: 20 }).at(-1)!;
+  const inside = feed(bounded(), "\x1b[C"); // into /home/me/code
+  assertStringIncludes(legend(inside), "← up");
+
+  const atFsRoot = feed(inside, "\x1b[D\x1b[D\x1b[D"); // → ~ → /home → /
+  assertEquals(atFsRoot.cwd, "/");
+  assertStringIncludes(legend(atFsRoot), "← roots");
+  assert(!legend(atFsRoot).includes("← up"));
 });
 
 Deno.test("the labels are the screen's copy, not hardcoded strings", () => {
@@ -401,6 +440,137 @@ Deno.test("pinned: a preselected path equal to the pin is not also shown as a pi
   const frame = render(s, { columns: 80, rows: 20 }).join("\n");
   assert(!frame.includes("◉ /home/me/projects"), "the pin is not duplicated as a pick");
   assert(frame.includes("◎ projects/"), "and it keeps the pinned marker in the tree");
+});
+
+// ── Derived rows (mounts a pick drags in — shown, but not yours to untick) ──────
+
+const WT = "/home/me/code/wt/feature1";
+const derivedFor = (owner: string, path: string): DerivedEntry => ({
+  path,
+  owner,
+  note: `required by worktree ${owner.slice(owner.lastIndexOf("/") + 1)}`,
+});
+
+/** Two picks, the first of which drags in the primary repo's `.git`. */
+function withDerived(): PickerState {
+  const s = setListing(
+    initialState("/home/me", false, [WT, "/home/me/work"]),
+    "/home/me",
+    list("/home/me"),
+  );
+  return setDerived(s, [derivedFor(WT, "/home/me/code/proj/.git")]);
+}
+
+Deno.test("derived: the dragged-in mount sits directly under the pick that requires it", () => {
+  const frame = render(withDerived(), { columns: 100, rows: 24 });
+  const owner = frame.findIndex((l) => l.includes(`◉ ${WT}`));
+  assert(owner >= 0, "the owning pick is listed");
+  assertEquals(
+    frame[owner + 1],
+    "   ◎ /home/me/code/proj/.git  required by worktree feature1",
+    "the derived row follows its owner, with the pin's marker and its reason",
+  );
+  assert(
+    frame.some((l) => l.includes("◉ /home/me/work")),
+    "the unrelated pick is unaffected",
+  );
+});
+
+Deno.test("derived: the picks cursor steps over derived rows — they cannot be reached", () => {
+  const cursorLine = (s: PickerState) =>
+    render(s, { columns: 100, rows: 24 }).find((l) => l.includes("▸"))!;
+
+  let s = feed(withDerived(), "\t"); // into the picks, on the first pick
+  assertEquals(s.selCursor, 0);
+  assert(cursorLine(s).includes(`◉ ${WT}`), "the cursor starts on a real pick");
+
+  s = feed(s, "\x1b[B"); // ↓ lands on the *next pick*, not the derived row between them
+  assertEquals(s.selCursor, 1);
+  const line = cursorLine(s);
+  assert(line.includes("◉ /home/me/work"), "↓ skipped the derived row");
+  assert(!line.includes("◎"), "the cursor never rests on a derived row");
+});
+
+Deno.test("derived: space in the picks removes the owner, and only the owner", () => {
+  // The derived row is never a removal target — the pick above it is what `space` takes.
+  const s = feed(withDerived(), "\t ");
+  assertEquals(s.selected, ["/home/me/work"]);
+  // And a derived path is not a pick, so it never comes back out of the picker.
+  assertEquals(feed(withDerived(), "\r").selected, [WT, "/home/me/work"]);
+});
+
+// `devc` writes derived mounts into the same fence as picked ones, so reopening a config
+// preselects a path we then derive again. It must collapse to the one inert row.
+
+const FENCE_WT = "/home/me/code/iris.worktrees/f1";
+const FENCE_GIT = "/home/me/code/iris/.git";
+
+/** Both the worktree and its primary `.git` preselected, as an existing fence would give them. */
+function fromFence(): PickerState {
+  return setListing(
+    initialState("/home/me", false, [FENCE_WT, FENCE_GIT]),
+    "/home/me",
+    list("/home/me"),
+  );
+}
+
+Deno.test("derived: a pick the config already carried is absorbed, not listed twice", () => {
+  let s = fromFence();
+  assertEquals(s.selected, [FENCE_WT, FENCE_GIT], "the fence preselects both");
+
+  s = setDerived(s, [derivedFor(FENCE_WT, FENCE_GIT)]);
+  assertEquals(s.selected, [FENCE_WT], "the derived path stops being a removable pick");
+
+  const lines = render(s, { columns: 100, rows: 24 });
+  assertEquals(
+    lines.filter((l) => l.includes(FENCE_GIT)).length,
+    1,
+    "the primary .git appears exactly once",
+  );
+  assert(lines.some((l) => l.includes(`◎ ${FENCE_GIT}  required by worktree f1`)));
+  assert(
+    !lines.some((l) => l.includes(`◉ ${FENCE_GIT}`)),
+    "and never as the deselectable copy",
+  );
+});
+
+Deno.test("derived: absorbing a pick keeps the picks cursor in range", () => {
+  let s = feed(fromFence(), "\t\x1b[B"); // into the picks, down onto the .git row
+  assertEquals(s.selCursor, 1);
+  s = setDerived(s, [derivedFor(FENCE_WT, FENCE_GIT)]);
+  assertEquals(s.selected, [FENCE_WT]);
+  assertEquals(s.selCursor, 0, "the cursor follows the shortened list");
+  assertEquals(s.focus, "selected");
+});
+
+Deno.test("derived: a derived path is inert in the browser too", () => {
+  let s = setListing(
+    initialState("/home/me/code/iris", false, [FENCE_WT]),
+    "/home/me/code/iris",
+    [".git", "src"],
+  );
+  s = setDerived(s, [derivedFor(FENCE_WT, FENCE_GIT)]);
+  const frame = render(s, { columns: 100, rows: 24 }).join("\n");
+  assert(
+    frame.includes("◎ .git/  required by worktree f1"),
+    "the browser marks it mounted-but-not-by-you, with the reason",
+  );
+  // Space on it would otherwise re-add the pick `setDerived` just absorbed.
+  assertEquals(feed(s, " ").selected, [FENCE_WT]);
+});
+
+Deno.test("derived: the picks window counts derived rows in '… and N more'", () => {
+  const s = setDerived(
+    setListing(
+      initialState("/home/me", false, ["/a", "/b", "/c"]),
+      "/home/me",
+      list("/home/me"),
+    ),
+    ["/a", "/b", "/c"].map((p) => derivedFor(p, `${p}/.git`)),
+  );
+  // rows: 15 ⇒ a 3-row cap over 6 rows (3 picks + 3 derived), so 3 are hidden — not 0.
+  const frame = render(s, { columns: 100, rows: 15 }).join("\n");
+  assert(frame.includes("… and 3 more"), frame);
 });
 
 Deno.test("bounded: roots render without a checkbox (they are boundaries, not picks)", () => {
