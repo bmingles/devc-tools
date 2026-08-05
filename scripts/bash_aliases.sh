@@ -15,7 +15,7 @@
 if _devc_tools_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd)"; then
   export DEVC_TOOLS_ROOT="$_devc_tools_root"
   export DEVC_BRIDGE_MAIN="$DEVC_TOOLS_ROOT/devc-bridge/host/main.ts"
-  export DEVC_TUI_MAIN="$DEVC_TOOLS_ROOT/devc/main.ts"
+  export DEVC_MAIN="$DEVC_TOOLS_ROOT/devc/main.ts"
   unset _devc_tools_root
 else
   echo "devc-tools: could not locate the repo root above ${BASH_SOURCE[0]:-$0}" >&2
@@ -36,6 +36,6 @@ _devc_tools_run() {
 
 devc-bridge() { _devc_tools_run devc-bridge "${DEVC_BRIDGE_MAIN:-}" "$@"; }
 
-devc() { _devc_tools_run devc "${DEVC_TUI_MAIN:-}" "$@"; }
+devc() { _devc_tools_run devc "${DEVC_MAIN:-}" "$@"; }
 
 # Adding a tool: export its <TOOL>_MAIN above, then one function line here.
