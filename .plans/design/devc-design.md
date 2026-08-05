@@ -121,17 +121,31 @@ Options:
 
 ### Wizard layout
 
-The TUI is divided into three regions:
+The flow is **picker-driven and sequential**, not a sidebar wizard: the folder-selection steps
+each take the full screen, and the surrounding steps (overview, review, confirm, rebuild prompt)
+are ordinary inline prompts on the normal screen, the way a shell tool scrolls. The reference
+frames live in `.plans/design/wizard/` and are authoritative for the picker screens.
 
-- **Left sidebar** — list of wizard steps; the current step is highlighted.
-- **Main area** — controls for the current step (tables, pickers, previews).
-- **Footer** — available keybindings, e.g.:
-  - `↑` / `↓` or `Tab` / `Shift+Tab` — move focus.
-  - `Enter` — edit a field or confirm a selection.
-  - `Space` — toggle checkboxes.
-  - `Esc` or the **Back** button — return to the previous step.
-  - `A` or the **Apply** button — write files (only active on the review step).
-  - `Q` or **Cancel** — quit without writing files.
+A picker screen is:
+
+- **Banner** — line 1, uppercase: `WORKSPACE CONFIG` (project steps) or `GLOBAL CONFIG` (roots).
+- **Picked list** — a Title Case heading (`Source Folders`, `Skills`, `Source Folder Roots`,
+  `Skills Folder Roots`) over the absolute paths ticked so far.
+- **Browser** — an `Add …` heading (`Add Source Folders`, `Add Skills`, `Add Roots`) carrying the
+  current directory, a `>` filter line, then the subfolders of that directory.
+- **Footer** — one full-width rule and a key legend for whichever list holds the cursor.
+
+The two lists are separated by whitespace, not rules or boxes, and neither is styled by focus —
+the `▸` row cursor alone says which one the keys drive.
+
+Markers: `◯` not picked · `◉` picked · `◎` mounted regardless of the selection (the project
+folder — see Step 2). Keys:
+
+- `↑` / `↓` — move; `↑` off the top of the browser steps into the picked list, `↓` off its
+  bottom returns (`Tab` toggles too).
+- `→` open a folder · `←` (or backspace on an empty filter) go up · type to filter.
+- `Space` — tick/untick in the browser; remove in the picked list.
+- `Enter` — done with this step · `Esc` — cancel the flow.
 
 ### Starting the wizard
 
@@ -146,52 +160,43 @@ When the user runs `devc config [PATH]`:
 
 ### Step 1: Project overview
 
-Displays a summary of the project being configured:
-
-- Project path
-- Base config source: `Bundled default` vs `Existing .devcontainer/`
-- Whether mounts will be created for the first time or edited in place
-
-Actions: **Next**, **Cancel**.
+Two inline lines before the first picker: the config path being written, and whether this run is
+creating a new config or updating the existing one.
 
 ### Step 2: Source code mounts
 
 The current project directory is always mounted as the devcontainer workspace. This step lets the user add **extra source code folders** that should also be available inside the container.
 
-- A mount table lists each extra source mount:
-  - **Host path** — absolute path on the host.
-  - **Container path** — absolute path inside the container. Defaults to `/workspaces/<basename>`.
-  - **Read-only** toggle (default off for source code).
-- **Add** prompts the user to pick one of the configured **code folder roots**, then opens a directory picker rooted at that selection.
-- **Remove** deletes the selected mount.
-- Duplicate container paths are rejected.
+- Screen `WORKSPACE CONFIG` / `Source Folders` / `Add Source Folders`, scoped to the configured
+  **code folder roots**: the roots are the top level, navigation cannot go above one, and the
+  roots themselves are not selectable.
+- The **project folder is pinned** at the head of the picked list with `◎` and the note "this
+  project (always mounted)", and is inert in the browser — the container binds it either way, so
+  ticking it would only add a second bind on the same target. It is not written to the fence.
+- Container paths are derived, not edited: `/workspaces/<basename>`, keeping the folder's
+  sub-path under the code root it falls under (so `~/code/a/b` → `/workspaces/a/b`). Source
+  mounts are read-write. Duplicate container paths are skipped with a note.
+- A picked **git worktree** additionally contributes a mount of its primary repo's `.git` at the
+  mirror location, when that is safe; unsafe worktrees are flagged inline in the browser.
 
 ### Step 3: Skills mounts
 
 Configure which agent skills folders are mounted into the container. Skills are **opt-in**: the bundled zero-config default mounts no skills, so a project gets skills only after they are configured here.
 
-- A mount table lists each skills mount:
-  - **Host path** — absolute path on the host.
-  - **Container path** — defaults to `~/.claude/skills/<basename>` (where the in-container agent discovers skills).
-  - **Read-only** toggle (default on, but editable).
-- **Add** prompts the user to pick one of the configured **skills folder roots**, then opens a directory picker rooted at that selection.
-- **Remove** deletes the selected mount.
-- Duplicate container paths are rejected.
+- Screen `WORKSPACE CONFIG` / `Skills` / `Add Skills`, scoped to the configured **skills folder
+  roots**.
+- Container paths are derived, not edited: `~/.claude/skills/<basename>`, mounted read-only.
+  Duplicate container paths are skipped with a note.
 - **Remembered selection.** When the wizard applies, the resulting skills list is persisted as the user's *most recent* skills selection. A **new** project's Skills step is pre-seeded from that remembered list (entries whose host path no longer exists are dropped), so a user who mounts the same skills across projects does not re-pick them every time. Reconfiguring an existing project seeds from that project's own `devc:skills` fence instead. (Source mounts are not remembered — they are project-specific — so Step 2 starts empty for new projects.)
 
 ### Step 4: Review & apply
 
-Presents a final summary before anything is written to disk:
+An inline summary printed before anything is written to disk: the serialized contents of the two
+managed fences (`devc:source`, `devc:skills`) — the only regions the wizard writes — with the
+implicitly mounted project folder listed above the source rows so an empty fence never reads as
+"no source mounts". Then a single `Apply? [Y/n]` confirm; declining writes nothing.
 
-- Path where files will be written: `PATH/.devcontainer/`
-- Whether `devcontainer.json` and/or `Dockerfile` are new or being updated in place
-- Full list of mounts
-- Preview of the two managed fences (`devc:source`, `devc:skills`) — the only regions the wizard writes
-- Note that on first creation the base infra mounts and the `Dockerfile` are copied as-is, and are not touched again on later runs
-
-Actions: **Apply**, **Back**, **Cancel**.
-
-When the user selects **Apply**:
+When the user accepts:
 
 1. Create `PATH/.devcontainer/` if it does not exist.
 2. **First creation** (no existing `PATH/.devcontainer/devcontainer.json`): write the base `devcontainer.json` from the bundled default, with the two managed fences inserted into the `mounts` array and populated from the configured source/skills mounts. Write the base `Dockerfile` as-is.

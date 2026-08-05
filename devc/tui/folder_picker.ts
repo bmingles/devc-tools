@@ -2,12 +2,15 @@
 // state machine (`reduce` + `render`, no IO) wrapped by a thin loop that owns the terminal, so
 // the whole interaction is scriptable headlessly (see `tests/folder_picker_test.ts`).
 //
-// The frame reads as one prompt with two inputs: the question on the first line, then SELECTED
-// (everything ticked so far) over BROWSE, split by a divider. Both panels are always styled the
-// same; the live one is simply the one holding the `▸` cursor, so SELECTED never looks like a
-// read-only summary. ↑ off the top of the browser steps up into the picks; ↓ off the bottom of
-// the picks drops back down (tab toggles too). The picks pane lets you remove a folder directly,
-// without having to navigate back to it in the tree.
+// The frame follows the mockups in `.plans/design/wizard/`: a screen banner, then two labelled
+// sections — what is picked so far, over the browser you add from — separated by whitespace
+// rather than rules, and one full-width divider above the footer legend. Both sections are
+// always styled the same; the live one is simply the one holding the `▸` cursor, so the picks
+// never look like a read-only summary. ↑ off the top of the browser steps up into the picks; ↓
+// off the bottom of the picks drops back down (tab toggles too). The picks section lets you
+// remove a folder directly, without having to navigate back to it in the tree. A caller may also
+// pin one folder (the project folder, which the container mounts on its own): it heads the picks
+// with `◎` and is inert in the tree, so an empty picks list can't read as "nothing gets mounted".
 //
 // Mental model (one axis per input, so the legend is a reminder, not a manual):
 //   browser  ↑/↓ move (↑ at top → picks) · → open · ← up · space tick/untick · ⏎ done · esc cancel
@@ -30,9 +33,37 @@ export interface EntryFlag {
   reason?: string;
 }
 
+/** Per-screen copy. Every string is shown verbatim; see `.plans/design/wizard/` for the set. */
+export interface PickerLabels {
+  /** Mode banner on the first line, e.g. `WORKSPACE CONFIG`. */
+  screen: string;
+  /** Heading over the picked list, e.g. `Source Folders`. */
+  picks: string;
+  /** Heading over the browser, e.g. `Add Source Folders`. */
+  browse: string;
+}
+
+export const DEFAULT_LABELS: PickerLabels = {
+  screen: 'CONFIG',
+  picks: 'Selected',
+  browse: 'Add Folders',
+};
+
+/**
+ * A folder that is mounted whatever you pick — the project folder, which the dev container binds
+ * on its own. Shown as a fixed row in the picks (and un-tickable in the tree) so an empty picks
+ * list never reads as "nothing gets mounted".
+ */
+export interface PinnedEntry {
+  /** Absolute host path that is mounted implicitly. */
+  path: string;
+  /** Short reason shown beside it, e.g. "this project (always mounted)". */
+  note: string;
+}
+
 export interface PickerState {
-  /** Heading shown at the top of the picker — describes what is being picked. */
-  title: string;
+  /** Banner + section headings for this screen. */
+  labels: PickerLabels;
   /**
    * Bounded mode: absolute boundary directories you may not navigate above, shown as the
    * top-level list. `null` = free mode (roam the whole filesystem, select any directory).
@@ -45,6 +76,7 @@ export interface PickerState {
   filter: string; // type-to-filter text for the current view
   cursor: number; // index into the *filtered* list
   selected: string[]; // absolute paths ticked so far, in the order ticked
+  pinned: PinnedEntry | null; // implicitly mounted, not part of `selected` and not toggleable
   flags: Map<string, EntryFlag>; // per-entry annotations for the current `cwd` view (by name)
   focus: 'tree' | 'selected'; // which pane keys drive (the browser, or the picks list)
   selCursor: number; // index into `selected` when `focus === "selected"`
@@ -60,20 +92,25 @@ export function initialState(
   color: boolean,
   preselected: string[] = [],
   roots: string[] | null = null,
-  title = 'Pick folders',
+  labels: PickerLabels = DEFAULT_LABELS,
+  pinned: PinnedEntry | null = null,
 ): PickerState {
   const normalizedRoots = roots === null ? null : roots.map((r) => resolve(r));
+  const pin = pinned === null ? null : { ...pinned, path: resolve(pinned.path) };
   // A single configured root needs no synthetic "roots" list — open straight inside it.
   const singleRoot = normalizedRoots !== null && normalizedRoots.length === 1;
   return {
-    title,
+    labels,
     roots: normalizedRoots,
     atRoots: normalizedRoots !== null && !singleRoot, // multi-root opens on the roots list
     cwd: resolve(singleRoot ? normalizedRoots[0] : cwd),
     entries: [],
     filter: '',
     cursor: 0,
-    selected: [...preselected],
+    // The pinned folder is already mounted, so it never doubles as a pick (a config that named
+    // it explicitly would otherwise show up twice, and re-mount onto the same target).
+    selected: preselected.filter((p) => resolve(p) !== pin?.path),
+    pinned: pin,
     flags: new Map(),
     focus: 'tree',
     selCursor: 0,
@@ -293,6 +330,8 @@ function goUp(state: PickerState): Step {
 function toggle(state: PickerState, focused: string | undefined): Step {
   if (focused === undefined) return { state, effect: NONE };
   const path = join(state.cwd, focused);
+  // The pinned folder is mounted either way — ticking it would only add a duplicate mount.
+  if (path === state.pinned?.path) return { state, effect: NONE };
   const selected = state.selected.includes(path)
     ? state.selected.filter((p) => p !== path)
     : [...state.selected, path];
@@ -316,31 +355,31 @@ function foldHome(path: string): string {
 
 // ── Frame chrome ─────────────────────────────────────────────────────────────
 //
-// A prompt line, then two stacked panels — SELECTED (picks) over BROWSE — split by a full-width
-// rule. The prompt reads as a question (`? …` in bold) with a blank line under it, so the panels
-// below read as its inputs.
+// The screen banner on line 1, then two labelled sections — the picks over the browser — set
+// apart by blank lines, and one full-width rule above the footer legend. The sections carry no
+// counts or box drawing: the headings say what each list is, and whitespace does the grouping.
 //
-// Panel text never changes with focus: dimming SELECTED made it look like a read-out instead of
-// a place you can prune picks. The live panel is the one holding the `▸` row cursor (reverse-
-// video on its row) — nothing else moves. Weight: prompt (bold) > panel labels (plain) > meta,
-// hints and legend (dim).
+// Section text never changes with focus: dimming the picks made them look like a read-out
+// instead of a place you can prune. The live section is the one holding the `▸` row cursor
+// (reverse-video on its row) — nothing else moves. Weight: banner (bold) > section headings
+// (plain) > meta, hints and legend (dim).
 
 /** A full-width horizontal divider. */
 function hr(width: number, color: boolean): string {
   return DIM('─'.repeat(Math.max(1, width)), color);
 }
 
-/** A panel header: `TITLE  meta` — same weight whether the panel is live or idle. */
-function panelHeader(title: string, meta: string, color: boolean): string {
+/** A section heading: ` Heading  meta` — same weight whether the section is live or idle. */
+function sectionHeader(title: string, meta: string, color: boolean): string {
   return ` ${title}` + (meta ? '  ' + DIM(meta, color) : '');
 }
 
 /**
- * One panel row: `<cursor> <body>`. The `▸` marks the row cursor (reverse-video) and only
- * appears in the live panel. `suffix` (e.g. a worktree warning) trails outside the highlight so
- * nested SGR codes don't clash.
+ * One list row: `<cursor> <body>`. The `▸` marks the row cursor (reverse-video) and only
+ * appears in the live section. `suffix` (e.g. a worktree warning) trails outside the highlight
+ * so nested SGR codes don't clash.
  */
-function panelRow(
+function listRow(
   body: string,
   opts: { cursor: boolean; color: boolean; suffix?: string },
 ): string {
@@ -359,15 +398,29 @@ export function render(state: PickerState, size: Size): string[] {
   const list = visible(state);
   const out: string[] = [];
 
-  // The prompt: the one line that asks something. A blank line separates it from the panels
-  // below, which are the answer to it.
-  out.push(' ' + BOLD('? ' + state.title, color));
+  // The banner names the screen you are on; the two section headings below name its lists.
+  out.push(BOLD(state.labels.screen, color));
   out.push('');
 
-  // ── SELECTED panel ──
-  out.push(panelHeader('SELECTED', `${state.selected.length}`, color));
+  // ── picks section ──
+  const pinned = state.pinned;
+  out.push(sectionHeader(state.labels.picks, '', color));
+  out.push('');
+  // The pinned row heads the section: a pick's shape with its own marker and no cursor, so it
+  // reads as a given rather than something you chose — or could un-choose.
+  if (pinned) {
+    out.push(
+      listRow(`◎ ${foldHome(pinned.path)}`, {
+        cursor: false,
+        color,
+        suffix: `  ${pinned.note}`,
+      }),
+    );
+  }
+  // A pinned row is itself the answer to "what is mounted", so it stands alone; without one an
+  // empty list still needs to say something.
   if (state.selected.length === 0) {
-    out.push('  ' + DIM('none selected', color));
+    if (!pinned) out.push('  ' + DIM('(none yet)', color));
   } else {
     const cap = Math.max(3, Math.min(8, size.rows - 12));
     const shown = Math.min(state.selected.length, cap);
@@ -383,7 +436,7 @@ export function render(state: PickerState, size: Size): string[] {
     state.selected.slice(first, first + shown).forEach((p, i) => {
       const idx = first + i;
       out.push(
-        panelRow(`◉ ${foldHome(p)}`, {
+        listRow(`◉ ${foldHome(p)}`, {
           cursor: picksActive && idx === state.selCursor,
           color,
         }),
@@ -396,15 +449,21 @@ export function render(state: PickerState, size: Size): string[] {
     }
   }
 
-  // ── BROWSE panel ──
-  out.push(hr(width, color));
+  // ── browse section ──
+  // Blank line, not a rule: the two lists are one column, and a divider read as a hard split.
+  out.push('');
+  // At the synthetic roots list there is no current directory to name — the heading stands alone.
   out.push(
-    panelHeader('BROWSE', atRoots ? 'roots' : foldHome(state.cwd) + '/', color),
+    sectionHeader(
+      state.labels.browse,
+      atRoots ? '' : foldHome(state.cwd) + '/',
+      color,
+    ),
   );
   out.push(
     '  ' +
-      DIM('filter: ', color) +
-      (state.filter || DIM('(type to narrow)', color)),
+      DIM('> ', color) +
+      (state.filter || DIM('type to filter folders', color)),
   );
 
   // The browser gets whatever rows remain between the filter line and the footer (divider +
@@ -426,29 +485,37 @@ export function render(state: PickerState, size: Size): string[] {
     const idx = first + i;
     const isCursor = idx === state.cursor && !picksActive;
     // Roots are navigable boundaries, not selections: no checkbox.
-    const body = atRoots
-      ? `  ${foldHome(name)}/`
-      : `${state.selected.includes(join(state.cwd, name)) ? '◉' : '◯'} ${name}/`;
+    const abs = atRoots ? null : join(state.cwd, name);
+    const isPinned = abs !== null && abs === pinned?.path;
+    // `◎` is `◉` with a hollow centre — on, but not by you, and not yours to change.
+    const mark = isPinned ? '◎' : state.selected.includes(abs ?? '') ? '◉' : '◯';
+    const body = atRoots ? `  ${foldHome(name)}/` : `${mark} ${name}/`;
     let suffix: string | undefined;
-    if (!atRoots) {
+    if (isPinned) {
+      // Ticked-looking but inert — say why, so the dead space bar isn't a mystery.
+      suffix = `  ${pinned!.note}`;
+    } else if (!atRoots) {
       const flag = state.flags.get(name);
       if (flag?.worktree && !flag.valid) {
         suffix =
           '  ⚠ primary not mounted' + (flag.reason ? ` (${flag.reason})` : '');
       }
     }
-    out.push(panelRow(body, { cursor: isCursor, color, suffix }));
+    out.push(listRow(body, { cursor: isCursor, color, suffix }));
   });
 
-  // Footer: a divider, then a short hint for the live panel — the cursor carries the rest, so
+  // Footer: a divider, then a short hint for the live section — the cursor carries the rest, so
   // this is a reminder, not a manual.
   while (out.length < size.rows - 2) out.push('');
   out.push(hr(width, color));
+  // `↑ into selected` only when there is a pick to step into — the pinned row is not one, and
+  // advertising a dead key next to a visibly occupied list is worse than saying nothing.
+  const intoPicks = state.selected.length > 0 ? '↑ into selected · ' : '';
   const legend = picksActive
     ? ' space remove · ↓ back to browse · ⏎ done · esc cancel'
     : atRoots
-      ? ' → open · ↑ into selected · ⏎ done · esc cancel'
-      : ' space pick · → open · ← up · ↑ into selected · ⏎ done · esc cancel';
+      ? ` → open · ${intoPicks}⏎ done · esc cancel`
+      : ` space pick · → open · ← up · ${intoPicks}⏎ done · esc cancel`;
   out.push(DIM(legend, color));
   return out.slice(0, size.rows);
 }
@@ -469,12 +536,17 @@ export async function listDirs(path: string): Promise<string[]> {
 }
 
 export interface PickerOptions {
-  /** Heading describing what is being picked (e.g. "Pick source folders"). */
-  title: string;
+  /** Banner + section headings for this screen (e.g. `WORKSPACE CONFIG` / `Source Folders`). */
+  labels: PickerLabels;
   /** Directory the picker opens in (free mode only; ignored when `roots` is given). */
   start: string;
   /** Absolute paths to pre-tick (e.g. folders already configured). */
   preselected?: string[];
+  /**
+   * A folder mounted regardless of the picks (see `PinnedEntry`). Displayed in SELECTED and
+   * marked in the tree, but never selectable, and never part of the returned paths.
+   */
+  pinned?: PinnedEntry;
   /**
    * Bounded mode: absolute boundary directories shown as the top level; navigation can't go
    * above them and the roots themselves aren't selectable. Omit for free filesystem mode.
@@ -531,7 +603,8 @@ export async function pickFolders(
     opts.color ?? true,
     opts.preselected,
     opts.roots ?? null,
-    opts.title,
+    opts.labels,
+    opts.pinned ?? null,
   );
   // Annotate the freshly-listed tree view (no-op when no annotator, or on the roots list).
   const annotated = async (s: PickerState): Promise<PickerState> => {

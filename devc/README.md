@@ -128,6 +128,16 @@ folders — no typing paths:
   picker: `↑/↓` move, `→` open a folder, `←` (or backspace on an empty filter) go up, `space`
   ticks/unticks (selection persists across folders), `⏎` confirms, `esc` cancels. Type any
   characters to filter the current folder.
+- Each picker screen (see `.plans/design/wizard/` for the reference frames) is a banner naming
+  the screen — `WORKSPACE CONFIG` or `GLOBAL CONFIG` — over two labelled lists: what is picked
+  so far (`Source Folders`, `Skills`, `Source Folder Roots`, `Skills Folder Roots`) and the
+  browser you add from (`Add Source Folders`, `Add Skills`, `Add Roots`), with the key legend
+  under a rule at the foot.
+- The **project folder is pinned** in the source picker (`◎` — a `◉` you cannot untick —
+  labelled "this project (always mounted)"): the dev container binds it on its own, so it heads
+  the picked list and picking nothing still mounts it. It also appears in the review, above the
+  `devc:source` rows.
+- Markers: `◯` not picked · `◉` picked · `◎` mounted regardless (the project folder).
 - Selection is **scoped to your configured roots**: the picker opens on the list of roots, and
   each root is a boundary — you can't navigate above it, and the roots themselves aren't
   selectable (you pick folders *inside* them).

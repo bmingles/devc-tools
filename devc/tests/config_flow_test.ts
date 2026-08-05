@@ -137,6 +137,34 @@ Deno.test("project flow: Esc in the source picker cancels the whole flow", async
   assertEquals(called, false);
 });
 
+Deno.test("project flow: the project folder is pinned in the picker, not a pick", async () => {
+  let captured: WizardSelection | null = null;
+  const opts = { ...baseOpts(), projectDir: "/code/app" };
+  const deps: FlowDeps = {
+    // src: space on "app" (the project folder — inert), done · skills: none, done · confirm y
+    input: streamOfKeys([SPACE, ENTER, ENTER, "y"]),
+    output: sink(),
+    size: () => ({ columns: 80, rows: 24 }),
+    raw: false,
+    readDir: fakeReadDir,
+    apply: (_dir, sel) => {
+      captured = sel;
+      return Promise.resolve({
+        created: true,
+        changed: true,
+        configPath: "/code/app/.devcontainer/devcontainer.json",
+        written: [],
+      });
+    },
+  };
+
+  const result = await runProjectFlow(opts, deps);
+  assertEquals(result.applied, true);
+  // The container binds the project folder itself, so it must not be written as a source mount
+  // (a second bind on the same target).
+  assertEquals((captured as unknown as WizardSelection).source, []);
+});
+
 // ── worktree-aware source mounts ────────────────────────────────────────────────
 
 const WFS: Record<string, string[]> = {
