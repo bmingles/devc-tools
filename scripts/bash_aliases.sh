@@ -5,7 +5,7 @@
 #
 # Each function runs its tool straight from source via Deno — no compile step:
 #   devc-bridge start | stop | status | restart
-#   devc-tui list | status | select <id> | deselect <id> | apply | skills | config
+#   devc config | up | attach | claude | exec | build | mounts | stop | down | status
 #
 # Requires Deno 2.9+ on PATH. devc-bridge's tray also needs `deno desktop` (macOS GUI);
 # its `start` builds the app bundle, so the first one takes ~10-30s (it says so).
@@ -36,10 +36,6 @@ _devc_tools_run() {
 
 devc-bridge() { _devc_tools_run devc-bridge "${DEVC_BRIDGE_MAIN:-}" "$@"; }
 
-# The tool is `devc`; the shell function is still named `devc-tui` for now, since a `devc`
-# already exists on many systems — this alias will become `devc` once that clears up.
-# It edits the devcontainer.json / .code-workspace of whatever repo you run it in, so run it
-# from that repo (it uses the cwd as the workspace dir unless --workspace-dir).
-devc-tui() { _devc_tools_run devc-tui "${DEVC_TUI_MAIN:-}" "$@"; }
+devc() { _devc_tools_run devc "${DEVC_TUI_MAIN:-}" "$@"; }
 
 # Adding a tool: export its <TOOL>_MAIN above, then one function line here.
