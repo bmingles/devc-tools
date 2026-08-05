@@ -7,8 +7,15 @@
 #   devc-bridge start | stop | status | restart
 #   devc config | up | attach | claude | exec | build | mounts | stop | down | status
 #
+# Sourcing also exports $DEVC_BIN (the same from-source invocation as the `devc` function)
+# for non-shell callers that can't see shell functions.
+#
 # Requires Deno 2.9+ on PATH. devc-bridge's tray also needs `deno desktop` (macOS GUI);
 # its `start` builds the app bundle, so the first one takes ~10-30s (it says so).
+
+# Permissions every tool here runs with. Kept in one variable so the shell functions and
+# the exported $DEVC_BIN invocation below can't drift apart.
+_DEVC_TOOLS_PERMS="--allow-read --allow-write --allow-run --allow-env --allow-net"
 
 # Resolve the repo root from THIS file, at source time, so the functions work regardless
 # of the caller's cwd. Guarded so a bad path fails loudly, not silently.
@@ -17,6 +24,15 @@ if _devc_tools_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null &&
   export DEVC_BRIDGE_MAIN="$DEVC_TOOLS_ROOT/devc-bridge/host/main.ts"
   export DEVC_MAIN="$DEVC_TOOLS_ROOT/devc/main.ts"
   unset _devc_tools_root
+
+  # `devc` below is a bash function — invisible to anything that spawns child processes
+  # directly (e.g. Node's child_process.spawn, which resolves commands from PATH only and
+  # never sees shell functions). Exporting the same invocation as $DEVC_BIN lets any such
+  # consumer run devc from source too, with no separate setup: sourcing this file is
+  # enough. `:=` only assigns when unset/empty, so an explicit `export DEVC_BIN=...`
+  # elsewhere (e.g. pointing at a compiled binary) still wins.
+  : "${DEVC_BIN:="deno run $_DEVC_TOOLS_PERMS $DEVC_MAIN"}"
+  export DEVC_BIN
 else
   echo "devc-tools: could not locate the repo root above ${BASH_SOURCE[0]:-$0}" >&2
 fi
@@ -29,9 +45,8 @@ _devc_tools_run() {
     echo "$name: entrypoint not found ($main); re-source scripts/bash_aliases.sh" >&2
     return 1
   fi
-  deno run \
-    --allow-read --allow-write --allow-run --allow-env --allow-net \
-    "$main" "$@"
+  # Unquoted on purpose: the perms must word-split into separate flags.
+  deno run $_DEVC_TOOLS_PERMS "$main" "$@"
 }
 
 devc-bridge() { _devc_tools_run devc-bridge "${DEVC_BRIDGE_MAIN:-}" "$@"; }
