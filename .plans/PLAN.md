@@ -14,6 +14,10 @@
 
 ### Completed
 
+- [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) — Make the configured roots a shortcut list rather than a boundary: `←` walks to the real parent everywhere and wraps to the shortcut list at `/`, so any folder can be picked. Roots stay unselectable. Because that makes out-of-root worktrees reachable, `resolveWorktree` stops calling them invalid and instead mirrors both the worktree's and the primary `.git`'s container targets from a shared base — the configured root when it holds the primary, else their common ancestor (what the devcontainer CLI does for a worktree project).
+
+- [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md) — Show the auto-added primary repo `.git` mount in the source picker's `Source Folders` list the moment its worktree is picked, marked `◎` and inert (the picks cursor skips it) so it cannot be unticked while a worktree requiring it is picked. One shared helper backs both the picker display and the written fence, so they cannot disagree (introduced here as `impliedPrimaryMounts`; since replaced by `resolvePickedMounts` — see [devc-picker-free-navigation](archived/devc-picker-free-navigation.md)). Display-only: the fence contents are unchanged.
+
 - [devc-wizard-modernize](archived/devc-wizard-modernize.md) — Replace the full-screen sidebar wizard (mnemonic `N`/`B`/`A` keys) with a modern inline sequential flow plus a multi-select, type-to-filter folder picker, zero new dependencies, on the existing `tui/term.ts`+`tui/keys.ts`.
 
 - [devc-wizard-screens](archived/devc-wizard-screens.md) — Re-skin the folder-picker screens to the mockups in `.plans/design/wizard/` (screen banner, Title Case section headings, no mid divider, `>` filter line, `◎` pinned marker), and retire the superseded sidebar/step-table wizard description in the design doc.
@@ -63,3 +67,5 @@
 | devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook | [devc-drop-feature](archived/devc-drop-feature.md) | complete |
 | devc `build` command + change-aware `config` rebuild prompt | [devc-build-command](archived/devc-build-command.md) | complete |
 | devc wizard screens — picker chrome per `.plans/design/wizard/` mockups | [devc-wizard-screens](archived/devc-wizard-screens.md) | complete |
+| devc picker derived mounts — implied primary `.git` shown in the picks list | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md) | complete |
+| devc picker free navigation — roots as shortcuts + worktree mirror base | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) | complete |

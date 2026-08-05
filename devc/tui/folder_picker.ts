@@ -11,6 +11,14 @@
 // remove a folder directly, without having to navigate back to it in the tree. A caller may also
 // pin one folder (the project folder, which the container mounts on its own): it heads the picks
 // with `◎` and is inert in the tree, so an empty picks list can't read as "nothing gets mounted".
+// A caller may also *derive* rows from the picks (a picked worktree's primary repo `.git`): those
+// sit under the pick that drags them in, share the pinned row's `◎`, and are equally inert — the
+// picks cursor only ever lands on a real pick, so the way to drop one is to drop its owner.
+//
+// A caller may pass `roots`: shortcut directories shown as the opening list. They are starting
+// points, not boundaries — `←` walks above a root like anywhere else, and at the filesystem root it
+// wraps back to the shortcut list, so any folder on the machine is reachable and the shortcuts stay
+// one keypress from the top. The roots themselves aren't selectable; tick one from its parent.
 //
 // Mental model (one axis per input, so the legend is a reminder, not a manual):
 //   browser  ↑/↓ move (↑ at top → picks) · → open · ← up · space tick/untick · ⏎ done · esc cancel
@@ -61,15 +69,31 @@ export interface PinnedEntry {
   note: string;
 }
 
+/**
+ * A folder the picks list gains *because of* something you picked — e.g. the primary repo's `.git`
+ * behind a picked git worktree. Listed under its `owner` with the pinned row's `◎` marker and no
+ * cursor: it is part of what gets mounted, but not yours to untick while its owner is picked.
+ * Dropping the owner is what drops it, which is why the caller derives the whole list from the
+ * current picks rather than mutating it (see `PickerOptions.derive`).
+ */
+export interface DerivedEntry {
+  /** Absolute host path that gets mounted along with `owner`. */
+  path: string;
+  /** The `selected` entry that requires it — the pick this row is listed under. */
+  owner: string;
+  /** Short reason shown beside it, e.g. "required by worktree feature1". */
+  note: string;
+}
+
 export interface PickerState {
   /** Banner + section headings for this screen. */
   labels: PickerLabels;
   /**
-   * Bounded mode: absolute boundary directories you may not navigate above, shown as the
-   * top-level list. `null` = free mode (roam the whole filesystem, select any directory).
+   * Shortcut directories shown as the opening list. Navigation is free either way — these are
+   * starting points, not boundaries — and they are not themselves selectable. `null` = no shortcuts.
    */
   roots: string[] | null;
-  /** Bounded mode only: true while showing the roots list (the synthetic top level). */
+  /** True while showing the shortcut list (the synthetic top level). */
   atRoots: boolean;
   cwd: string; // absolute path of the folder being browsed (when not `atRoots`)
   entries: string[]; // subdirectory names in `cwd`, sorted (dirs only)
@@ -77,6 +101,7 @@ export interface PickerState {
   cursor: number; // index into the *filtered* list
   selected: string[]; // absolute paths ticked so far, in the order ticked
   pinned: PinnedEntry | null; // implicitly mounted, not part of `selected` and not toggleable
+  derived: DerivedEntry[]; // dragged in by the picks; recomputed by the loop, never by a key
   flags: Map<string, EntryFlag>; // per-entry annotations for the current `cwd` view (by name)
   focus: 'tree' | 'selected'; // which pane keys drive (the browser, or the picks list)
   selCursor: number; // index into `selected` when `focus === "selected"`
@@ -111,6 +136,7 @@ export function initialState(
     // it explicitly would otherwise show up twice, and re-mount onto the same target).
     selected: preselected.filter((p) => resolve(p) !== pin?.path),
     pinned: pin,
+    derived: [],
     flags: new Map(),
     focus: 'tree',
     selCursor: 0,
@@ -156,6 +182,37 @@ export function setFlags(
   flags: Map<string, EntryFlag>,
 ): PickerState {
   return { ...state, flags };
+}
+
+/** True when `path` is mounted anyway — pinned, or dragged in by a pick — so it is not tickable. */
+function implicit(state: PickerState, path: string): boolean {
+  return path === state.pinned?.path ||
+    state.derived.some((d) => d.path === path);
+}
+
+/**
+ * Install the mounts the current picks drag in (see `PickerOptions.derive`), absorbing any pick
+ * they subsume.
+ *
+ * That absorption is the point: `devc` writes derived mounts into the same fence as picked ones, so
+ * reopening a config preselects the primary `.git` it wrote last time — which we then derive again.
+ * Left alone the list shows that path twice, once removable and once not. Collapsing to the derived
+ * row means its fate is tied to the worktree that justifies it, which is the whole contract.
+ */
+export function setDerived(
+  state: PickerState,
+  derived: DerivedEntry[],
+): PickerState {
+  const next = { ...state, derived };
+  const kept = state.selected.filter((p) => !implicit(next, p));
+  if (kept.length === state.selected.length) return next;
+  return {
+    ...next,
+    selected: kept,
+    selCursor: clampCursor(state.selCursor, kept.length),
+    // Nothing left to prune ⇒ the picks pane can't hold focus (see `removeSelected`).
+    focus: kept.length === 0 ? 'tree' : state.focus,
+  };
 }
 
 // ── Reducer (pure) ─────────────────────────────────────────────────────────────
@@ -307,31 +364,32 @@ function removeSelected(state: PickerState): Step {
   };
 }
 
+/**
+ * `←` walks to the real parent, a configured root included — the roots are shortcuts, not walls.
+ * The shortcut list has nothing above it, and the filesystem root wraps back to that list, which is
+ * what keeps the shortcuts reachable without spending another key on them.
+ */
 function goUp(state: PickerState): Step {
-  if (state.roots !== null) {
-    // Bounded: never navigate above a root. At a root, `←` returns to the roots list — unless
-    // there is only one root, which has no synthetic list to return to, so it's a no-op.
-    if (state.atRoots) return { state, effect: NONE };
-    if (state.roots.includes(state.cwd)) {
-      if (state.roots.length <= 1) return { state, effect: NONE };
-      return {
-        state: { ...state, atRoots: true, filter: '', cursor: 0 },
-        effect: NONE,
-      };
-    }
-    return { state, effect: { type: 'readDir', path: dirname(state.cwd) } };
-  }
-  // Free: walk up to the filesystem root.
+  if (state.atRoots) return { state, effect: NONE };
   const parent = dirname(state.cwd);
-  if (parent === state.cwd) return { state, effect: NONE };
-  return { state, effect: { type: 'readDir', path: parent } };
+  if (parent !== state.cwd) {
+    return { state, effect: { type: 'readDir', path: parent } };
+  }
+  if (state.roots !== null && state.roots.length > 0) {
+    return {
+      state: { ...state, atRoots: true, filter: '', cursor: 0 },
+      effect: NONE,
+    };
+  }
+  return { state, effect: NONE };
 }
 
 function toggle(state: PickerState, focused: string | undefined): Step {
   if (focused === undefined) return { state, effect: NONE };
   const path = join(state.cwd, focused);
-  // The pinned folder is mounted either way — ticking it would only add a duplicate mount.
-  if (path === state.pinned?.path) return { state, effect: NONE };
+  // The pinned folder, and anything the picks drag in, is mounted either way — ticking it would
+  // only add a duplicate mount (and `setDerived` would absorb it straight back).
+  if (implicit(state, path)) return { state, effect: NONE };
   const selected = state.selected.includes(path)
     ? state.selected.filter((p) => p !== path)
     : [...state.selected, path];
@@ -343,6 +401,12 @@ function toggle(state: PickerState, focused: string | undefined): Step {
 const DIM = (s: string, on: boolean) => (on ? `\x1b[2m${s}\x1b[0m` : s);
 const BOLD = (s: string, on: boolean) => (on ? `\x1b[1m${s}\x1b[0m` : s);
 const REV = (s: string, on: boolean) => (on ? `\x1b[7m${s}\x1b[0m` : s);
+
+/** A directory path for display, with exactly one trailing slash (`/` must not become `//`). */
+function asDir(path: string): string {
+  const p = foldHome(path);
+  return p.endsWith('/') ? p : p + '/';
+}
 
 /** Fold `$HOME` back to `~` so long paths read at a glance. */
 function foldHome(path: string): string {
@@ -391,6 +455,36 @@ function listRow(
   );
 }
 
+/** One scrollable row of the picks section, and which pick (if any) the cursor reaches it by. */
+interface PickRow {
+  body: string;
+  suffix?: string;
+  /** Index into `selected`, or null for a derived row — which is what makes it un-untickable. */
+  selIndex: number | null;
+}
+
+/**
+ * The picks section's scrollable rows: each pick followed by whatever it drags in, so the cause of
+ * a derived mount sits directly above it. The pinned row is not here — it is rendered outside the
+ * window so a long list can never scroll "this project" out of sight.
+ */
+function pickRows(state: PickerState): PickRow[] {
+  const rows: PickRow[] = [];
+  state.selected.forEach((p, i) => {
+    rows.push({ body: `◉ ${foldHome(p)}`, selIndex: i });
+    for (const d of state.derived) {
+      if (d.owner === p) {
+        rows.push({
+          body: `◎ ${foldHome(d.path)}`,
+          suffix: `  ${d.note}`,
+          selIndex: null,
+        });
+      }
+    }
+  });
+  return rows;
+}
+
 export function render(state: PickerState, size: Size): string[] {
   const { color, atRoots } = state;
   const width = size.columns;
@@ -419,33 +513,32 @@ export function render(state: PickerState, size: Size): string[] {
   }
   // A pinned row is itself the answer to "what is mounted", so it stands alone; without one an
   // empty list still needs to say something.
-  if (state.selected.length === 0) {
+  const rows = pickRows(state);
+  if (rows.length === 0) {
     if (!pinned) out.push('  ' + DIM('(none yet)', color));
   } else {
     const cap = Math.max(3, Math.min(8, size.rows - 12));
-    const shown = Math.min(state.selected.length, cap);
+    const shown = Math.min(rows.length, cap);
+    // Centre on the row the cursor is *on* — with derived rows interleaved, that is no longer the
+    // `selCursor`th row.
+    const cursorRow = rows.findIndex((r) => r.selIndex === state.selCursor);
     const first = picksActive
       ? Math.max(
           0,
-          Math.min(
-            state.selCursor - Math.floor(shown / 2),
-            state.selected.length - shown,
-          ),
+          Math.min(cursorRow - Math.floor(shown / 2), rows.length - shown),
         )
       : 0;
-    state.selected.slice(first, first + shown).forEach((p, i) => {
-      const idx = first + i;
+    rows.slice(first, first + shown).forEach((row, i) => {
       out.push(
-        listRow(`◉ ${foldHome(p)}`, {
-          cursor: picksActive && idx === state.selCursor,
+        listRow(row.body, {
+          cursor: picksActive && first + i === cursorRow,
           color,
+          suffix: row.suffix,
         }),
       );
     });
-    if (state.selected.length > shown) {
-      out.push(
-        '  ' + DIM(`… and ${state.selected.length - shown} more`, color),
-      );
+    if (rows.length > shown) {
+      out.push('  ' + DIM(`… and ${rows.length - shown} more`, color));
     }
   }
 
@@ -454,11 +547,7 @@ export function render(state: PickerState, size: Size): string[] {
   out.push('');
   // At the synthetic roots list there is no current directory to name — the heading stands alone.
   out.push(
-    sectionHeader(
-      state.labels.browse,
-      atRoots ? '' : foldHome(state.cwd) + '/',
-      color,
-    ),
+    sectionHeader(state.labels.browse, atRoots ? '' : asDir(state.cwd), color),
   );
   out.push(
     '  ' +
@@ -486,14 +575,23 @@ export function render(state: PickerState, size: Size): string[] {
     const isCursor = idx === state.cursor && !picksActive;
     // Roots are navigable boundaries, not selections: no checkbox.
     const abs = atRoots ? null : join(state.cwd, name);
-    const isPinned = abs !== null && abs === pinned?.path;
+    // Pinned, or dragged in by a pick: mounted regardless, and `toggle` refuses it.
+    const note = abs === null
+      ? undefined
+      : abs === pinned?.path
+        ? pinned.note
+        : state.derived.find((d) => d.path === abs)?.note;
     // `◎` is `◉` with a hollow centre — on, but not by you, and not yours to change.
-    const mark = isPinned ? '◎' : state.selected.includes(abs ?? '') ? '◉' : '◯';
+    const mark = note !== undefined
+      ? '◎'
+      : state.selected.includes(abs ?? '')
+        ? '◉'
+        : '◯';
     const body = atRoots ? `  ${foldHome(name)}/` : `${mark} ${name}/`;
     let suffix: string | undefined;
-    if (isPinned) {
+    if (note !== undefined) {
       // Ticked-looking but inert — say why, so the dead space bar isn't a mystery.
-      suffix = `  ${pinned!.note}`;
+      suffix = `  ${note}`;
     } else if (!atRoots) {
       const flag = state.flags.get(name);
       if (flag?.worktree && !flag.valid) {
@@ -511,11 +609,17 @@ export function render(state: PickerState, size: Size): string[] {
   // `↑ into selected` only when there is a pick to step into — the pinned row is not one, and
   // advertising a dead key next to a visibly occupied list is worse than saying nothing.
   const intoPicks = state.selected.length > 0 ? '↑ into selected · ' : '';
+  // At the filesystem root there is nowhere further up, so `←` goes back to the shortcut list.
+  const up = dirname(state.cwd) !== state.cwd
+    ? '← up · '
+    : state.roots !== null && state.roots.length > 0
+      ? '← roots · '
+      : '';
   const legend = picksActive
     ? ' space remove · ↓ back to browse · ⏎ done · esc cancel'
     : atRoots
       ? ` → open · ${intoPicks}⏎ done · esc cancel`
-      : ` space pick · → open · ← up · ${intoPicks}⏎ done · esc cancel`;
+      : ` space pick · → open · ${up}${intoPicks}⏎ done · esc cancel`;
   out.push(DIM(legend, color));
   return out.slice(0, size.rows);
 }
@@ -548,8 +652,9 @@ export interface PickerOptions {
    */
   pinned?: PinnedEntry;
   /**
-   * Bounded mode: absolute boundary directories shown as the top level; navigation can't go
-   * above them and the roots themselves aren't selectable. Omit for free filesystem mode.
+   * Shortcut directories shown as the opening list: a starting point, not a boundary — `←` walks
+   * above them like anywhere else, and the filesystem root wraps back to this list. The roots
+   * themselves aren't selectable (tick them from their parent instead). Omit for no shortcuts.
    */
   roots?: string[];
   /**
@@ -558,6 +663,13 @@ export interface PickerOptions {
    * each directory is listed.
    */
   annotate?: (dir: string, names: string[]) => Promise<Map<string, EntryFlag>>;
+  /**
+   * Optional derivation of the mounts the current picks drag in (see `DerivedEntry`). Given the
+   * ticked paths, returns the whole derived list — it is recomputed from scratch whenever the picks
+   * change, so a derived row can never outlive the pick that justified it. Runs in the loop rather
+   * than the reducer, which stays pure and synchronous.
+   */
+  derive?: (selected: string[]) => Promise<DerivedEntry[]>;
   color?: boolean;
 }
 
@@ -611,6 +723,10 @@ export async function pickFolders(
     if (opts.annotate === undefined || s.atRoots) return s;
     return setFlags(s, await opts.annotate(s.cwd, s.entries));
   };
+  const rederived = async (s: PickerState): Promise<PickerState> => {
+    if (opts.derive === undefined) return s;
+    return setDerived(s, await opts.derive(s.selected));
+  };
 
   // Whenever we don't open on the roots list — free mode, or a single bounded root we start
   // inside — list that starting directory now. Multi-root bounded mode shows the roots first.
@@ -619,6 +735,8 @@ export async function pickFolders(
       setListing(state, state.cwd, await readDir(state.cwd)),
     );
   }
+  // Preselected picks can drag mounts in too, so the first frame must already show them.
+  state = await rederived(state);
 
   const term = await Terminal.open({
     output: deps.output,
@@ -639,6 +757,7 @@ export async function pickFolders(
       const { value, done } = await reader.read();
       if (done) return null;
       for (const k of decoder.push(value)) {
+        const picksBefore = state.selected;
         const step = reduce(state, k);
         state = step.state;
         if (step.effect.type === 'readDir') {
@@ -650,6 +769,9 @@ export async function pickFolders(
             ),
           );
         }
+        // The reducer replaces the array only when the picks actually changed, so this re-probes
+        // once per tick/untick rather than once per keystroke.
+        if (state.selected !== picksBefore) state = await rederived(state);
         if (state.done) return state.selected;
         if (state.cancelled) return null;
         await paint();

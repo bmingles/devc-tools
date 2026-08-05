@@ -168,8 +168,11 @@ Deno.test("project flow: the project folder is pinned in the picker, not a pick"
 // ── worktree-aware source mounts ────────────────────────────────────────────────
 
 const WFS: Record<string, string[]> = {
+  "/": ["code", "skills", "srv"],
   "/code": ["myproject", "myproject.worktrees"],
   "/code/myproject.worktrees": ["feature1", "feature2"],
+  "/srv": ["proj", "proj.worktrees"],
+  "/srv/proj.worktrees": ["f1"],
   "/skills": [],
 };
 const wReadDir = (p: string) => Promise.resolve(WFS[p] ?? []);
@@ -284,6 +287,243 @@ Deno.test("worktree flow: picking the primary working tree too skips the redunda
   assertEquals(sel.source.map((r) => r.target).sort(), [
     "/workspaces/myproject",
     "/workspaces/myproject.worktrees/feature1",
+  ]);
+});
+
+/**
+ * Run the flow capturing every painted frame, and return the ones showing the source picker —
+ * so what the user saw *while picking* can be asserted, not just what got applied.
+ */
+async function sourceFrames(
+  keys: string[],
+  files: Record<string, string>,
+  opts: ProjectFlowOptions = baseOpts(),
+): Promise<string[]> {
+  const out: string[] = [];
+  await runProjectFlow(opts, {
+    input: streamOfKeys(keys),
+    output: capturingSink(out),
+    size: () => ({ columns: 100, rows: 24 }),
+    raw: false,
+    readDir: wReadDir,
+    fsProbe: fsProbe(files),
+    apply: () =>
+      Promise.resolve({
+        created: true,
+        changed: false,
+        configPath: "x",
+        written: [],
+      }),
+  });
+  return out.filter((f) => f.includes("Source Folders"));
+}
+
+Deno.test("worktree flow: the primary .git shows in the picks as soon as the worktree is ticked", async () => {
+  // down to myproject.worktrees, open it, tick feature1 · done · skills none · y
+  const frames = await sourceFrames(
+    [DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    {
+      "/code/myproject.worktrees/feature1/.git":
+        "gitdir: ../../myproject/.git/worktrees/feature1\n",
+    },
+  );
+  // Before the tick there is nothing to drag in; after it the mount is listed under its worktree.
+  assert(
+    !frames[0].includes("/code/myproject/.git"),
+    "the primary .git is not shown before the worktree is picked",
+  );
+  assertStringIncludes(
+    frames[frames.length - 1],
+    "◉ /code/myproject.worktrees/feature1",
+  );
+  assertStringIncludes(
+    frames[frames.length - 1],
+    "◎ /code/myproject/.git  required by worktree feature1",
+  );
+});
+
+Deno.test("worktree flow: unticking the worktree takes its primary .git with it", async () => {
+  // down, open worktrees, tick feature1, tick it again (untick) · done · skills none · y
+  const frames = await sourceFrames(
+    [DOWN, RIGHT, SPACE, SPACE, ENTER, ENTER, "y"],
+    {
+      "/code/myproject.worktrees/feature1/.git":
+        "gitdir: ../../myproject/.git/worktrees/feature1\n",
+    },
+  );
+  assertStringIncludes(
+    frames[frames.length - 2],
+    "◎ /code/myproject/.git",
+  ); // present while ticked
+  assert(
+    !frames[frames.length - 1].includes("/code/myproject/.git"),
+    "the derived row is gone once nothing requires it",
+  );
+});
+
+Deno.test("worktree flow: a worktree preselected from the fence shows its .git on the first frame", async () => {
+  // Nothing is ticked during this run — the pick comes from the existing config, so the derived
+  // row has to be there before any keypress, not conjured by one.
+  const frames = await sourceFrames([ENTER, ENTER, "y"], {
+    "/code/myproject.worktrees/feature1/.git":
+      "gitdir: ../../myproject/.git/worktrees/feature1\n",
+  }, {
+    ...baseOpts(),
+    sourceRows: [{
+      source: "/code/myproject.worktrees/feature1",
+      target: "/workspaces/myproject.worktrees/feature1",
+      readonly: false,
+    }],
+  });
+  assertStringIncludes(
+    frames[0],
+    "◎ /code/myproject/.git  required by worktree feature1",
+  );
+});
+
+Deno.test("worktree flow: a fence carrying both the worktree and its .git shows the .git once", async () => {
+  // The previous run wrote the derived mount into `devc:source`, so reopening preselects it *and*
+  // derives it. It has to collapse to the single inert row, not appear twice.
+  const gitRow = {
+    source: "/code/myproject/.git",
+    target: "/workspaces/myproject/.git",
+    readonly: false,
+  };
+  const frames = await sourceFrames([ENTER, ENTER, "y"], {
+    "/code/myproject.worktrees/feature1/.git":
+      "gitdir: ../../myproject/.git/worktrees/feature1\n",
+  }, {
+    ...baseOpts(),
+    sourceRows: [
+      {
+        source: "/code/myproject.worktrees/feature1",
+        target: "/workspaces/myproject.worktrees/feature1",
+        readonly: false,
+      },
+      gitRow,
+    ],
+  });
+  const lines = frames[0].split("\r\n");
+  assertEquals(
+    lines.filter((l) => l.includes("/code/myproject/.git")).length,
+    1,
+    `the primary .git is listed once, not twice:\n${frames[0]}`,
+  );
+  assertStringIncludes(frames[0], "◎ /code/myproject/.git  required by worktree feature1");
+  assert(
+    !frames[0].includes("◉ /code/myproject/.git"),
+    "no removable duplicate of the derived mount",
+  );
+});
+
+Deno.test("worktree flow: absorbing the fence's .git row rewrites the same fence, warning-free", async () => {
+  // Dropping the absorbed pick must not drop the mount: it comes back as the derived one, at the
+  // same target. Previously the two collided and the duplicate was skipped with a warning.
+  let captured: WizardSelection | null = null;
+  const warnings: string[] = [];
+  await runProjectFlow({
+    ...baseOpts(),
+    sourceRows: [
+      {
+        source: "/code/myproject.worktrees/feature1",
+        target: "/workspaces/myproject.worktrees/feature1",
+        readonly: false,
+      },
+      {
+        source: "/code/myproject/.git",
+        target: "/workspaces/myproject/.git",
+        readonly: false,
+      },
+    ],
+  }, {
+    input: streamOfKeys([ENTER, ENTER, "y"]),
+    output: sink(),
+    size: () => ({ columns: 80, rows: 24 }),
+    raw: false,
+    readDir: wReadDir,
+    fsProbe: fsProbe({
+      "/code/myproject.worktrees/feature1/.git":
+        "gitdir: ../../myproject/.git/worktrees/feature1\n",
+    }),
+    err: (m) => warnings.push(m),
+    apply: (_dir, sel) => {
+      captured = sel;
+      return Promise.resolve({
+        created: false,
+        changed: false,
+        configPath: "x",
+        written: [],
+      });
+    },
+  });
+  assertEquals((captured as unknown as WizardSelection).source, [
+    {
+      source: "/code/myproject.worktrees/feature1",
+      target: "/workspaces/myproject.worktrees/feature1",
+      readonly: false,
+    },
+    {
+      source: "/code/myproject/.git",
+      target: "/workspaces/myproject/.git",
+      readonly: false,
+    },
+  ]);
+  assertEquals(warnings, [], "no duplicate-target skip to report any more");
+});
+
+Deno.test("worktree flow: an invalid worktree shows the ⚠ flag and no derived row", async () => {
+  const frames = await sourceFrames(
+    [DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    {
+      "/code/myproject.worktrees/feature1/.git":
+        "gitdir: /code/myproject/.git/worktrees/feature1\n", // absolute → unmountable primary
+    },
+  );
+  const last = frames[frames.length - 1];
+  assertStringIncludes(last, "⚠ primary not mounted (worktree uses absolute paths)");
+  assert(
+    !last.includes("/code/myproject/.git"),
+    "an unmountable primary is flagged, never listed as a pick",
+  );
+});
+
+// ── picking outside the configured roots ────────────────────────────────────────
+
+const LEFT = "\x1b[D";
+
+Deno.test("free navigation: ← walks out of the code root and folders there are pickable", async () => {
+  // The single root opens inside /code. ← to /, down to "srv", open it, tick "proj", done.
+  const sel = await runWith(
+    [LEFT, DOWN, DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    {},
+  );
+  assertEquals(sel.source, [{
+    source: "/srv/proj",
+    // Outside every root, so the basename fallback — not a mirrored path.
+    target: "/workspaces/proj",
+    readonly: false,
+  }]);
+});
+
+Deno.test("free navigation: a worktree outside every root still mounts its primary .git", async () => {
+  // ← to /, down to "srv", open, down to "proj.worktrees", open, tick "f1", done.
+  const sel = await runWith(
+    [LEFT, DOWN, DOWN, RIGHT, DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    { "/srv/proj.worktrees/f1/.git": "gitdir: ../../proj/.git/worktrees/f1\n" },
+  );
+  // Both targets mirror from /srv, their common ancestor, so `../../proj/.git` still resolves:
+  // /workspaces/proj.worktrees/f1/../../proj/.git → /workspaces/proj/.git.
+  assertEquals(sel.source, [
+    {
+      source: "/srv/proj.worktrees/f1",
+      target: "/workspaces/proj.worktrees/f1",
+      readonly: false,
+    },
+    {
+      source: "/srv/proj/.git",
+      target: "/workspaces/proj/.git",
+      readonly: false,
+    },
   ]);
 });
 

@@ -2,16 +2,26 @@
 //
 // When a picked source folder is a git *worktree*, its `.git` file points at the primary
 // repo's git dir (`<primary>/.git/worktrees/<name>`). For git to work inside the container the
-// primary git dir must be mounted at the mirror location — but that only holds when:
-//   1. the worktree uses a *relative* `gitdir:` (so the link survives the host→container path
-//      change), and
-//   2. the primary repo lives under the same configured code root as the worktree (so the two
-//      mirrored `/workspaces/...` offsets match).
-// Both facts are readable straight from the worktree's `.git` file, so this stays pure given an
+// primary git dir must be mounted where that link still resolves, which needs two things:
+//   1. a *relative* `gitdir:` — an absolute one names a host path that does not exist in the
+//      container, and nothing we mount can fix that; and
+//   2. both container targets mirrored from one shared **base** directory, so the host offset
+//      between the worktree and the primary is preserved.
+// Any directory holding both can serve as that base. We prefer the configured code root (shallow,
+// stable container paths) and fall back to their common ancestor — the same choice the devcontainer
+// CLI makes for a worktree opened as the project folder itself.
+//
+// All of it is readable straight from the worktree's `.git` file, so this stays pure given an
 // injected `FsProbe` (no `git` subprocess) — fast enough to run per-entry in the picker and
 // identical to the decision the mount builder makes.
 
-import { dirnamePosix, isAbsolutePosix, resolvePosix } from "./posix.ts";
+import {
+  commonAncestorPosix,
+  dirnamePosix,
+  isAbsolutePosix,
+  relativeUnderPosix,
+  resolvePosix,
+} from "./posix.ts";
 
 /** Minimal filesystem access the resolver needs, injected so tests can drive it headlessly. */
 export interface FsProbe {
@@ -44,7 +54,7 @@ export type WorktreeInfo =
   | { isWorktree: false }
   | {
     isWorktree: true;
-    /** Whether the primary `.git` can be safely mounted (relative paths + primary under root). */
+    /** Whether the primary `.git` can be mounted, i.e. the `gitdir:` link is relative. */
     valid: boolean;
     /** Human-readable reason when `!valid`, for the picker flag. */
     reason?: string;
@@ -54,6 +64,11 @@ export type WorktreeInfo =
     primaryRoot?: string;
     /** Container target for the primary `.git` mount (only set when `valid`). */
     primaryGitTarget?: string;
+    /**
+     * Host directory both this worktree's own target and `primaryGitTarget` mirror from (only set
+     * when `valid`). The worktree's source row must use it, or the offsets won't match.
+     */
+    mountBase?: string;
   };
 
 /**
@@ -99,25 +114,82 @@ export async function resolveWorktree(
   const primaryGitDir = gitdirAbs.slice(0, gitdirAbs.indexOf("/worktrees/"));
   const primaryRoot = dirnamePosix(primaryGitDir);
 
-  const relative = !isAbsolutePosix(raw);
-  const underRoot = root !== null &&
+  // An absolute `gitdir:` is the only thing we cannot mount around (see the module header).
+  const valid = !isAbsolutePosix(raw);
+  // Prefer the configured root when it holds the primary too: container paths stay shallow, and this
+  // is the case that produces the same targets it always has. Otherwise mirror from the common
+  // ancestor, which by construction holds both.
+  const rootHoldsPrimary = root !== null &&
     (primaryRoot === root || primaryRoot.startsWith(root + "/"));
-  const valid = relative && underRoot;
-  const reason = !relative
-    ? "worktree uses absolute paths"
-    : !underRoot
-    ? "primary repo is outside the configured roots"
-    : undefined;
-  const primaryGitTarget = valid
-    ? `/workspaces/${primaryRoot.slice(root!.length + 1)}/.git`
-    : undefined;
+  const mountBase = rootHoldsPrimary
+    ? root
+    : commonAncestorPosix(pickedAbs, primaryRoot);
+  const rel = valid ? relativeUnderPosix(mountBase, primaryGitDir) : null;
 
   return {
     isWorktree: true,
     valid,
-    reason,
+    reason: valid ? undefined : "worktree uses absolute paths",
     primaryGitDir,
     primaryRoot,
-    primaryGitTarget,
+    primaryGitTarget: rel === null ? undefined : `/workspaces/${rel}`,
+    mountBase: rel === null ? undefined : mountBase,
   };
+}
+
+/** How one picked path should be mounted, plus whatever it drags in. */
+export interface PickedMount {
+  /** The picked absolute host path. */
+  path: string;
+  /** Directory its container target mirrors from; undefined ⇒ the `/workspaces/<basename>` fallback. */
+  base?: string;
+  /** The primary repo `.git` this pick drags in (mountable worktrees only). */
+  primary?: {
+    /** Absolute host path of the primary repo's git dir. */
+    gitDir: string;
+    /** Container target it is mounted at. */
+    target: string;
+  };
+}
+
+/**
+ * Resolve each picked path to the base its container target mirrors from and the primary `.git` it
+ * drags in — one entry per input, in order.
+ *
+ * Single source of truth on purpose: the picker shows these while you pick and the mount builder
+ * writes them, so both call this rather than each deciding for itself. The base has to travel with
+ * the primary mount, because a worktree's *own* target moves with it.
+ */
+export async function resolvePickedMounts(
+  paths: string[],
+  codeRoots: string[],
+  fs: FsProbe,
+): Promise<PickedMount[]> {
+  const picked = new Set(paths);
+  const seen = new Set<string>();
+  const mounts: PickedMount[] = [];
+  for (const path of paths) {
+    const root = longestRootAncestor(path, codeRoots);
+    const wt = await resolveWorktree(path, root, fs);
+    if (!wt.isWorktree || !wt.valid || wt.mountBase === undefined) {
+      mounts.push({ path, base: root ?? undefined });
+      continue;
+    }
+
+    const mount: PickedMount = { path, base: wt.mountBase };
+    // Nothing to add when the primary's whole working tree is picked (that mount already carries its
+    // `.git`), or when an earlier pick brought the same target in — worktrees sharing one primary.
+    if (
+      wt.primaryGitTarget !== undefined && !picked.has(wt.primaryRoot!) &&
+      !seen.has(wt.primaryGitTarget)
+    ) {
+      seen.add(wt.primaryGitTarget);
+      mount.primary = {
+        gitDir: wt.primaryGitDir!,
+        target: wt.primaryGitTarget,
+      };
+    }
+    mounts.push(mount);
+  }
+  return mounts;
 }

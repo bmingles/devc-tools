@@ -5,6 +5,8 @@ WORKSPACE CONFIG
    ◎ ~/code/spikes/dh-agent-studio-spike
    ◉ ~/code/apps
    ◉ ~/code/deephaven-core-broken
+   ◉ ~/code/iris.worktrees/feature1
+   ◎ ~/code/iris/.git  required by worktree feature1
 
  Add Source Folders  ~/code/
   > type to filter folders

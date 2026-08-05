@@ -21,6 +21,7 @@ import {
 import { loadBundledDevcontainerJson } from "../default_config.ts";
 import {
   assertNoDuplicateTarget,
+  basename,
   defaultReadonly,
   defaultTarget,
   DuplicateTargetError,
@@ -42,9 +43,11 @@ import {
   type FsProbe,
   longestRootAncestor,
   realFsProbe,
+  resolvePickedMounts,
   resolveWorktree,
 } from "../worktree.ts";
 import {
+  type DerivedEntry,
   type EntryFlag,
   pickFolders,
   type PickerDeps,
@@ -153,13 +156,11 @@ function buildRows(
 }
 
 /**
- * Build source rows from picked absolute paths. Each folder's container target keeps its
- * sub-path under the configured code root it falls under (so `~/code/a/b` → `/workspaces/a/b`).
- * A picked git worktree additionally contributes a mount of its primary repo's `.git` at the
- * mirror location, but only when that is safe (relative paths + primary under the same root);
- * unsafe worktrees are already flagged in the picker and just skip the primary mount. The
- * primary `.git` mount is skipped when its target is already present (worktrees sharing one
- * primary) or when the primary working tree is itself a picked source (already mounted).
+ * Build source rows from picked absolute paths. Each folder's container target keeps its sub-path
+ * under the base `resolvePickedMounts` gives it (so `~/code/a/b` under root `~/code` →
+ * `/workspaces/a/b`). A picked git worktree additionally contributes a mount of its primary repo's
+ * `.git`, mirrored from that same base — one helper decides both, so what gets written is exactly
+ * what the picker showed under that pick.
  */
 async function buildSourceRows(
   paths: string[],
@@ -168,7 +169,6 @@ async function buildSourceRows(
   fs: FsProbe,
 ): Promise<MountRow[]> {
   const rows: MountRow[] = [];
-  const picked = new Set(paths);
   const add = (row: MountRow, onDup: () => void): void => {
     try {
       assertNoDuplicateTarget(rows, row);
@@ -179,22 +179,20 @@ async function buildSourceRows(
     }
   };
 
-  for (const p of paths) {
-    const root = longestRootAncestor(p, codeRoots) ?? undefined;
+  for (const m of await resolvePickedMounts(paths, codeRoots, fs)) {
     add(
-      rowForHostPath("source", p, root),
-      () => warn(`  skipped ${p} — target already in use`),
+      rowForHostPath("source", m.path, m.base),
+      () => warn(`  skipped ${m.path} — target already in use`),
     );
-
-    const wt = await resolveWorktree(p, root ?? null, fs);
-    if (wt.isWorktree && wt.valid && !picked.has(wt.primaryRoot!)) {
+    // Right after its worktree, so the fence reads in the order the picker showed it.
+    if (m.primary !== undefined) {
       add(
         {
-          source: foldHome(wt.primaryGitDir!),
-          target: wt.primaryGitTarget!,
+          source: foldHome(m.primary.gitDir),
+          target: m.primary.target,
           readonly: false,
         },
-        () => {}, // shared primary → mount it once, silently
+        () => {}, // already covered by an earlier row → mount it once, silently
       );
     }
   }
@@ -280,6 +278,18 @@ export async function runProjectFlow(
     return flags;
   };
 
+  // The primary `.git` mounts the current picks drag in, shown in the picks list as they are
+  // ticked. Same helper the mount builder uses, so the two can't disagree — and because the list
+  // is rederived from the picks, the only way to drop one is to unpick its worktree.
+  const deriveSource = async (selected: string[]): Promise<DerivedEntry[]> => {
+    const mounts = await resolvePickedMounts(selected, opts.codeRoots, fs);
+    return mounts.filter((m) => m.primary !== undefined).map((m) => ({
+      path: m.primary!.gitDir,
+      owner: m.path,
+      note: `required by worktree ${basename(m.path)}`,
+    }));
+  };
+
   const sourcePicked = await pickFolders({
     labels: {
       screen: "WORKSPACE CONFIG",
@@ -298,6 +308,7 @@ export async function runProjectFlow(
       note: "this project (always mounted)",
     },
     annotate: annotateSource,
+    derive: deriveSource,
     color: opts.color,
   }, pickerDeps(deps));
   if (sourcePicked === null) {

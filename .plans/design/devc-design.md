@@ -167,24 +167,38 @@ creating a new config or updating the existing one.
 
 The current project directory is always mounted as the devcontainer workspace. This step lets the user add **extra source code folders** that should also be available inside the container.
 
-- Screen `WORKSPACE CONFIG` / `Source Folders` / `Add Source Folders`, scoped to the configured
-  **code folder roots**: the roots are the top level, navigation cannot go above one, and the
-  roots themselves are not selectable.
+- Screen `WORKSPACE CONFIG` / `Source Folders` / `Add Source Folders`, opening on the configured
+  **code folder roots**. The roots are shortcuts, not boundaries: `←` walks above a root like any
+  other folder, and at the filesystem root it wraps back to the shortcut list, so any folder on the
+  machine can be mounted. The roots themselves are not selectable — tick one from its parent.
 - The **project folder is pinned** at the head of the picked list with `◎` and the note "this
   project (always mounted)", and is inert in the browser — the container binds it either way, so
   ticking it would only add a second bind on the same target. It is not written to the fence.
 - Container paths are derived, not edited: `/workspaces/<basename>`, keeping the folder's
   sub-path under the code root it falls under (so `~/code/a/b` → `/workspaces/a/b`). Source
   mounts are read-write. Duplicate container paths are skipped with a note.
-- A picked **git worktree** additionally contributes a mount of its primary repo's `.git` at the
-  mirror location, when that is safe; unsafe worktrees are flagged inline in the browser.
+- A picked **git worktree** additionally contributes a mount of its primary repo's `.git`. Both
+  container targets mirror from one shared base — the configured code root when it holds the primary,
+  otherwise the worktree/primary **common ancestor** (what the devcontainer CLI does for a worktree
+  opened as the project folder) — so the worktree's relative `gitdir:` link still resolves inside the
+  container. A worktree whose `gitdir:` is *absolute* cannot work whatever is mounted, and is flagged
+  inline in the browser instead.
+- That primary `.git` mount is **shown in the picked list the moment its worktree is ticked** (and
+  on the first frame for a worktree pre-ticked from the fence), indented under the worktree that
+  requires it, marked `◎` with the note "required by worktree `<name>`". Like the pinned project
+  folder it is inert — the picks cursor steps over it, so it cannot be unticked while a worktree
+  needing it is picked; unpicking the last such worktree removes it. Two worktrees of one primary
+  show the row once, under the first of them, and picking the primary's whole working tree removes
+  it (that mount already covers the `.git`). Because the wizard writes that mount into the same
+  fence it reads, reopening a config preselects it *and* re-derives it — the pick is **absorbed**
+  into the derived row, so the path is listed once, and it is inert in the browser as well.
 
 ### Step 3: Skills mounts
 
 Configure which agent skills folders are mounted into the container. Skills are **opt-in**: the bundled zero-config default mounts no skills, so a project gets skills only after they are configured here.
 
-- Screen `WORKSPACE CONFIG` / `Skills` / `Add Skills`, scoped to the configured **skills folder
-  roots**.
+- Screen `WORKSPACE CONFIG` / `Skills` / `Add Skills`, opening on the configured **skills folder
+  roots** — shortcuts, with the same free navigation as Step 2.
 - Container paths are derived, not edited: `~/.claude/skills/<basename>`, mounted read-only.
   Duplicate container paths are skipped with a note.
 - **Remembered selection.** When the wizard applies, the resulting skills list is persisted as the user's *most recent* skills selection. A **new** project's Skills step is pre-seeded from that remembered list (entries whose host path no longer exists are dropped), so a user who mounts the same skills across projects does not re-pick them every time. Reconfiguring an existing project seeds from that project's own `devc:skills` fence instead. (Source mounts are not remembered — they are project-specific — so Step 2 starts empty for new projects.)
