@@ -324,6 +324,18 @@ function lineIndent(src: string, i: number): string {
 }
 
 /**
+ * The separator to emit before a block that will start at `at` (a line start): one blank line,
+ * so a fence never sits flush against the element or fence above it. Empty when the blank line
+ * is already there (keeping a rewrite idempotent) or when the block is the first thing inside
+ * the array, where a leading blank line would just pad the `[`.
+ */
+function blankLineBefore(src: string, span: ArraySpan, at: number): string {
+  if (/^\s*$/.test(src.slice(span.open + 1, at))) return "";
+  const prevLine = src.slice(lineStart(src, at - 1), at - 1);
+  return /^[ \t]*$/.test(prevLine) ? "" : "\n";
+}
+
+/**
  * Indentation to emit fenced entries with: copied from the first existing element in the
  * array, else the array key's own indentation + 2 spaces, else 4 spaces.
  */
@@ -345,8 +357,9 @@ function renderBlock(id: string, lines: string[], indent: string): string {
 
 /**
  * Replace the `id` fence's contents with `lines`, or insert the whole block just inside the
- * array's `]` when the fence is absent. Entries are emitted without commas —
- * {@link normalizeArrayCommas} puts those in afterwards.
+ * array's `]` when the fence is absent. The open fence is preceded by a blank line (see
+ * {@link blankLineBefore}). Entries are emitted without commas — {@link normalizeArrayCommas}
+ * puts those in afterwards.
  */
 export function spliceBlock(
   src: string,
@@ -359,17 +372,21 @@ export function spliceBlock(
   const fence = findFence(src, span, id);
   if (fence !== null) {
     // Rewrite in place — a fence the user moved stays where they put it.
-    return src.slice(0, fence.openLineStart) + block + src.slice(fence.closeLineEnd);
+    const gap = blankLineBefore(src, span, fence.openLineStart);
+    return src.slice(0, fence.openLineStart) + gap + block + src.slice(fence.closeLineEnd);
   }
   const closeLine = lineStart(src, span.close);
   const beforeClose = src.slice(closeLine, span.close);
   if (/^[ \t]*$/.test(beforeClose)) {
     // `]` sits on its own line: drop the block in above it.
-    return src.slice(0, closeLine) + block + "\n" + src.slice(closeLine);
+    const gap = blankLineBefore(src, span, closeLine);
+    return src.slice(0, closeLine) + gap + block + "\n" + src.slice(closeLine);
   }
   // `]` shares a line with content (e.g. `"mounts": []`): open it up.
   const keyIndent = lineIndent(src, span.open);
-  return src.slice(0, span.close) + "\n" + block + "\n" + keyIndent + src.slice(span.close);
+  const gap = /^\s*$/.test(src.slice(span.open + 1, span.close)) ? "" : "\n";
+  return src.slice(0, span.close) + "\n" + gap + block + "\n" + keyIndent +
+    src.slice(span.close);
 }
 
 /**

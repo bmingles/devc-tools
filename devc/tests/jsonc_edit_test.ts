@@ -57,6 +57,32 @@ Deno.test("no-fence insert: both fences are appended, user elements untouched", 
   assertEquals(mountsOf(withEntry).length, 3);
 });
 
+Deno.test("each open fence is preceded by a blank line, and re-writing keeps just one", async () => {
+  const src = await fixture("mounts_two_objects.jsonc");
+  const blocks = [
+    { id: "projects", lines: ['"type=bind,source=/host/a,target=/workspaces/a"'] },
+    { id: "skills", lines: [] },
+  ];
+  const out = writeBlocks(src, "mounts", blocks);
+
+  // One blank line above each open fence — the last user element, then a gap, then the fence;
+  // and a gap between the two adjacent fences.
+  assertStringIncludes(out, "\n\n    // >>> devc:projects (managed - do not edit)\n");
+  assertStringIncludes(
+    out,
+    "    // <<< devc:projects\n\n    // >>> devc:skills (managed - do not edit)\n",
+  );
+  assert(!out.includes("\n\n\n"));
+
+  // Idempotent: the second write neither drops nor duplicates the blank lines.
+  assertEquals(writeBlocks(out, "mounts", blocks), out);
+
+  // A fence that is the first thing in the array is not padded away from the `[`.
+  const bare = writeBlocks('{\n  "mounts": []\n}\n', "mounts", blocks);
+  assertStringIncludes(bare, '"mounts": [\n    // >>> devc:projects (managed - do not edit)\n');
+  assertEquals(writeBlocks(bare, "mounts", blocks), bare);
+});
+
 Deno.test("in-place rewrite: a fence between two user elements stays put", async () => {
   const src = await fixture("mounts_fence_between.jsonc");
   const out = writeBlocks(src, "mounts", [{
