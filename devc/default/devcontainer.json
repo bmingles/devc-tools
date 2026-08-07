@@ -43,6 +43,10 @@
     // into ~/.claude. Directories are ignored — the devc:skills fence owns ~/.claude/skills/.
     "type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
 
+    // Git identity extracted from the host by initialize-command.sh. Read-only, and
+    // deliberately not the host's ~/.gitconfig — see that script for why.
+    "type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc/gitconfig-identity,consistency=cached,readonly",
+
     // User-level shell customization: every *.sh in here is sourced by every interactive
     // container shell, before the project's own .devcontainer/shell/. See the devc:shell-dirs
     // block in scripts/bashrc-additions.sh. Read-only and live — host edits apply to the next

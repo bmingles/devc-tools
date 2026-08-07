@@ -309,6 +309,38 @@ so add it by hand to pick up the user layer:
 "type=bind,source=${localEnv:HOME}/.config/devc/shell,target=/usr/local/share/devc/shell,consistency=cached,readonly",
 ```
 
+## Git setup
+
+`~/.gitconfig` is container-local and wiped on every rebuild, while the working
+tree and `.git` are host bind mounts. `scripts/git-setup.sh` (run by
+`post-create.sh`) re-applies the user-scope settings git needs each create:
+
+- **Your identity.** `initialize-command.sh` extracts `user.name` /
+  `user.email` from the host into
+  `~/.config/devc/gitconfig-identity`, which binds in read-only and is picked up
+  via `include.path`. Only those two keys cross the boundary — binding the whole
+  host `~/.gitconfig` would drag in host-absolute paths, credential helpers and
+  signing config that do not work in here. A host with no identity configured is
+  a warning at create time, not a failure.
+- **LFS filters,** because the `git-lfs` feature installs them as root, where
+  the `remoteUser` never sees them; without them every LFS asset shows as
+  modified. Installed with `--skip-smudge`, so **LFS objects are not
+  materialized on checkout** — run `git lfs pull`, or `git lfs checkout --
+  <path>`, when you need the real bytes.
+- **`worktree.useRelativePaths`,** so a `git worktree add` run in here does not
+  write container-absolute paths into a `.git` the host also reads.
+- **`safe.directory=*`,** since the workspace mount can present a foreign owner
+  and git otherwise refuses to operate on it.
+
+Projects whose `.devcontainer/devcontainer.json` was written by an earlier
+`devc` predate the identity mount — `devc` writes infra mounts once at creation
+and never re-asserts them — so add it by hand to get your identity in the
+container:
+
+```jsonc
+"type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc/gitconfig-identity,consistency=cached,readonly",
+```
+
 ## Development
 
 ```sh
