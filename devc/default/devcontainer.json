@@ -29,18 +29,8 @@
     // task, so the project-name title set in bashrc-additions.sh persists.
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
   },
-  // devc's create-time runtime setup (post-create.sh delegates to scripts/*). Runs after all
-  // features finish installing, so the nvm install ordering is preserved. Points at the copy
-  // in this .devcontainer/, so editing post-create.sh or its scripts/ takes effect on the next
-  // container create — no image rebuild. (In zero-config `devc` rewrites this to the image-baked
-  // path, since there is no project .devcontainer/ to run.)
-  "postCreateCommand": "bash \"${containerWorkspaceFolder}/.devcontainer/post-create.sh\"",
-  // Host-side hook (runs on the host, before create): ensures the ~/.claude seed directory
-  // exists, since `--mount type=bind` errors on a missing source. See initialize-command.sh.
-  // It is the only host-side lifecycle hook, so it has to live here, top-level. In zero-config
-  // `devc` rewrites this path to the cache copy (the script isn't in the user's workspace). If
-  // a project overrides it, either keep this call or drop the claude-seed mount alongside it.
   "initializeCommand": "bash \"${localWorkspaceFolder}/.devcontainer/initialize-command.sh\"",
+  "postCreateCommand": "bash \"${containerWorkspaceFolder}/.devcontainer/post-create.sh\"",
   "mounts": [
     // ~/.claude folder
     "type=volume,source=claude-code-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
