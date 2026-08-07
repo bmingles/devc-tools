@@ -36,6 +36,51 @@ printf '\033]0;%s\007' "$_DEVC_TITLE"
 trap - DEBUG
 precmd() { printf '\033]0;%s\007' "$_DEVC_TITLE"; }
 
+# devc:shell-dirs (start) — tests/shell_dirs_test.sh runs everything between these two markers
+# against temp dirs, so keep the block self-contained (parameterized only by the two *_SHELL_DIR
+# assignments below, which the harness rewrites).
+#
+# Optional shell customization, in two layers:
+#
+#   ~/.config/devc/shell/   on the host — your preferences, every project. Bind-mounted
+#                           read-only at USER_SHELL_DIR (see the mount in devcontainer.json).
+#   .devcontainer/shell/    in the workspace — this project's settings, found via PROJECT_PATH.
+#
+# User first, then project, so a project's committed settings win on conflict — the same
+# system → global → local order git uses. A project that assigns rather than appends to a
+# shared variable (PS1, PATH) will therefore override personal settings.
+#
+# Every *.sh in a layer is sourced, in glob (name) order — prefix with 10-, 20-, … to control
+# it. Both layers are *sourced*, not appended into ~/.bashrc at build or create time, so edits
+# apply to the next new shell with no rebuild and no recreate, and deleting a file simply stops
+# it from being read. Neither directory is created or written by devc, so nothing here is ever
+# overwritten.
+#
+# Placed after everything devc sets, so a layer can override PS1, cd() or precmd — but *before*
+# the DEVC_ATTACH block below, which snapshots PROMPT_COMMAND and would be clobbered by a file
+# that assigns to it. Append to PROMPT_COMMAND rather than replacing it.
+#
+# PROJECT_PATH is the container-side workspace root (remoteEnv in devcontainer.json, re-passed
+# by devc on exec/attach). No fallback to $PWD: a shell started outside devc should not source
+# whatever repo it happens to open in.
+USER_SHELL_DIR=/usr/local/share/devc/shell
+PROJECT_SHELL_DIR="${PROJECT_PATH:+$PROJECT_PATH/.devcontainer/shell}"
+
+_devc_source_shell_dir() {
+  [ -n "${1:-}" ] && [ -d "$1" ] || return 0
+  for _devc_f in "$1"/*.sh; do
+    # An unmatched glob stays literal, so this -f test is also the empty-directory guard.
+    [ -f "$_devc_f" ] && . "$_devc_f"
+  done
+  unset _devc_f
+}
+
+_devc_source_shell_dir "$USER_SHELL_DIR"
+_devc_source_shell_dir "$PROJECT_SHELL_DIR"
+unset -f _devc_source_shell_dir
+unset USER_SHELL_DIR PROJECT_SHELL_DIR
+# devc:shell-dirs (end)
+
 # On `devc attach`, clear gnarly bash-init output on the first prompt, after
 # all buffered output from initialization has been flushed.
 if [ "${DEVC_ATTACH:-}" = "1" ]; then

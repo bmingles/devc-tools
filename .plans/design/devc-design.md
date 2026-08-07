@@ -50,6 +50,12 @@ This means once a user applies a project-specific config via `devc config`, subs
 
 The `.devcontainer/` layout follows one rule: the **lifecycle entry scripts live at the root** (`post-create.sh`, `initialize-command.sh` — each the target of a hook named in `devcontainer.json`), and **`scripts/` holds the setup steps and sub-dependencies**. `post-create.sh` itself contains no logic — it only resolves `scripts/` relative to itself (`dirname "$0"`) and calls each step in order (`agents-setup.sh` for Claude/agent config, `node-setup.sh` for nvm); `scripts/bashrc-additions.sh` is a build-time piece the Dockerfile `cat`s into `~/.bashrc`. A developer extends the baseline by editing a step or dropping a new script in `scripts/` and adding a line to `post-create.sh` — the pattern is self-evident from reading the two files, so there is **no** special "user hook" file.
 
+**Shell customization is a third tier — shell-start time.** The last thing `bashrc-additions.sh` does before the attach first-prompt block (the `devc:shell-dirs` fence) is source every `*.sh` from two optional directories: `/usr/local/share/devc/shell` (the host's `~/.config/devc/shell`, bind-mounted read-only — user preferences, every project) then `$PROJECT_PATH/.devcontainer/shell` (this project's settings). User-then-project so a project's committed settings win, matching git's `system → global → local`.
+
+Sourcing rather than appending is what makes it the cheapest tier: edits land on the next new shell (no rebuild, no recreate), deletion is honored by the `-d`/`-f` guards alone, and **nothing in `devc` creates or writes either directory** — so neither is at risk from `copyBundledAssets`, which writes every other bundled asset unconditionally and would clobber user content. Directories rather than single files for two reasons: a single-file bind mount is a hard error when the source is absent, which would defeat "optional" for the user layer; and a directory lets both layers compose from several files (`10-`, `20-` prefixes) instead of forcing one blob. The user layer's mount source is created by `initialize-command.sh`, the one host-side hook, so a clone comes up cleanly on a machine without `devc` installed.
+
+Placement is load-bearing. The block sits *after* everything devc sets, so a layer can override `PS1`, `cd()`, or `precmd`, and *before* the `DEVC_ATTACH` block, which snapshots `PROMPT_COMMAND` and would be clobbered by a file that assigns to it. The project layer resolves through the workspace mount, so it works in the zero-config path with no `devcontainer.json` present; the user layer is at a fixed container path and needs no `PROJECT_PATH` at all. There is no `$PWD` fallback for `PROJECT_PATH`: a shell opened outside `devc` should not source whichever repo it happens to start in.
+
 **Edits apply on recreate, not rebuild.** `post-create.sh` and its `scripts/` are referenced by the copies *in the project's own `.devcontainer/`* (`postCreateCommand: bash "${containerWorkspaceFolder}/.devcontainer/post-create.sh"`), so editing them takes effect on the next container **create** with no image rebuild. Only genuinely build-time bits (the Claude CLI install, the `~/.bashrc` additions) need a rebuild. This is the payoff of `post-create.sh` finding its steps relative to itself: the same file works whether it is the in-project copy or the image-baked one.
 
 There is **no** devcontainer Feature. An earlier design packaged the create-time baseline as a local Feature so it would compose additively with a project's own `postCreateCommand`; that was dropped because a local Feature cannot resolve when `devc up` loads the bundled config out-of-tree via `--config` (`@devcontainers/cli` validates a local Feature against the workspace root, not the config's own directory), which forced a divergence between the zero-config and `devc config` paths. Removing the Feature collapses both onto **one `.devcontainer/` shape** — the same `devcontainer.json`, `Dockerfile`, `post-create.sh`, `initialize-command.sh`, and `scripts/` in both. Additive composition with a developer's own setup is preserved simply by their editing `post-create.sh` (the project copy is theirs; `devc config` only ever rewrites the two mount fences, never the scripts).
@@ -252,6 +258,7 @@ Options:
   -V, --version  Print version
 
 Commands:
+  init     Scaffold the default dev container config into the project
   config   Configure the dev container for the current project (TUI)
   attach   Attach to the dev container for the current project
   claude   Launch Claude inside the dev container for the current project
@@ -265,6 +272,51 @@ Commands:
 
 Run "devc <COMMAND> --help" for more information on a command.
 ```
+
+## `init`
+
+Write the bundled default `.devcontainer/` into the project and exit — the same scaffolding
+[`config`](#config-tui) does on first creation, without the TUI and without the two managed mount
+fences. It is the non-interactive way to get the baseline on disk to hand-edit, for a user who
+wants the files rather than the picker.
+
+```text
+Usage: devc init [PATH]
+
+Arguments:
+  [PATH]  Path to the project (default: current directory)
+
+Options:
+  -h, --help  Print help
+```
+
+Writes `devcontainer.json` verbatim from the bundled default (comments preserved) plus
+`Dockerfile`, `post-create.sh`, `initialize-command.sh` and `scripts/`, with the two entry scripts
+and every `scripts/*.sh` made executable — one shared `installBundledAssets` does the asset half
+for both `init` and `config`, so the two cannot drift. No fences are written: `config` inserts
+them into a fence-less config when the user later picks mounts.
+
+**Refuses to clobber — `.devcontainer/` must be missing or empty.** Two guards, each writing
+nothing and exiting 1:
+
+- An existing devcontainer config, in *either* location — `.devcontainer/devcontainer.json` or a
+  root `.devcontainer.json`. Both count because creating the directory form beside an existing root
+  form would leave two configs and make which one applies ambiguous. The message points at
+  `devc config`, which is the tool for a project that already is a dev container.
+- *Any* other content in `.devcontainer/` — a file, a subdirectory, a dotfile — reported with what
+  was found.
+
+The second guard is deliberately stricter than "don't overwrite what I provide".
+`installBundledAssets` replaces exactly the bundle's own paths, so a laxer rule would silently
+overwrite a hand-written `Dockerfile` or `scripts/*.sh` *and* leave everything the bundle does not
+cover sitting there as stale debris — a `.devcontainer/` that is half old config, half new, with no
+signal that it happened. Requiring an empty directory makes the postcondition exact: what `init`
+leaves behind is the bundle and nothing else. An empty directory is accepted, since there is
+nothing to lose and someone may simply have `mkdir`'d it.
+
+**Non-interactive by construction.** `init` never prompts, never offers a rebuild, and is
+dispatched *before* the first-run global-config hook, so a user with no `~/.config/devc/config.json`
+is not sent through the roots wizard for a command that has no use for roots.
 
 ## `attach`
 
