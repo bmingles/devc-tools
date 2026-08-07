@@ -12,3 +12,4 @@ scripts="$(cd "$(dirname "$0")/scripts" && pwd)"
 
 bash "$scripts/agents-setup.sh"   # Claude/agent config: ~/.claude volume, seed links, ~/.claude.json
 bash "$scripts/node-setup.sh"     # nvm install from the project's .nvmrc
+bash "$scripts/git-setup.sh"      # git user scope: host identity, LFS filters, worktree/safe.directory
