@@ -14,6 +14,8 @@
 
 ### Completed
 
+- [devc-init-command](archived/devc-init-command.md) — Add a non-interactive `devc init [PATH]` that scaffolds the bundled default `.devcontainer/` into a project verbatim — the same files `devc config` writes on first creation, minus the wizard and minus the two managed mount fences. Refuses to clobber an existing config, and never triggers the first-run global-config wizard.
+
 - [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) — Make the configured roots a shortcut list rather than a boundary: `←` walks to the real parent everywhere and wraps to the shortcut list at `/`, so any folder can be picked. Roots stay unselectable. Because that makes out-of-root worktrees reachable, `resolveWorktree` stops calling them invalid and instead mirrors both the worktree's and the primary `.git`'s container targets from a shared base — the configured root when it holds the primary, else their common ancestor (what the devcontainer CLI does for a worktree project).
 
 - [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md) — Show the auto-added primary repo `.git` mount in the source picker's `Source Folders` list the moment its worktree is picked, marked `◎` and inert (the picks cursor skips it) so it cannot be unticked while a worktree requiring it is picked. One shared helper backs both the picker display and the written fence, so they cannot disagree (introduced here as `impliedPrimaryMounts`; since replaced by `resolvePickedMounts` — see [devc-picker-free-navigation](archived/devc-picker-free-navigation.md)). Display-only: the fence contents are unchanged.
@@ -64,6 +66,7 @@
 | devc wizard modernize — inline sequential flow + multi-select folder picker | [devc-wizard-modernize](archived/devc-wizard-modernize.md) | complete |
 | devc worktree-aware mounts — root-relative source targets + primary `.git` mount | [devc-worktree-mounts](archived/devc-worktree-mounts.md) | complete |
 | devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate | [devc-claude-seed-dir](devc-claude-seed-dir.md) | in progress |
+| devc `init` command — scaffold the bundled default `.devcontainer/` into a project | [devc-init-command](archived/devc-init-command.md) | complete |
 | devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook | [devc-drop-feature](archived/devc-drop-feature.md) | complete |
 | devc `build` command + change-aware `config` rebuild prompt | [devc-build-command](archived/devc-build-command.md) | complete |
 | devc wizard screens — picker chrome per `.plans/design/wizard/` mockups | [devc-wizard-screens](archived/devc-wizard-screens.md) | complete |

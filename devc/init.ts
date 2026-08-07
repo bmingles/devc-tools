@@ -1,0 +1,90 @@
+// `devc init` — scaffold the bundled default `.devcontainer/` into a project, non-interactively.
+// The same files `devc config` writes on first creation, minus the wizard and minus the two
+// managed mount fences; a later `devc config` inserts those into a fence-less config.
+
+import {
+  findOwnDevcontainerConfig,
+  installBundledAssets,
+  loadBundledDevcontainerJson,
+} from './default_config.ts';
+
+export interface InitResult {
+  /** Path of the written `devcontainer.json`. */
+  configPath: string;
+  /** Every top-level path written, in write order (config first). */
+  written: string[];
+}
+
+/** Sorted names of everything in `dir` (files, directories, dotfiles); `[]` when it is absent. */
+async function entryNames(dir: string): Promise<string[]> {
+  const names: string[] = [];
+  try {
+    for await (const entry of Deno.readDir(dir)) names.push(entry.name);
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return [];
+    throw err;
+  }
+  return names.sort();
+}
+
+/** `a, b, c, +2 more` — keeps the error line readable for a crowded directory. */
+function summarize(names: string[], limit = 4): string {
+  const shown = names.slice(0, limit).join(', ');
+  return names.length > limit
+    ? `${shown}, +${names.length - limit} more`
+    : shown;
+}
+
+/**
+ * Write the bundled default `.devcontainer/` into `projectDir`: `devcontainer.json` verbatim
+ * (comments preserved, no `devc:source`/`devc:skills` fences) plus every other bundled asset via
+ * {@link installBundledAssets}.
+ *
+ * Throws without writing anything unless `.devcontainer/` is missing or completely empty:
+ *
+ * - An existing devcontainer config gets its own message pointing at `devc config`. Both config
+ *   locations count — creating `.devcontainer/devcontainer.json` next to an existing root
+ *   `.devcontainer.json` would leave two configs and make which one applies ambiguous.
+ * - *Any* other content — a file, a subdirectory, a dotfile — also refuses. `installBundledAssets`
+ *   overwrites only the paths the bundle contains, so scaffolding into an occupied directory would
+ *   silently replace a hand-written `Dockerfile` or `scripts/*.sh` while leaving unrelated files
+ *   behind as stale debris. Requiring an empty directory means what `init` produces is exactly the
+ *   bundle, with nothing carried over.
+ */
+export async function initProject(projectDir: string): Promise<InitResult> {
+  const devcontainerDir = `${projectDir}/.devcontainer`;
+
+  const existing = await findOwnDevcontainerConfig(projectDir);
+  if (existing !== null) {
+    // Which remedy actually works depends on where the config lives. Removing just the
+    // devcontainer.json from a scaffolded .devcontainer/ is not enough — the rest of the bundle
+    // would still be there and trip the not-empty guard below — whereas the root form is a lone
+    // file with nothing else to clear.
+    const remedy =
+      existing === `${projectDir}/.devcontainer.json`
+        ? 'delete it'
+        : 'delete the .devcontainer/ folder contents';
+    throw new Error(
+      `${existing} already exists — use \`devc config\` to change mounts, or ${remedy} and run \`devc init\` again.`,
+    );
+  }
+
+  const occupants = await entryNames(devcontainerDir);
+  if (occupants.length > 0) {
+    throw new Error(
+      `${devcontainerDir} is not empty (${summarize(
+        occupants,
+      )}) — devc init only writes into a missing or empty .devcontainer/. ` +
+        'Move its contents aside and re-run, or hand-edit what is already there.',
+    );
+  }
+
+  const configPath = `${devcontainerDir}/devcontainer.json`;
+  await Deno.mkdir(devcontainerDir, { recursive: true });
+  await Deno.writeTextFile(configPath, await loadBundledDevcontainerJson());
+
+  return {
+    configPath,
+    written: [configPath, ...(await installBundledAssets(devcontainerDir))],
+  };
+}

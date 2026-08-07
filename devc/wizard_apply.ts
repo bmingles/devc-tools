@@ -9,7 +9,7 @@
 // byte-for-byte.
 
 import {
-  copyBundledAssets,
+  installBundledAssets,
   loadBundledDevcontainerJson,
 } from "./default_config.ts";
 import {
@@ -80,8 +80,9 @@ export interface ApplyDeps {
  *
  * First creation (no existing `devcontainer.json`): the bundled default text is the base; its
  * two fences are inserted + populated; every other bundled asset (`Dockerfile`, `post-create.sh`,
- * `initialize-command.sh`, `scripts/`) is copied verbatim via `copyBundledAssets`, and the
- * shell scripts are made executable.
+ * `initialize-command.sh`, `scripts/`) is written verbatim via `installBundledAssets`, which also
+ * makes the shell scripts executable. `devc init` writes the same assets the same way, minus the
+ * fences.
  *
  * Update in place: only the two fences are rewritten on the existing file text; the copied
  * assets are left untouched. When the rewrite yields the exact bytes already on disk, the file
@@ -128,27 +129,7 @@ export async function applySelection(
   if (changed) await Deno.writeTextFile(configPath, out);
 
   if (created) {
-    await copyBundledAssets(devcontainerDir);
-    written.push(
-      `${devcontainerDir}/Dockerfile`,
-      `${devcontainerDir}/post-create.sh`,
-      `${devcontainerDir}/initialize-command.sh`,
-      `${devcontainerDir}/scripts`,
-    );
-    // copyBundledAssets writes files 0644; restore the exec bit on the entry scripts and
-    // their scripts/ delegates so a dev can run them by hand (post-create.sh also invokes
-    // its steps via `bash`, so this is for cleanliness rather than correctness).
-    const scriptsDir = `${devcontainerDir}/scripts`;
-    const exe = [
-      `${devcontainerDir}/post-create.sh`,
-      `${devcontainerDir}/initialize-command.sh`,
-    ];
-    for await (const entry of Deno.readDir(scriptsDir)) {
-      if (entry.isFile && entry.name.endsWith(".sh")) {
-        exe.push(`${scriptsDir}/${entry.name}`);
-      }
-    }
-    for (const path of exe) await Deno.chmod(path, 0o755);
+    written.push(...await installBundledAssets(devcontainerDir));
   }
 
   await persistRecentSkills(selection.skills, deps.globalConfigPath);

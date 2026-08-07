@@ -11,6 +11,7 @@ import {
   stopContainer,
 } from "./container.ts";
 import { parseAttachArgs, parseBuildArgs } from "./args.ts";
+import { initProject } from "./init.ts";
 import {
   globalConfigExists,
   runGlobalConfigWizard,
@@ -88,6 +89,25 @@ if (!KNOWN_COMMANDS.has(subcommand)) {
   console.error(`devc: unknown command '${subcommand}'`);
   console.error('Run "devc --help" for a list of commands.');
   Deno.exit(1);
+}
+
+// `devc init [PATH]`: write the bundled default `.devcontainer/` into PATH (default cwd) and
+// exit. Like `config`, dispatched before the first-run global-config hook below — scaffolding
+// needs no folder roots, so it must never trigger that wizard.
+if (subcommand === "init") {
+  const target = resolveLocalFolder(
+    Deno.args.find((a, i) => i > 0 && !a.startsWith("--")),
+  );
+  const { written } = await initProject(target).catch(fail);
+  console.log(`Wrote .devcontainer/ for ${target}`);
+  for (const path of written) {
+    const rel = path.slice(`${target}/.devcontainer/`.length);
+    console.log(`  ${rel}${path.endsWith("/scripts") ? "/" : ""}`);
+  }
+  console.log(
+    "Next: `devc up` to create the container, or `devc config` to add source/skills mounts.",
+  );
+  Deno.exit(0);
 }
 
 // `devc config [PATH]`: open the full four-step project wizard for PATH (default cwd). The

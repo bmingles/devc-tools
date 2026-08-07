@@ -1,3 +1,6 @@
+import { parse as parseJsonc } from "jsr:@std/jsonc";
+import { basenamePosix } from "./posix.ts";
+
 // Embedded `devc/default/` directory, read via Deno.readDir/Deno.readFile.
 // Under `deno run` this resolves to the real source tree; under a
 // `deno compile --include default` binary it resolves to the embedded
@@ -92,22 +95,27 @@ export async function ensureClaudeSeedDir(
 }
 
 /**
- * True if `localFolder` has its own devcontainer config
- * (`.devcontainer/devcontainer.json` or `.devcontainer.json`), i.e. "project mode"
- * should be used.
+ * Path to `localFolder`'s own devcontainer config (`.devcontainer/devcontainer.json`, else
+ * `.devcontainer.json`) — i.e. "project mode" — or `null` when it has none and the zero-config
+ * path applies.
+ *
+ * Returns the *path*, not just a boolean, because callers need to read the config that is
+ * actually in play: `remoteEnv` has to come from the project's own file in project mode, and a
+ * boolean left no way to reach it (see {@link loadResolvedRemoteEnv}).
  */
-export async function hasOwnDevcontainerConfig(
+export async function findOwnDevcontainerConfig(
   localFolder: string,
-): Promise<boolean> {
+): Promise<string | null> {
   for (const rel of [".devcontainer/devcontainer.json", ".devcontainer.json"]) {
+    const path = `${localFolder}/${rel}`;
     try {
-      await Deno.stat(`${localFolder}/${rel}`);
-      return true;
+      await Deno.stat(path);
+      return path;
     } catch (err) {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     }
   }
-  return false;
+  return null;
 }
 
 function homeDir(): string {
@@ -215,54 +223,126 @@ export async function copyBundledAssets(destDir: string): Promise<void> {
 }
 
 /**
- * Substitutes `${localEnv:VARNAME}` and `${containerWorkspaceFolder}` in a
- * string value. These are the only two `devcontainer.json`-style variables
- * resolved here — values passed directly to Docker (e.g. `-e`) are not
- * processed by the `devcontainer` CLI, so anything else
- * (`${localWorkspaceFolder}`, `${localWorkspaceFolderBasename}`,
- * `${containerEnv:...}`, etc.) is left as-is.
+ * Copy every bundled asset except `devcontainer.json` into `destDir` (a project's
+ * `.devcontainer/`) via {@link copyBundledAssets}, then restore the exec bit on the two
+ * lifecycle entry scripts and their `scripts/*.sh` delegates. Returns the top-level paths
+ * written, in a stable order, for callers that report them.
  *
- * `containerWorkspaceFolder` is the caller-supplied container-side mount path
- * (see `computeContainerWorkspaceFolder` in `container.ts`), which accounts for
- * both plain workspaces and git worktrees.
+ * `copyBundledAssets` writes files 0644, so the chmod is what lets a dev run the scripts by hand
+ * (`post-create.sh` invokes its steps via `bash`, so this is cleanliness rather than
+ * correctness). Shared by `devc config`'s first-creation path and `devc init`, which must
+ * produce a byte-identical `.devcontainer/` apart from the mount fences.
+ */
+export async function installBundledAssets(
+  destDir: string,
+): Promise<string[]> {
+  await copyBundledAssets(destDir);
+
+  const scriptsDir = `${destDir}/scripts`;
+  const executable = [
+    `${destDir}/post-create.sh`,
+    `${destDir}/initialize-command.sh`,
+  ];
+  for await (const entry of Deno.readDir(scriptsDir)) {
+    if (entry.isFile && entry.name.endsWith(".sh")) {
+      executable.push(`${scriptsDir}/${entry.name}`);
+    }
+  }
+  for (const path of executable) await Deno.chmod(path, 0o755);
+
+  return [
+    `${destDir}/Dockerfile`,
+    `${destDir}/post-create.sh`,
+    `${destDir}/initialize-command.sh`,
+    scriptsDir,
+  ];
+}
+
+/**
+ * Substitutes `devcontainer.json`-style variables in a string value:
+ * `${containerWorkspaceFolder}`, `${localEnv:VARNAME}`, and — when
+ * `localWorkspaceFolder` is supplied — `${localWorkspaceFolder}` and
+ * `${localWorkspaceFolderBasename}`. Anything else (`${containerEnv:...}`,
+ * `${devcontainerId}`, …) is left as-is: values passed directly to Docker (e.g. `-e`) are
+ * never processed by the `devcontainer` CLI, and the rest cannot be resolved host-side.
+ *
+ * `containerWorkspaceFolder` is the caller-supplied container-side mount path — the
+ * `remoteWorkspaceFolder` reported by `devcontainer up`, which accounts for both plain
+ * workspaces and git worktrees.
  */
 export function substituteVars(
   value: string,
   containerWorkspaceFolder: string,
+  localWorkspaceFolder?: string,
 ): string {
-  return value
-    .replaceAll("${containerWorkspaceFolder}", containerWorkspaceFolder)
-    .replace(/\$\{localEnv:([^}]+)\}/g, (_, varName: string) => {
-      return varName === "HOME" ? homeDir() : Deno.env.get(varName) ?? "";
-    });
-}
-
-/** Strips `//`-to-end-of-line comments from lines that contain nothing else (no string tokens before the `//`). Safe for devcontainer.json where all comments are on their own lines. */
-function stripLineComments(text: string): string {
-  return text.split("\n").filter((line) => !/^\s*\/\//.test(line)).join("\n");
+  let out = value.replaceAll(
+    "${containerWorkspaceFolder}",
+    containerWorkspaceFolder,
+  );
+  if (localWorkspaceFolder !== undefined) {
+    // Basename first: `${localWorkspaceFolder}` is a prefix of
+    // `${localWorkspaceFolderBasename}`, so the other order would rewrite the longer token
+    // into `<path>Basename}`.
+    out = out
+      .replaceAll(
+        "${localWorkspaceFolderBasename}",
+        basenamePosix(localWorkspaceFolder),
+      )
+      .replaceAll("${localWorkspaceFolder}", localWorkspaceFolder);
+  }
+  return out.replace(/\$\{localEnv:([^}]+)\}/g, (_, varName: string) => {
+    return varName === "HOME" ? homeDir() : Deno.env.get(varName) ?? "";
+  });
 }
 
 interface DevcontainerJson {
-  remoteEnv?: Record<string, string>;
+  remoteEnv?: Record<string, unknown>;
 }
 
 /**
- * Reads `remoteEnv` from the materialized default config at `configPath` and
- * resolves `${containerWorkspaceFolder}` and `${localEnv:VAR}` in all values.
- * Returns `{}` if the config defines no `remoteEnv`. There is no project
- * overlay merge — `remoteEnv` comes solely from the materialized default.
+ * Reads `remoteEnv` from the devcontainer config at `configPath` and resolves the variables
+ * {@link substituteVars} handles in each value. Returns `{}` if the config defines no
+ * `remoteEnv`.
+ *
+ * This is what makes `remoteEnv` reach `devc exec`/`attach`: those run via `docker exec`,
+ * which applies the container's `containerEnv` but never `remoteEnv` — `remoteEnv` is applied
+ * by the *client* per connection (VS Code to its terminals, `devcontainer exec` to its child)
+ * and is not stored on the container for anyone to inherit. So devc re-derives it.
+ *
+ * `configPath` is whichever config is in play: the project's own in project mode, the
+ * materialized bundled default in the zero-config path. Because it may therefore be a file a
+ * user hand-wrote, parsing is deliberately forgiving — JSONC (comments, trailing commas) is
+ * parsed properly, and a config this cannot read degrades to `{}` with a warning rather than
+ * throwing, so a malformed or exotic config costs env vars instead of breaking `devc exec`
+ * outright. Non-string values are skipped for the same reason (the spec says strings).
  */
 export async function loadResolvedRemoteEnv(
   configPath: string,
   containerWorkspaceFolder: string,
+  localWorkspaceFolder?: string,
 ): Promise<Record<string, string>> {
-  const text = await Deno.readTextFile(configPath);
-  const config: DevcontainerJson = JSON.parse(stripLineComments(text));
-  const baseEnv: Record<string, string> = config.remoteEnv ?? {};
+  let config: DevcontainerJson | null;
+  try {
+    const text = await Deno.readTextFile(configPath);
+    config = parseJsonc(text) as DevcontainerJson | null;
+  } catch (err) {
+    console.error(
+      `devc: could not read remoteEnv from ${configPath} (${
+        err instanceof Error ? err.message : err
+      }) — continuing without it`,
+    );
+    return {};
+  }
 
+  const baseEnv = config?.remoteEnv ?? {};
   return Object.fromEntries(
-    Object.entries(baseEnv).map((
-      [k, v],
-    ) => [k, substituteVars(v, containerWorkspaceFolder)]),
+    Object.entries(baseEnv)
+      .filter((entry): entry is [string, string] =>
+        typeof entry[1] === "string"
+      )
+      .map(([k, v]) => [
+        k,
+        substituteVars(v, containerWorkspaceFolder, localWorkspaceFolder),
+      ]),
   );
 }

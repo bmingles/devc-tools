@@ -11,6 +11,7 @@ positional overrides it. The resolved path identifies the project and its contai
 ## Commands
 
 ```text
+devc init    [PATH]                                   Scaffold the default `.devcontainer/` into the project
 devc config  [PATH]                                   Configure the project's dev container (TUI)
 devc up      [PATH] [--json]                          Create/start the container; print its status
 devc build   [PATH] [--no-cache] [--json]             Recreate the container from scratch
@@ -28,6 +29,18 @@ Run `devc --help` for the full command list, `devc <COMMAND> --help` for a comma
 
 Notes:
 
+- `init` writes the bundled default into the project's `.devcontainer/` — `devcontainer.json`
+  verbatim (comments kept, no mount fences) plus `Dockerfile`, `post-create.sh`,
+  `initialize-command.sh` and `scripts/`, with the shell scripts executable. It is the same
+  scaffolding `config` does on first creation, without the TUI: use it when you want the baseline
+  on disk to hand-edit. Non-interactive — it never prompts, never builds, and never triggers the
+  first-run roots wizard. It writes only into a **missing or completely empty** `.devcontainer/`:
+  any existing content — a file, a subdirectory, a dotfile — makes it write nothing and exit 1,
+  naming what it found. So does an existing config in either location
+  (`.devcontainer/devcontainer.json` or a root `.devcontainer.json`), with a message pointing at
+  `devc config`. The strict rule means what `init` leaves behind is exactly the bundle: it cannot
+  silently overwrite a hand-written `Dockerfile` or `scripts/*.sh`, and cannot strand unrelated
+  files that the bundle does not replace.
 - `up` prints `<containerId> running — workspace <remoteWorkspaceFolder>`, or the
   `ContainerInfo` JSON with `--json`.
 - `build` recreates the container (`up --remove-existing-container`) without attaching, and
@@ -53,8 +66,14 @@ Notes:
   `--config <dir>/devcontainer.json`. If the project has its own
   `.devcontainer/devcontainer.json` (or `.devcontainer.json`), that is used instead.
 - **exec / attach** run via `docker exec` under `remoteUser` in `remoteWorkspaceFolder`.
-  Because `docker exec` does not apply devcontainer `remoteEnv`, `devc` re-derives it from
-  the materialized default config and passes `-e K=V` per entry.
+  `remoteEnv` is not stored on the container — it is applied by the *client* per connection
+  (VS Code to its terminals, `devcontainer exec` to its child), so `docker exec` never sees
+  it. `devc` therefore re-derives it from whichever config is in play — the project's own
+  `devcontainer.json` in project mode, the materialized default in the zero-config path — and
+  passes `-e K=V` per entry. Values resolve `${containerWorkspaceFolder}`,
+  `${localWorkspaceFolder}`, `${localWorkspaceFolderBasename}` and `${localEnv:VAR}`; other
+  variables can't be resolved host-side and pass through literally. A config that can't be
+  parsed logs a warning and yields no `remoteEnv` rather than failing the command.
 - **Git worktrees**: `up` passes `--mount-git-worktree-common-dir` and the container-side
   workspace path is computed to match the CLI's own algorithm.
 - After a successful `up`, the container is renamed to `devc-<basename>-<hash>` and its image
@@ -106,6 +125,56 @@ be top-level — it is the only host-side lifecycle hook — so a project that n
 `initializeCommand` should either keep the `mkdir -p` in it or drop the `claude-seed` mount
 alongside it.
 
+## Shell setup: `shell/` folders
+
+Every interactive container shell sources two optional layers of `*.sh`, after devc's own
+additions (prompt, terminal title, `nvm` auto-use) and before the `devc attach` first-prompt
+clear:
+
+```text
+~/.config/devc/shell/*.sh          your preferences, every project   (host, read-only mount)
+<project>/.devcontainer/shell/*.sh this project's settings           (workspace)
+```
+
+```sh
+# ~/.config/devc/shell/10-prefs.sh
+alias ll='ls -alF'
+export EDITOR=vim
+
+# .devcontainer/shell/10-project.sh
+alias t='deno task test'
+export DATABASE_URL=postgres://localhost/dev
+```
+
+- **User first, then project**, so a project's committed settings win on conflict — the same
+  `system → global → local` order git uses. A project that *assigns* rather than appends to a
+  shared variable (`PS1`, `PATH`) will therefore override your personal one.
+- **Order within a layer** is glob (name) order. Prefix with `10-`, `20-`, … to control it.
+- **Optional.** Missing or empty directories do nothing. Neither is created or written by
+  `devc config`, and neither is ever overwritten, so both are yours — commit the project one or
+  `.gitignore` it. Only `*.sh` is sourced; a `README.md` alongside is ignored.
+- **Live.** Both layers are *sourced* from `~/.bashrc`, not appended into it — edits apply to the
+  next new shell, with no rebuild and no recreate. Deleting a file stops it being read. The user
+  layer is a read-only bind mount, so host edits are picked up the same way.
+- **Both modes.** The project layer works in the zero-config path too: a project can have only
+  `.devcontainer/shell/` and no `devcontainer.json` and still get it, since it is found through
+  the workspace mount at `$PROJECT_PATH`.
+- **Interactive shells only.** The project layer additionally needs `PROJECT_PATH` — the
+  workspace root devc sets as `remoteEnv` and re-passes on `exec`/`attach`; a raw
+  `docker exec … bash` without it deliberately sources nothing. The user layer is at a fixed
+  container path and does not depend on it.
+- Avoid setting `PROMPT_COMMAND` outright (append to it instead) — replacing it drops the
+  first-prompt clear that `devc attach` installs after these layers run.
+
+`~/.config/devc/shell` is created by `initialize-command.sh`, because a bind mount errors on a
+missing source rather than creating it. Projects whose `.devcontainer/devcontainer.json` was
+written by an earlier `devc` predate the mount — `devc` writes infra mounts once at creation and
+never re-asserts them — so add it by hand to pick up the user layer:
+
+```jsonc
+"type=bind,source=${localEnv:HOME}/.config/devc/shell,target=/usr/local/share/devc/shell,consistency=cached,readonly",
+```
+
 ## Development
 
 ```sh
@@ -114,9 +183,11 @@ deno task test                         # unit tests
 deno task check                        # type-check
 deno task build                        # compile the `devc` binary (embeds default/)
 
-# The ~/.claude seed prune+link logic is bash inside scripts/agents-setup.sh, so it is
-# covered by a shell harness rather than `deno task test`:
-bash tests/seed_link_test.sh default/scripts/agents-setup.sh
+# Two pieces of the baseline are bash inside default/scripts/, so they are covered by shell
+# harnesses rather than `deno task test`. Each extracts a fenced block from the real script and
+# runs it against temp dirs, so the tests cannot drift from the implementation:
+bash tests/seed_link_test.sh default/scripts/agents-setup.sh       # devc:seed-link
+bash tests/shell_dirs_test.sh default/scripts/bashrc-additions.sh  # devc:shell-dirs
 ```
 
 ### `devc config`

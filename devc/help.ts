@@ -5,8 +5,9 @@
 /** CLI version. Single source of truth — the compiled binary cannot read `deno.json` at runtime. */
 export const VERSION = "0.1.0";
 
-/** The ten subcommands, in the order they appear in the top-level `Commands:` list. */
+/** The eleven subcommands, in the order they appear in the top-level `Commands:` list. */
 export const COMMANDS: { name: string; summary: string }[] = [
+  { name: "init", summary: "Scaffold the default dev container config into the project" },
   { name: "config", summary: "Configure the dev container for the current project (TUI)" },
   { name: "attach", summary: "Attach to the dev container for the current project" },
   { name: "claude", summary: "Launch Claude inside the dev container for the current project" },
@@ -41,6 +42,16 @@ export function topLevelHelp(): string {
 
 /** Per-command help blocks, keyed by command name — verbatim from the design doc. */
 export const COMMAND_HELP: Record<string, string> = {
+  init: [
+    "Usage: devc init [PATH]",
+    "",
+    "Arguments:",
+    "  [PATH]  Path to the project (default: current directory)",
+    "",
+    "Options:",
+    "  -h, --help  Print help",
+  ].join("\n"),
+
   config: [
     "Usage: devc config [PATH] [--global]",
     "",

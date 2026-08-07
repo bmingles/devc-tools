@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@^1";
 import {
   ensureClaudeSeedDir,
-  hasOwnDevcontainerConfig,
+  findOwnDevcontainerConfig,
   loadResolvedRemoteEnv,
   materializeDefaultConfig,
   substituteVars,
@@ -25,24 +25,39 @@ async function withTempDir(fn: (tmp: string) => Promise<void>) {
   }
 }
 
-Deno.test("hasOwnDevcontainerConfig is false for a plain directory", async () => {
+Deno.test("findOwnDevcontainerConfig is null for a plain directory", async () => {
   await withTempDir(async (tmp) => {
-    assertEquals(await hasOwnDevcontainerConfig(tmp), false);
+    assertEquals(await findOwnDevcontainerConfig(tmp), null);
   });
 });
 
-Deno.test("hasOwnDevcontainerConfig is true for .devcontainer/devcontainer.json", async () => {
+Deno.test("findOwnDevcontainerConfig returns the .devcontainer/devcontainer.json path", async () => {
   await withTempDir(async (tmp) => {
     await mkdir(`${tmp}/.devcontainer`);
     await Deno.writeTextFile(`${tmp}/.devcontainer/devcontainer.json`, "{}");
-    assertEquals(await hasOwnDevcontainerConfig(tmp), true);
+    assertEquals(
+      await findOwnDevcontainerConfig(tmp),
+      `${tmp}/.devcontainer/devcontainer.json`,
+    );
   });
 });
 
-Deno.test("hasOwnDevcontainerConfig is true for .devcontainer.json", async () => {
+Deno.test("findOwnDevcontainerConfig returns the .devcontainer.json path", async () => {
   await withTempDir(async (tmp) => {
     await Deno.writeTextFile(`${tmp}/.devcontainer.json`, "{}");
-    assertEquals(await hasOwnDevcontainerConfig(tmp), true);
+    assertEquals(await findOwnDevcontainerConfig(tmp), `${tmp}/.devcontainer.json`);
+  });
+});
+
+Deno.test("findOwnDevcontainerConfig prefers .devcontainer/devcontainer.json over .devcontainer.json", async () => {
+  await withTempDir(async (tmp) => {
+    await mkdir(`${tmp}/.devcontainer`);
+    await Deno.writeTextFile(`${tmp}/.devcontainer/devcontainer.json`, "{}");
+    await Deno.writeTextFile(`${tmp}/.devcontainer.json`, "{}");
+    assertEquals(
+      await findOwnDevcontainerConfig(tmp),
+      `${tmp}/.devcontainer/devcontainer.json`,
+    );
   });
 });
 
@@ -142,6 +157,102 @@ Deno.test("loadResolvedRemoteEnv strips // line comments from config before pars
       { FOO: "bar" },
     );
   });
+});
+
+// A project's own devcontainer.json is hand-written, so the reader has to survive real JSONC
+// (not just whole-line `//`) and has to fail soft: losing env vars beats breaking `devc exec`.
+Deno.test("loadResolvedRemoteEnv parses trailing commas, block comments, and end-of-line comments", async () => {
+  await withTempDir(async (tmp) => {
+    await Deno.writeTextFile(
+      `${tmp}/devcontainer.json`,
+      `{
+  /* block
+     comment */
+  "remoteEnv": {
+    "FOO": "bar", // trailing note after a value
+    "BAZ": "qux",
+  },
+}`,
+    );
+    assertEquals(
+      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, "/workspaces/x"),
+      { FOO: "bar", BAZ: "qux" },
+    );
+  });
+});
+
+Deno.test("loadResolvedRemoteEnv returns {} for an unparseable config instead of throwing", async () => {
+  await withTempDir(async (tmp) => {
+    await Deno.writeTextFile(`${tmp}/devcontainer.json`, "{ not json at all");
+    assertEquals(
+      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, "/workspaces/x"),
+      {},
+    );
+  });
+});
+
+Deno.test("loadResolvedRemoteEnv returns {} for a missing config instead of throwing", async () => {
+  await withTempDir(async (tmp) => {
+    assertEquals(
+      await loadResolvedRemoteEnv(`${tmp}/nope.json`, "/workspaces/x"),
+      {},
+    );
+  });
+});
+
+Deno.test("loadResolvedRemoteEnv skips non-string remoteEnv values", async () => {
+  await withTempDir(async (tmp) => {
+    await Deno.writeTextFile(
+      `${tmp}/devcontainer.json`,
+      JSON.stringify({ remoteEnv: { OK: "yes", N: 1, B: true, O: {} } }),
+    );
+    assertEquals(
+      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, "/workspaces/x"),
+      { OK: "yes" },
+    );
+  });
+});
+
+Deno.test("loadResolvedRemoteEnv resolves ${localWorkspaceFolder} and its basename when given the local folder", async () => {
+  await withTempDir(async (tmp) => {
+    await Deno.writeTextFile(
+      `${tmp}/devcontainer.json`,
+      JSON.stringify({
+        remoteEnv: {
+          LOCAL: "${localWorkspaceFolder}",
+          BASE: "${localWorkspaceFolderBasename}",
+        },
+      }),
+    );
+    assertEquals(
+      await loadResolvedRemoteEnv(
+        `${tmp}/devcontainer.json`,
+        "/workspaces/myproject",
+        "/home/me/src/myproject",
+      ),
+      { LOCAL: "/home/me/src/myproject", BASE: "myproject" },
+    );
+  });
+});
+
+// `${localWorkspaceFolder}` is a prefix of `${localWorkspaceFolderBasename}`, so substituting
+// in the wrong order yields `/home/me/src/myprojectBasename}`.
+Deno.test("substituteVars substitutes the basename token before the folder token", () => {
+  assertEquals(
+    substituteVars(
+      "${localWorkspaceFolderBasename}:${localWorkspaceFolder}",
+      "/workspaces/x",
+      "/home/me/src/myproject",
+    ),
+    "myproject:/home/me/src/myproject",
+  );
+});
+
+Deno.test("substituteVars leaves local-folder tokens alone when no local folder is given", () => {
+  assertEquals(
+    substituteVars("${localWorkspaceFolder}/x", "/workspaces/x"),
+    "${localWorkspaceFolder}/x",
+  );
 });
 
 Deno.test("materializeDefaultConfig copies the embedded tree flat to cacheDir and returns the config path", async () => {

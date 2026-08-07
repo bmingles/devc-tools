@@ -20,8 +20,8 @@ Deno.test("topLevelHelp lists every command, the version option, and the footer"
   assertStringIncludes(help, 'Run "devc <COMMAND> --help" for more information on a command.');
 });
 
-Deno.test("COMMAND_HELP has a Usage block for each of the ten commands", () => {
-  assertEquals(COMMANDS.length, 10);
+Deno.test("COMMAND_HELP has a Usage block for each of the eleven commands", () => {
+  assertEquals(COMMANDS.length, 11);
   for (const { name } of COMMANDS) {
     const block = COMMAND_HELP[name];
     assert(block !== undefined, `missing help block for ${name}`);

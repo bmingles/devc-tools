@@ -3,7 +3,7 @@ import { basenamePosix, dirnamePosix, resolvePosix } from "./posix.ts";
 import {
   CLAUDE_SEED_HOST_DIR,
   ensureClaudeSeedDir,
-  hasOwnDevcontainerConfig,
+  findOwnDevcontainerConfig,
   loadResolvedRemoteEnv,
   materializeDefaultConfig,
 } from "./default_config.ts";
@@ -515,18 +515,11 @@ export async function startContainer(
   if (rebuild) args.push("--remove-existing-container");
   if (opts.noCache) args.push("--build-no-cache");
 
-  let remoteEnv: Record<string, string> = {};
-  if (!(await hasOwnDevcontainerConfig(localFolder))) {
-    const configPath = await materializeDefaultConfig();
-    args.push("--config", configPath);
-    const containerWorkspaceFolder = await computeContainerWorkspaceFolder(
-      localFolder,
-    );
-    remoteEnv = await loadResolvedRemoteEnv(
-      configPath,
-      containerWorkspaceFolder,
-    );
-  }
+  // The config `devcontainer up` will actually use. A project's own config is found by the
+  // CLI on its own; only the out-of-tree bundled default needs `--config` to be found at all.
+  const ownConfig = await findOwnDevcontainerConfig(localFolder);
+  const configPath = ownConfig ?? await materializeDefaultConfig();
+  if (ownConfig === null) args.push("--config", configPath);
 
   const cmd = new Deno.Command("devcontainer", {
     args,
@@ -569,6 +562,16 @@ export async function startContainer(
   const name = await containerNameForLocalFolder(localFolder);
   await renameContainerIfNeeded(result.containerId, name, localFolder);
   await tagImageIfNeeded(result.containerId, name);
+
+  // Re-derive `remoteEnv` from the in-play config, for *both* modes — `docker exec` (how
+  // exec/attach run) never sees it otherwise. Done after the `up` so `${containerWorkspaceFolder}`
+  // resolves against the CLI's own `remoteWorkspaceFolder` rather than a local reimplementation
+  // of how it computes that path.
+  const remoteEnv = await loadResolvedRemoteEnv(
+    configPath,
+    result.remoteWorkspaceFolder,
+    localFolder,
+  );
 
   return {
     containerId: result.containerId,
