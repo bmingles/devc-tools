@@ -69,10 +69,12 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** Optional overrides for `applySelection` (tests inject a scratch config path). */
+/** Optional overrides for `applySelection` (tests inject scratch paths). */
 export interface ApplyDeps {
   /** Global config file path for the `recentSkills` persistence. Defaults to the standard path. */
   globalConfigPath?: string;
+  /** User template dir overlaying the bundled assets. Defaults to `~/.config/devc/templates`. */
+  templatesDir?: string;
 }
 
 /**
@@ -82,7 +84,9 @@ export interface ApplyDeps {
  * two fences are inserted + populated; every other bundled asset (`Dockerfile`, `post-create.sh`,
  * `initialize-command.sh`, `scripts/`) is written verbatim via `installBundledAssets`, which also
  * makes the shell scripts executable. `devc init` writes the same assets the same way, minus the
- * fences.
+ * fences. Both honor the user template layer, so a template `devcontainer.json` becomes the base
+ * text the fences are inserted into — `writeBlocks` calls `ensureArray`, so one with no `mounts`
+ * array gets one created.
  *
  * Update in place: only the two fences are rewritten on the existing file text; the copied
  * assets are left untouched. When the rewrite yields the exact bytes already on disk, the file
@@ -106,7 +110,7 @@ export async function applySelection(
 
   let baseText: string;
   if (created) {
-    baseText = await loadBundledDevcontainerJson();
+    baseText = await loadBundledDevcontainerJson(deps.templatesDir);
   } else {
     baseText = await Deno.readTextFile(configPath);
   }
@@ -129,7 +133,9 @@ export async function applySelection(
   if (changed) await Deno.writeTextFile(configPath, out);
 
   if (created) {
-    written.push(...await installBundledAssets(devcontainerDir));
+    written.push(
+      ...await installBundledAssets(devcontainerDir, deps.templatesDir),
+    );
   }
 
   await persistRecentSkills(selection.skills, deps.globalConfigPath);

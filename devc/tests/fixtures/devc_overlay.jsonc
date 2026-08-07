@@ -1,0 +1,16 @@
+// A hand-written project overlay, in the shape a dev would actually write it: real JSONC with
+// comments, and all four substitutable variable forms in one mount spec.
+{
+  /* Extra bind mounts, appended to whatever the base config already mounts. */
+  "mounts": [
+    "type=bind,source=${localEnv:HOME}/notes,target=${containerWorkspaceFolder}/../notes",
+    "type=bind,source=${localWorkspaceFolder}/.cache,target=/cache/${localWorkspaceFolderBasename}"
+  ],
+  // Merged into the base config's `features` by the devcontainer CLI itself.
+  "additionalFeatures": {
+    "ghcr.io/devcontainers/features/rust:1": { "version": "latest" }
+  },
+  "remoteEnv": {
+    "NOTES_DIR": "${containerWorkspaceFolder}/../notes" // resolved before Docker sees it
+  }
+}

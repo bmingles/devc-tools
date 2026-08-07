@@ -303,3 +303,57 @@ Deno.test("changed: false leaves the fences and a toggled-and-restored row intac
     assertEquals(fenceRows(await Deno.readTextFile(path)).skills, SEL.skills);
   });
 });
+
+// ── user template layer ─────────────────────────────────────────────────────────────────────
+
+// A user template `devcontainer.json` becomes the base text the fences are inserted into. It need
+// not have a `mounts` array at all — `writeBlocks` calls `ensureArray` — so a minimal template
+// must still get both fences.
+Deno.test("first creation from a template devcontainer.json with no mounts array", async () => {
+  await withTemp(async (dir) => {
+    const templates = `${dir}/templates`;
+    await Deno.mkdir(templates, { recursive: true });
+    await Deno.writeTextFile(
+      `${templates}/devcontainer.json`,
+      '{\n  "name": "mine",\n  "image": "mcr.microsoft.com/devcontainers/base:bookworm"\n}\n',
+    );
+
+    const project = `${dir}/project`;
+    await Deno.mkdir(project);
+    const result = await applySelection(project, SEL, {
+      globalConfigPath: `${dir}/config.json`,
+      templatesDir: templates,
+    });
+    assert(result.created);
+
+    const text = await Deno.readTextFile(result.configPath);
+    // The template's own keys survived...
+    const parsed = parseJsonc(text) as { name: string; mounts: string[] };
+    assertEquals(parsed.name, "mine");
+    // ...the mounts array was created, and holds only what the wizard put there.
+    const rows = fenceRows(text);
+    assertEquals(rows.source, SEL.source);
+    assertEquals(rows.skills, SEL.skills);
+    assertEquals(parsed.mounts.length, 2);
+  });
+});
+
+Deno.test("first creation overlays a template Dockerfile onto the copied assets", async () => {
+  await withTemp(async (dir) => {
+    const templates = `${dir}/templates`;
+    await Deno.mkdir(templates, { recursive: true });
+    await Deno.writeTextFile(`${templates}/Dockerfile`, "FROM scratch\n");
+
+    const project = `${dir}/project`;
+    await Deno.mkdir(project);
+    await applySelection(project, SEL, {
+      globalConfigPath: `${dir}/config.json`,
+      templatesDir: templates,
+    });
+
+    assertEquals(
+      await Deno.readTextFile(`${project}/.devcontainer/Dockerfile`),
+      "FROM scratch\n",
+    );
+  });
+});
