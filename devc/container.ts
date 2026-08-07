@@ -8,6 +8,13 @@ import {
   materializeDefaultConfig,
 } from "./default_config.ts";
 import { displayPath } from "./config.ts";
+import {
+  type DevcOverlay,
+  isEmptyOverlay,
+  loadMergedOverlay,
+  overlayArgs,
+  resolveOverlayRemoteEnv,
+} from "./overlay.ts";
 
 export type ContainerStatus = "running" | "stopped" | "missing";
 
@@ -489,6 +496,45 @@ export interface StartOptions {
   noCache?: boolean;
 }
 
+/**
+ * Builds the full `devcontainer up` argv. Pure/exported for unit testing, in the same spirit as
+ * {@link buildExecArgs}.
+ *
+ * devc's own args come first — `--workspace-folder`, then the worktree/rebuild/no-cache flags,
+ * then `--config` when (and only when) the out-of-tree bundled default is in play — and the
+ * overlay's args are appended after them.
+ *
+ * `containerWorkspaceFolder` must be the *pre*-`up` value from
+ * {@link computeContainerWorkspaceFolder}: `--mount` and `--remote-env` have to be built before
+ * `devcontainer up` runs, so the authoritative `remoteWorkspaceFolder` the CLI reports back does
+ * not exist yet. The post-`up` derivation in {@link startContainer} keeps using that
+ * authoritative value instead — the two are not interchangeable.
+ */
+export function buildUpArgs(input: {
+  localFolder: string;
+  worktree: boolean;
+  rebuild: boolean;
+  noCache: boolean;
+  /** Config path to pass as `--config`, or `null` when the CLI finds the project's own. */
+  configArg: string | null;
+  overlay: DevcOverlay;
+  containerWorkspaceFolder: string;
+}): string[] {
+  const args = ["up", "--workspace-folder", input.localFolder];
+  if (input.worktree) args.push("--mount-git-worktree-common-dir");
+  if (input.rebuild) args.push("--remove-existing-container");
+  if (input.noCache) args.push("--build-no-cache");
+  if (input.configArg !== null) args.push("--config", input.configArg);
+  args.push(
+    ...overlayArgs(
+      input.overlay,
+      input.containerWorkspaceFolder,
+      input.localFolder,
+    ),
+  );
+  return args;
+}
+
 export async function startContainer(
   localFolder: string,
   rebuild = false,
@@ -510,16 +556,30 @@ export async function startContainer(
   }
 
   const worktree = await isGitWorktree(localFolder);
-  const args = ["up", "--workspace-folder", localFolder];
-  if (worktree) args.push("--mount-git-worktree-common-dir");
-  if (rebuild) args.push("--remove-existing-container");
-  if (opts.noCache) args.push("--build-no-cache");
 
   // The config `devcontainer up` will actually use. A project's own config is found by the
   // CLI on its own; only the out-of-tree bundled default needs `--config` to be found at all.
   const ownConfig = await findOwnDevcontainerConfig(localFolder);
   const configPath = ownConfig ?? await materializeDefaultConfig();
-  if (ownConfig === null) args.push("--config", configPath);
+
+  // The `devc.json` overlay applies in *both* modes — a project with its own config is exactly
+  // the case where a dev most often wants a local, gitignored mount. It is translated to CLI
+  // args and never written back, so the project's `.devcontainer/` stays standalone.
+  const overlay = await loadMergedOverlay(localFolder);
+  // Only pay for the git subprocesses when there is actually something to substitute.
+  const containerWorkspaceFolder = isEmptyOverlay(overlay)
+    ? ""
+    : await computeContainerWorkspaceFolder(localFolder);
+
+  const args = buildUpArgs({
+    localFolder,
+    worktree,
+    rebuild,
+    noCache: opts.noCache === true,
+    configArg: ownConfig === null ? configPath : null,
+    overlay,
+    containerWorkspaceFolder,
+  });
 
   const cmd = new Deno.Command("devcontainer", {
     args,
@@ -567,11 +627,23 @@ export async function startContainer(
   // exec/attach run) never sees it otherwise. Done after the `up` so `${containerWorkspaceFolder}`
   // resolves against the CLI's own `remoteWorkspaceFolder` rather than a local reimplementation
   // of how it computes that path.
-  const remoteEnv = await loadResolvedRemoteEnv(
+  //
+  // The overlay's own `remoteEnv` goes on top, matching what `--remote-env` did to the container:
+  // base config < user `devc.json` < project `devc.json` (the last two already merged into
+  // `overlay`).
+  const baseRemoteEnv = await loadResolvedRemoteEnv(
     configPath,
     result.remoteWorkspaceFolder,
     localFolder,
   );
+  const remoteEnv = {
+    ...baseRemoteEnv,
+    ...resolveOverlayRemoteEnv(
+      overlay,
+      result.remoteWorkspaceFolder,
+      localFolder,
+    ),
+  };
 
   return {
     containerId: result.containerId,

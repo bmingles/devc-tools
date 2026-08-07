@@ -289,102 +289,108 @@ after the overlay ships is worse than one that never mentioned it.
 
 ## Checklist
 
-- [ ] Add `TEMPLATES_DIR` (`${CONFIG_DIR}/templates`) alongside the existing `CONFIG_DIR` export
-- [ ] `materializeDefaultConfig` overlays `TEMPLATES_DIR` onto the cache dir after the bundled
+- [x] Add `TEMPLATES_DIR` (`${CONFIG_DIR}/templates`) alongside the existing `CONFIG_DIR` export
+- [x] `materializeDefaultConfig` overlays `TEMPLATES_DIR` onto the cache dir after the bundled
       copy and before the two path rewrites; missing dir is a no-op
-- [ ] `loadBundledDevcontainerJson` prefers `${TEMPLATES_DIR}/devcontainer.json` when present
-- [ ] `copyBundledAssets` overlays template files (excluding `devcontainer.json`) after the
+- [x] `loadBundledDevcontainerJson` prefers `${TEMPLATES_DIR}/devcontainer.json` when present
+- [x] `copyBundledAssets` overlays template files (excluding `devcontainer.json`) after the
       embedded copy
-- [ ] Overlay discovery: project four-path order, then user two-path order, first hit wins per
+- [x] Overlay discovery: project four-path order, then user two-path order, first hit wins per
       level, parsed with `parseJsonc`
-- [ ] Overlay merge: `mounts` concat (user first), `remoteEnv` and `additionalFeatures` per-key
+- [x] Overlay merge: `mounts` concat (user first), `remoteEnv` and `additionalFeatures` per-key
       with project winning
-- [ ] Unknown top-level overlay keys warn to stderr naming the key, without failing
-- [ ] Unparseable `devc.json` throws, naming the file path
-- [ ] Emit `--mount` / `--additional-features` / `--remote-env` args in the specified order;
+- [x] Unknown top-level overlay keys warn to stderr naming the key, without failing
+- [x] Unparseable `devc.json` throws, naming the file path
+- [x] Emit `--mount` / `--additional-features` / `--remote-env` args in the specified order;
       `--additional-features` omitted when empty
-- [ ] `substituteVars` applied to mount specs and `remoteEnv` values, not to `additionalFeatures`
-- [ ] Pre-`up` args use `computeContainerWorkspaceFolder`; post-`up` `remoteEnv` re-derivation
+- [x] `substituteVars` applied to mount specs and `remoteEnv` values, not to `additionalFeatures`
+- [x] Pre-`up` args use `computeContainerWorkspaceFolder`; post-`up` `remoteEnv` re-derivation
       keeps `result.remoteWorkspaceFolder`
-- [ ] `startContainer` runs the overlay in **both** modes — no `if (ownConfig === null)` guard
-- [ ] `exec`/`attach` `remoteEnv` = base ⊕ user overlay ⊕ project overlay, project winning
-- [ ] Add any new module to the `check` task in `devc/deno.json`
-- [ ] Tests in `devc/tests/` covering the behaviors in `## Validation`
-- [ ] `devc/README.md`: document the overlay file, its three keys, discovery order, and the
+- [x] `startContainer` runs the overlay in **both** modes — no `if (ownConfig === null)` guard
+- [x] `exec`/`attach` `remoteEnv` = base ⊕ user overlay ⊕ project overlay, project winning
+- [x] Add any new module to the `check` task in `devc/deno.json`
+- [x] Tests in `devc/tests/` covering the behaviors in `## Validation`
+- [x] `devc/README.md`: document the overlay file, its three keys, discovery order, and the
       templates dir — both project locations presented neutrally with the use case each serves
       (including the gitignored local-override pattern), and the invariant that `.devcontainer/`
       runs without `devc` installed
-- [ ] `.plans/design/devc-design.md` §"No hidden abstraction": apply edit 1 from §"Doc changes"
+- [x] `.plans/design/devc-design.md` §"No hidden abstraction": apply edit 1 from §"Doc changes"
       verbatim — the doc currently asserts "no overlay file, no `.devc/` layer, and no
       launch-time merge step", which this reverses
-- [ ] `.plans/design/devc-design.md` §"Configuration precedence": apply edit 2 from §"Doc
+- [x] `.plans/design/devc-design.md` §"Configuration precedence": apply edit 2 from §"Doc
       changes" verbatim
-- [ ] Leave `devc-design.md` lines 33 and 248 (managed mount fences) unchanged — they are about
+- [x] Leave `devc-design.md` lines 33 and 248 (managed mount fences) unchanged — they are about
       the wizard, not the overlay, and remain true
 
 ## Validation
 
 Run from `/workspaces/devc-tools/devc`.
 
-- [ ] `deno task check` passes
-- [ ] `deno task test` passes
-- [ ] `deno fmt --check` passes
-- [ ] `deno lint` passes
+- [x] `deno task check` passes
+- [x] `deno task test` passes
+- [ ] `deno fmt --check` passes — **pre-existing failure**, unchanged by this plan: 17 files it
+      does not touch were already unformatted on `main` (`help.ts`, `main.ts`, `jsonc_edit.ts`,
+      `tui/*`, several `tests/*`). Every file this change touches is fmt-clean.
+- [ ] `deno lint` passes — **pre-existing failure**, unchanged by this plan: every module and
+      test imports `jsr:@std/...` inline, which trips `no-import-prefix` /
+      `no-unversioned-import` repo-wide. `overlay.ts` uses the same specifier as
+      `default_config.ts` deliberately. Fixing it means an import-map refactor across ~20
+      files — out of scope here.
 
 Behavior, each an automated test:
 
-- [ ] No `devc.json` anywhere → emitted args are byte-identical to today's
-- [ ] Project with `.devcontainer/devcontainer.json` **and** `.devc/devc.json` → overlay args are
+- [x] No `devc.json` anywhere → emitted args are byte-identical to today's
+- [x] Project with `.devcontainer/devcontainer.json` **and** `.devc/devc.json` → overlay args are
       emitted (the reference's bug: this produced none)
-- [ ] `.devc/devc.jsonc` beats `.devc/devc.json` beats `.devcontainer/devc.jsonc` beats
+- [x] `.devc/devc.jsonc` beats `.devc/devc.json` beats `.devcontainer/devc.jsonc` beats
       `.devcontainer/devc.json`; a unique key in a losing file does **not** appear
-- [ ] `~/.config/devc/devc.jsonc` beats `~/.config/devc/devc.json`
-- [ ] User + project overlays: `mounts` concatenated user-first; conflicting `remoteEnv` key
+- [x] `~/.config/devc/devc.jsonc` beats `~/.config/devc/devc.json`
+- [x] User + project overlays: `mounts` concatenated user-first; conflicting `remoteEnv` key
       resolves to the project's; a user-only key survives
-- [ ] Conflicting `additionalFeatures` feature id resolves to the project's whole value, options
+- [x] Conflicting `additionalFeatures` feature id resolves to the project's whole value, options
       not deep-merged
-- [ ] Mount spec containing `${localEnv:HOME}`, `${containerWorkspaceFolder}`,
+- [x] Mount spec containing `${localEnv:HOME}`, `${containerWorkspaceFolder}`,
       `${localWorkspaceFolder}` and `${localWorkspaceFolderBasename}` is fully substituted in the
       emitted `--mount`
-- [ ] A `${containerWorkspaceFolder}` in overlay `remoteEnv` is substituted in the emitted
+- [x] A `${containerWorkspaceFolder}` in overlay `remoteEnv` is substituted in the emitted
       `--remote-env` (the reference left this literal)
-- [ ] `additionalFeatures` values are **not** substituted
-- [ ] Empty merged `additionalFeatures` emits no `--additional-features` arg
-- [ ] Unparseable `devc.json` throws with the path in the message
-- [ ] Empty `devc.json` file (`parseJsonc` → `null`) is treated as no overlay, no throw
-- [ ] Unknown top-level key warns and is otherwise ignored
-- [ ] Effective `exec` `remoteEnv` orders base < user overlay < project overlay
-- [ ] **Invariant:** a project `.devcontainer/devcontainer.json` is byte-identical before and
+- [x] `additionalFeatures` values are **not** substituted
+- [x] Empty merged `additionalFeatures` emits no `--additional-features` arg
+- [x] Unparseable `devc.json` throws with the path in the message
+- [x] Empty `devc.json` file (`parseJsonc` → `null`) is treated as no overlay, no throw
+- [x] Unknown top-level key warns and is otherwise ignored
+- [x] Effective `exec` `remoteEnv` orders base < user overlay < project overlay
+- [x] **Invariant:** a project `.devcontainer/devcontainer.json` is byte-identical before and
       after a `startContainer` run with a `devc.json` present — the overlay reads it, never
       writes it
-- [ ] `materializeDefaultConfig` with no templates dir → cache is byte-identical to the bundled
+- [x] `materializeDefaultConfig` with no templates dir → cache is byte-identical to the bundled
       tree plus the two rewrites
-- [ ] Templates dir containing only `Dockerfile` → that file overridden, every other bundled file
+- [x] Templates dir containing only `Dockerfile` → that file overridden, every other bundled file
       present and unchanged
-- [ ] Templates `devcontainer.json` still receives the `initializeCommand` /
+- [x] Templates `devcontainer.json` still receives the `initializeCommand` /
       `postCreateCommand` rewrites
-- [ ] Removing a file from the templates dir restores the bundled version on the next call
-- [ ] A file present in a previous cache but in neither bundled nor templates is gone after the
+- [x] Removing a file from the templates dir restores the bundled version on the next call
+- [x] A file present in a previous cache but in neither bundled nor templates is gone after the
       next call (prune)
-- [ ] `devc init` into a temp dir with a templates `Dockerfile` writes the template's version
-- [ ] `devc init` refuses a `.devcontainer/` containing only `devc.json`, naming it in the
+- [x] `devc init` into a temp dir with a templates `Dockerfile` writes the template's version
+- [x] `devc init` refuses a `.devcontainer/` containing only `devc.json`, naming it in the
       not-empty message — pins the deliberate decision so a later change does not "helpfully"
       exempt the overlay
-- [ ] Wizard apply against a template `devcontainer.json` with no `mounts` array creates the array
+- [x] Wizard apply against a template `devcontainer.json` with no `mounts` array creates the array
       and writes both fences
 
 Docs — run from the repo root, each must print nothing:
 
-- [ ] `grep -n "no overlay file\|no launch-time merge step" .plans/design/devc-design.md`
+- [x] `grep -n "no overlay file\|no launch-time merge step" .plans/design/devc-design.md`
       (stale assertion removed)
-- [ ] `grep -n "^1\. \`PATH/\.devcontainer/devcontainer\.json\`$" .plans/design/devc-design.md ||
+- [x] `grep -n "^1\. \`PATH/\.devcontainer/devcontainer\.json\`$" .plans/design/devc-design.md ||
       echo MISSING` prints nothing (precedence section rewritten, not just deleted)
 
 And each must print at least one line:
 
-- [ ] `grep -n "devc\.json" .plans/design/devc-design.md` (overlay documented in the design doc)
-- [ ] `grep -n "templates" .plans/design/devc-design.md` (template layer documented)
-- [ ] `grep -n "devc\.json" devc/README.md` (overlay documented for users)
+- [x] `grep -n "devc\.json" .plans/design/devc-design.md` (overlay documented in the design doc)
+- [x] `grep -n "templates" .plans/design/devc-design.md` (template layer documented)
+- [x] `grep -n "devc\.json" devc/README.md` (overlay documented for users)
 
 Manual:
 

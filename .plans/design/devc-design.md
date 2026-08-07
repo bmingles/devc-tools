@@ -28,18 +28,34 @@ When a user wants to customize the container for a particular project, they run 
 
 ### No hidden abstraction
 
-A guiding principle: **the config `devc` produces is a standard, spec-compliant `.devcontainer/` that a developer can read, understand, and hand-edit without learning anything `devc`-specific.** There is no overlay file, no `.devc/` layer, and no launch-time merge step — `devc config` writes a plain `devcontainer.json` + `Dockerfile`, and from that point on the project is a normal dev container that any devcontainer-aware tool (VS Code, the CLI, CI) understands. `devc`'s own baseline behavior is carried by the bundled `Dockerfile` (build-time) plus a top-level `postCreateCommand` running `post-create.sh` (create-time) — both standard, inspectable devcontainer mechanisms with no `devc`-specific indirection.
+A guiding principle: **the config `devc` produces is a standard, spec-compliant `.devcontainer/` that a developer can read, understand, and hand-edit without learning anything `devc`-specific.** `devc config` writes a plain `devcontainer.json` + `Dockerfile`, and from that point on the project is a normal dev container that any devcontainer-aware tool (VS Code, the CLI, CI) understands. **Whatever lands in `.devcontainer/` runs without `devc` installed at all.** That invariant is unconditional: `devc` never writes a `devc`-specific key into that folder, and the launch-time overlay never mutates it. `devc`'s own baseline behavior is carried by the bundled `Dockerfile` (build-time) plus a top-level `postCreateCommand` running `post-create.sh` (create-time) — both standard, inspectable devcontainer mechanisms with no `devc`-specific indirection.
+
+The optional `devc.json` overlay sits outside that contract rather than weakening it, and serves two shapes. **Committed**, it declares that the repo has adopted `devc` as a tool it depends on, much as it might depend on a Makefile or a task runner. **Gitignored**, it is a purely local override — an individual dev adding bind mounts for their own machine, in a repo that need not know `devc` exists and whose `.devcontainer/` no one else sees changed.
+
+Either way a checkout without `devc` still builds and runs from the standard config, merely without the overlay's extra mounts, features and env. Nothing is broken, only un-augmented.
 
 **Managed mount blocks.** So that reconfiguring a project is surgical rather than destructive, the wizard marks the two mount groups it owns — extra source mounts and skills mounts — with comment fences inside the `mounts` array (`// devc:source … // /devc:source` and `// devc:skills … // /devc:skills`). These are ordinary JSONC comments: the devcontainer CLI ignores them and the file remains directly usable, so this is not a hidden abstraction — it is a bookmark. `devc config` only ever rewrites the contents of its two fences. Everything else — the infrastructure mounts written at first creation, the developer's own hand-edits, comments, formatting, and any keys `devc` knows nothing about — is preserved byte-for-byte and **never re-asserted**. In particular, infra mounts are written once when the file is first created; if the developer later edits or removes them, `devc` does not add them back.
 
 ### Configuration precedence
 
-When a `devc` command needs container configuration, it resolves in this order:
+Two layers resolve independently.
 
-1. `PATH/.devcontainer/devcontainer.json` (+ sibling `Dockerfile`) if present.
-2. The bundled default `devcontainer.json` + `Dockerfile`.
+**Base config** — exactly one `devcontainer.json` is handed to `devcontainer up`. First hit wins; these do not merge, because a base config carries `build`/`image`.
 
-This means once a user applies a project-specific config via `devc config`, subsequent commands automatically use it.
+1. `PATH/.devcontainer/devcontainer.json`
+2. `PATH/.devcontainer.json`
+3. The materialized default — the bundled `devcontainer.json` + `Dockerfile`, with any same-named file from `~/.config/devc/templates/` overriding it per file.
+
+Once a user applies a project-specific config via `devc config`, subsequent commands automatically use it (case 1).
+
+**Overlay** — an optional `devc.json` contributing `mounts`, `additionalFeatures` and `remoteEnv` on top of whichever base won, in project mode as well as the zero-config path. Merged lowest to highest:
+
+1. `~/.config/devc/devc.jsonc`, else `~/.config/devc/devc.json`
+2. `PATH/.devc/devc.jsonc`, `.devc/devc.json`, `.devcontainer/devc.jsonc`, `.devcontainer/devc.json` — first hit only, the rest are not consulted
+
+`mounts` append, `remoteEnv` overrides per key, `additionalFeatures` merges per feature id.
+
+Both project locations are first-class and behave identically. `.devcontainer/devc.json` often suits a gitignored local override — one file to ignore, beside the config it overlays — and `.devc/` suits a repo that prefers `devc`'s files grouped in one place.
 
 ### Bundled default: baseline via Dockerfile + a top-level `postCreateCommand`
 

@@ -10,11 +10,11 @@
 
 ### Pending
 
-- [devc-config-overlay](devc-config-overlay.md) — Reintroduce a `devc.json` overlay (`mounts`/`additionalFeatures`/`remoteEnv` → `--mount`/`--additional-features`/`--remote-env`) that merges onto whichever base config is in play, in project mode as well as zero-config — the reference implementation only ever consulted it when the project had no `devcontainer.json`. Adds a user-level `~/.config/devc/devc.json` applying to every project, and a sparse `~/.config/devc/templates/` that overrides bundled assets per file and is re-applied every run, so a devc upgrade keeps shipping its new defaults.
-
 - [devc-claude-seed-dir](devc-claude-seed-dir.md) — Replace the three brittle per-file `~/.claude/*` host binds with one read-only directory bind of `~/.config/devc/.claude`, symlinked into the `.claude` volume by `post-create.sh` (top-level files only; directories ignored so the `devc:skills` fence is untouched). Deletion and live host edits both work; existing host files are migrated on first run.
 
 ### Completed
+
+- [devc-config-overlay](archived/devc-config-overlay.md) — Reintroduce a `devc.json` overlay (`mounts`/`additionalFeatures`/`remoteEnv` → `--mount`/`--additional-features`/`--remote-env`) that merges onto whichever base config is in play, in project mode as well as zero-config — the reference implementation only ever consulted it when the project had no `devcontainer.json`. Adds a user-level `~/.config/devc/devc.json` applying to every project, and a sparse `~/.config/devc/templates/` that overrides bundled assets per file and is re-applied every run, so a devc upgrade keeps shipping its new defaults.
 
 - [devc-init-command](archived/devc-init-command.md) — Add a non-interactive `devc init [PATH]` that scaffolds the bundled default `.devcontainer/` into a project verbatim — the same files `devc config` writes on first creation, minus the wizard and minus the two managed mount fences. Refuses to clobber an existing config, and never triggers the first-run global-config wizard.
 
@@ -74,4 +74,4 @@
 | devc wizard screens — picker chrome per `.plans/design/wizard/` mockups | [devc-wizard-screens](archived/devc-wizard-screens.md) | complete |
 | devc picker derived mounts — implied primary `.git` shown in the picks list | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md) | complete |
 | devc picker free navigation — roots as shortcuts + worktree mirror base | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) | complete |
-| devc config overlay — `devc.json` in both modes + user template layer | [devc-config-overlay](devc-config-overlay.md) | |
+| devc config overlay — `devc.json` in both modes + user template layer | [devc-config-overlay](archived/devc-config-overlay.md) | complete |

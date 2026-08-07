@@ -11,6 +11,19 @@ const DEFAULT_DIR_URL = new URL("./default/", import.meta.url);
 export const CONFIG_DIR = `${homeDir()}/.config/devc`;
 
 /**
+ * User-level template directory, `~/.config/devc/templates`. A **sparse** overlay on the bundled
+ * `default/` tree: any file placed here overrides the same-named bundled file, per file, in both
+ * the zero-config cache ({@link materializeDefaultConfig}) and what `devc init` / `devc config`
+ * write into a project ({@link loadBundledDevcontainerJson}, {@link copyBundledAssets}).
+ *
+ * Never seeded. It stays absent until the user creates it and holds only the files they want to
+ * change, so a `devc` upgrade keeps shipping its new defaults for everything else — the reason
+ * this is an overlay rather than a one-time copy of the whole tree. Deleting a file from here
+ * restores the bundled version on the next run.
+ */
+export const TEMPLATES_DIR = `${CONFIG_DIR}/templates`;
+
+/**
  * Host directory holding the user's `~/.claude` config for containers. Bind-mounted read-only
  * at `CLAUDE_SEED_TARGET`; `post-create.sh` symlinks every top-level *file* from it into the
  * `~/.claude` volume (directories are ignored — the `devc:skills` fence owns
@@ -139,11 +152,60 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
 }
 
 /**
- * Copies the embedded `devc/default/` tree verbatim into `cacheDir` (default
- * `~/.cache/devc/default`), overwriting any existing copy, and returns the path
- * to the copied `devcontainer.json` — suitable for `devcontainer up --config
- * <path>`. There is no user-editable global template override dir — customization
- * happens per-project via `devc config`.
+ * Recursively copies a real on-disk directory over `destDir`, overwriting per file and recursing
+ * into subdirectories. Files already in `destDir` that the source does not have are left alone —
+ * this is an overlay, not a mirror. A missing `sourceDir` is a silent no-op.
+ *
+ * `skipTopLevel` names entries to leave out, at the top level only.
+ *
+ * `Deno.copyFile` rather than read+write: unlike {@link copyDir}'s embedded-asset path, this
+ * copies from a real filesystem where the user's own modes are worth preserving.
+ */
+async function overlayDirFrom(
+  sourceDir: string,
+  destDir: string,
+  skipTopLevel: ReadonlySet<string> = new Set(),
+): Promise<void> {
+  const entries: Deno.DirEntry[] = [];
+  try {
+    for await (const entry of Deno.readDir(sourceDir)) entries.push(entry);
+  } catch (err) {
+    // A missing template dir is the common case — it is never seeded.
+    if (err instanceof Deno.errors.NotFound) return;
+    throw err;
+  }
+
+  await Deno.mkdir(destDir, { recursive: true });
+  for (const entry of entries) {
+    if (skipTopLevel.has(entry.name)) continue;
+    if (entry.isDirectory) {
+      await overlayDirFrom(
+        `${sourceDir}/${entry.name}`,
+        `${destDir}/${entry.name}`,
+      );
+    } else {
+      await Deno.copyFile(
+        `${sourceDir}/${entry.name}`,
+        `${destDir}/${entry.name}`,
+      );
+    }
+  }
+}
+
+/**
+ * Copies the embedded `devc/default/` tree into `cacheDir` (default
+ * `~/.cache/devc/default`), overwriting any existing copy, overlays any user
+ * {@link TEMPLATES_DIR} files on top of it per file, and returns the path to the copied
+ * `devcontainer.json` — suitable for `devcontainer up --config <path>`.
+ *
+ * The three steps are ordered, and the order is load-bearing:
+ *
+ * 1. Remove the prior copy, so a file dropped between versions does not linger forever.
+ * 2. Copy the embedded tree.
+ * 3. Overlay `templatesDir`, per file — so deleting a template restores the bundled version.
+ * 4. Apply the two path rewrites below, *after* the overlay, so a user-supplied
+ *    `templates/devcontainer.json` gets them too. They are `replaceAll` of exact tokens, so a
+ *    template that rewrote those lines itself simply no-ops.
  *
  * The copy is near-verbatim: the bundled default carries no local Feature, so
  * zero-config and `devc config` projects share the same `.devcontainer/` shape. The
@@ -165,15 +227,17 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
  * These rewrites are why the project-mode config can reference clean in-project paths (so edits
  * apply on recreate) while the hidden zero-config copy still resolves.
  *
- * `cacheDir` defaults to the real `~/.cache/devc/default` and only needs
- * overriding in tests.
+ * `cacheDir` / `templatesDir` default to the real `~/.cache/devc/default` and
+ * {@link TEMPLATES_DIR}, and only need overriding in tests.
  */
 export async function materializeDefaultConfig(
   cacheDir: string = `${homeDir()}/.cache/devc/default`,
+  templatesDir: string = TEMPLATES_DIR,
 ): Promise<string> {
   // Remove any prior copy so files dropped between versions don't linger.
   await Deno.remove(cacheDir, { recursive: true }).catch(() => {});
   await copyDir(DEFAULT_DIR_URL, cacheDir);
+  await overlayDirFrom(templatesDir, cacheDir);
 
   const configPath = `${cacheDir}/devcontainer.json`;
   const raw = await Deno.readTextFile(configPath);
@@ -192,11 +256,22 @@ export async function materializeDefaultConfig(
 }
 
 /**
- * Read the embedded `default/devcontainer.json` text — the base a first-creation `devc config`
- * inserts its two fences into. Every *other* bundled file (Dockerfile, `post-create.sh`,
- * `initialize-command.sh`, `scripts/`) is written by {@link copyBundledAssets}.
+ * Read the `default/devcontainer.json` text — the base a first-creation `devc config` inserts its
+ * two fences into. A `devcontainer.json` in `templatesDir` wins over the embedded one, so a user
+ * customization reaches project-mode configs as well as the zero-config cache; without that,
+ * running `devc config` on a project would silently discard it.
+ *
+ * Every *other* bundled file (Dockerfile, `post-create.sh`, `initialize-command.sh`, `scripts/`)
+ * is written by {@link copyBundledAssets}.
  */
-export async function loadBundledDevcontainerJson(): Promise<string> {
+export async function loadBundledDevcontainerJson(
+  templatesDir: string = TEMPLATES_DIR,
+): Promise<string> {
+  try {
+    return await Deno.readTextFile(`${templatesDir}/devcontainer.json`);
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
   return await Deno.readTextFile(new URL("devcontainer.json", DEFAULT_DIR_URL));
 }
 
@@ -204,9 +279,16 @@ export async function loadBundledDevcontainerJson(): Promise<string> {
  * Copy every embedded `default/` asset *except* `devcontainer.json` into `destDir`
  * (a project's `.devcontainer/`): the `Dockerfile`, the `post-create.sh` and
  * `initialize-command.sh` lifecycle entry scripts, and the `scripts/` sub-dependency
- * subtree. `devcontainer.json` is skipped because the wizard writes it itself (fenced).
+ * subtree. `devcontainer.json` is skipped because the wizard writes it itself (fenced) — via
+ * {@link loadBundledDevcontainerJson}, which applies the template layer to it separately.
+ *
+ * Any same-named file in `templatesDir` is then overlaid on top, per file, so a user's own
+ * `Dockerfile` or `scripts/*.sh` reaches project mode too.
  */
-export async function copyBundledAssets(destDir: string): Promise<void> {
+export async function copyBundledAssets(
+  destDir: string,
+  templatesDir: string = TEMPLATES_DIR,
+): Promise<void> {
   await Deno.mkdir(destDir, { recursive: true });
   for await (const entry of Deno.readDir(DEFAULT_DIR_URL)) {
     if (entry.name === "devcontainer.json") continue;
@@ -220,6 +302,11 @@ export async function copyBundledAssets(destDir: string): Promise<void> {
       await Deno.writeFile(`${destDir}/${entry.name}`, bytes);
     }
   }
+  await overlayDirFrom(
+    templatesDir,
+    destDir,
+    new Set(["devcontainer.json"]),
+  );
 }
 
 /**
@@ -230,13 +317,18 @@ export async function copyBundledAssets(destDir: string): Promise<void> {
  *
  * `copyBundledAssets` writes files 0644, so the chmod is what lets a dev run the scripts by hand
  * (`post-create.sh` invokes its steps via `bash`, so this is cleanliness rather than
- * correctness). Shared by `devc config`'s first-creation path and `devc init`, which must
- * produce a byte-identical `.devcontainer/` apart from the mount fences.
+ * correctness). The list is deliberately fixed rather than derived: a new top-level `*.sh` that a
+ * user template adds does not get the exec bit, which is cosmetic since both lifecycle hooks are
+ * invoked as `bash "<path>"`.
+ *
+ * Shared by `devc config`'s first-creation path and `devc init`, which must produce a
+ * byte-identical `.devcontainer/` apart from the mount fences.
  */
 export async function installBundledAssets(
   destDir: string,
+  templatesDir: string = TEMPLATES_DIR,
 ): Promise<string[]> {
-  await copyBundledAssets(destDir);
+  await copyBundledAssets(destDir, templatesDir);
 
   const scriptsDir = `${destDir}/scripts`;
   const executable = [
