@@ -1,0 +1,10 @@
+{
+  "editor.defaultFormatter": "denoland.vscode-deno",
+  "editor.formatOnSave": true,
+  "deno.enable": true,
+  "deno.enablePaths": ["devc"],
+  "deno.disablePaths": ["devc-bridge"],
+  "[typescript]": {
+    "editor.defaultFormatter": "denoland.vscode-deno"
+  }
+}
