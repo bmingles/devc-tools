@@ -11,8 +11,9 @@
 //   DEVC_BRIDGE_ADDR        host:port of the bridge  (default host.docker.internal:48227)
 //   DEVC_BRIDGE_TOKEN_FILE  path to the shared token (default /run/devc-bridge/token)
 
-const ADDR = Deno.env.get("DEVC_BRIDGE_ADDR") ?? "host.docker.internal:48227";
-const TOKEN_FILE = Deno.env.get("DEVC_BRIDGE_TOKEN_FILE") ?? "/run/devc-bridge/token";
+const ADDR = Deno.env.get('DEVC_BRIDGE_ADDR') ?? 'host.docker.internal:48227';
+const TOKEN_FILE = Deno.env.get('DEVC_BRIDGE_TOKEN_FILE') ??
+  '/run/devc-bridge/token';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -30,22 +31,26 @@ interface ErrResponse {
 type Response = OkResponse | ErrResponse;
 
 async function readLine(conn: Deno.Conn): Promise<string> {
-  let buf = "";
+  let buf = '';
   const chunk = new Uint8Array(4096);
   while (true) {
     const n = await conn.read(chunk);
     if (n === null) break;
     buf += decoder.decode(chunk.subarray(0, n), { stream: true });
-    const idx = buf.indexOf("\n");
+    const idx = buf.indexOf('\n');
     if (idx >= 0) return buf.slice(0, idx);
   }
   return buf;
 }
 
 function parseAddr(addr: string): { hostname: string; port: number } {
-  const i = addr.lastIndexOf(":");
+  const i = addr.lastIndexOf(':');
   if (i < 0) {
-    console.error(`devc-bridge: DEVC_BRIDGE_ADDR must be host:port, got ${JSON.stringify(addr)}`);
+    console.error(
+      `devc-bridge: DEVC_BRIDGE_ADDR must be host:port, got ${
+        JSON.stringify(addr)
+      }`,
+    );
     Deno.exit(2);
   }
   return { hostname: addr.slice(0, i), port: Number(addr.slice(i + 1)) };
@@ -54,7 +59,7 @@ function parseAddr(addr: string): { hostname: string; port: number } {
 function main(): Promise<never> {
   const [command, ...args] = Deno.args;
   if (!command) {
-    console.error("usage: devc-bridge <command> [args...]");
+    console.error('usage: devc-bridge <command> [args...]');
     return Deno.exit(2);
   }
   return run(command, args);
@@ -66,9 +71,13 @@ async function run(command: string, args: string[]): Promise<never> {
     token = (await Deno.readTextFile(TOKEN_FILE)).trim();
   } catch (e) {
     console.error(
-      `devc-bridge: cannot read token ${TOKEN_FILE}: ${e instanceof Error ? e.message : String(e)}`,
+      `devc-bridge: cannot read token ${TOKEN_FILE}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
     );
-    console.error("devc-bridge: is the host server running and the run dir bind-mounted?");
+    console.error(
+      'devc-bridge: is the host server running and the run dir bind-mounted?',
+    );
     return Deno.exit(1);
   }
 
@@ -78,14 +87,18 @@ async function run(command: string, args: string[]): Promise<never> {
     conn = await Deno.connect({ hostname, port });
   } catch (e) {
     console.error(
-      `devc-bridge: cannot connect to ${ADDR}: ${e instanceof Error ? e.message : String(e)}`,
+      `devc-bridge: cannot connect to ${ADDR}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
     );
-    console.error("devc-bridge: is the host server running?");
+    console.error('devc-bridge: is the host server running?');
     return Deno.exit(1);
   }
 
   try {
-    await conn.write(encoder.encode(JSON.stringify({ token, command, args }) + "\n"));
+    await conn.write(
+      encoder.encode(JSON.stringify({ token, command, args }) + '\n'),
+    );
     const line = await readLine(conn);
     let resp: Response;
     try {

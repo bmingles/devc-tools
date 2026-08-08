@@ -1,5 +1,5 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@^1";
-import { fromFileUrl } from "jsr:@std/path@^1";
+import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { fromFileUrl } from 'jsr:@std/path@^1';
 import {
   ensureClaudeSeedDir,
   findOwnDevcontainerConfig,
@@ -8,7 +8,7 @@ import {
   loadResolvedRemoteEnv,
   materializeDefaultConfig,
   substituteVars,
-} from "../default_config.ts";
+} from '../default_config.ts';
 
 async function mkdir(path: string) {
   await Deno.mkdir(path, { recursive: true });
@@ -16,7 +16,7 @@ async function mkdir(path: string) {
 
 /** Drop `//`-to-end-of-line comment lines so a JSONC config parses as JSON. */
 function stripLineComments(text: string): string {
-  return text.split("\n").filter((line) => !/^\s*\/\//.test(line)).join("\n");
+  return text.split('\n').filter((line) => !/^\s*\/\//.test(line)).join('\n');
 }
 
 async function withTempDir(fn: (tmp: string) => Promise<void>) {
@@ -32,18 +32,18 @@ async function withTempDir(fn: (tmp: string) => Promise<void>) {
  * A templates dir that cannot exist, so the bundled-only behavior is asserted without depending
  * on whether the machine running the tests happens to have `~/.config/devc/templates`.
  */
-const NO_TEMPLATES = "/nonexistent/devc-templates";
+const NO_TEMPLATES = '/nonexistent/devc-templates';
 
-Deno.test("findOwnDevcontainerConfig is null for a plain directory", async () => {
+Deno.test('findOwnDevcontainerConfig is null for a plain directory', async () => {
   await withTempDir(async (tmp) => {
     assertEquals(await findOwnDevcontainerConfig(tmp), null);
   });
 });
 
-Deno.test("findOwnDevcontainerConfig returns the .devcontainer/devcontainer.json path", async () => {
+Deno.test('findOwnDevcontainerConfig returns the .devcontainer/devcontainer.json path', async () => {
   await withTempDir(async (tmp) => {
     await mkdir(`${tmp}/.devcontainer`);
-    await Deno.writeTextFile(`${tmp}/.devcontainer/devcontainer.json`, "{}");
+    await Deno.writeTextFile(`${tmp}/.devcontainer/devcontainer.json`, '{}');
     assertEquals(
       await findOwnDevcontainerConfig(tmp),
       `${tmp}/.devcontainer/devcontainer.json`,
@@ -51,9 +51,9 @@ Deno.test("findOwnDevcontainerConfig returns the .devcontainer/devcontainer.json
   });
 });
 
-Deno.test("findOwnDevcontainerConfig returns the .devcontainer.json path", async () => {
+Deno.test('findOwnDevcontainerConfig returns the .devcontainer.json path', async () => {
   await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(`${tmp}/.devcontainer.json`, "{}");
+    await Deno.writeTextFile(`${tmp}/.devcontainer.json`, '{}');
     assertEquals(
       await findOwnDevcontainerConfig(tmp),
       `${tmp}/.devcontainer.json`,
@@ -61,11 +61,11 @@ Deno.test("findOwnDevcontainerConfig returns the .devcontainer.json path", async
   });
 });
 
-Deno.test("findOwnDevcontainerConfig prefers .devcontainer/devcontainer.json over .devcontainer.json", async () => {
+Deno.test('findOwnDevcontainerConfig prefers .devcontainer/devcontainer.json over .devcontainer.json', async () => {
   await withTempDir(async (tmp) => {
     await mkdir(`${tmp}/.devcontainer`);
-    await Deno.writeTextFile(`${tmp}/.devcontainer/devcontainer.json`, "{}");
-    await Deno.writeTextFile(`${tmp}/.devcontainer.json`, "{}");
+    await Deno.writeTextFile(`${tmp}/.devcontainer/devcontainer.json`, '{}');
+    await Deno.writeTextFile(`${tmp}/.devcontainer.json`, '{}');
     assertEquals(
       await findOwnDevcontainerConfig(tmp),
       `${tmp}/.devcontainer/devcontainer.json`,
@@ -73,86 +73,86 @@ Deno.test("findOwnDevcontainerConfig prefers .devcontainer/devcontainer.json ove
   });
 });
 
-Deno.test("substituteVars resolves ${containerWorkspaceFolder}", () => {
+Deno.test('substituteVars resolves ${containerWorkspaceFolder}', () => {
   assertEquals(
-    substituteVars("${containerWorkspaceFolder}/sub", "/workspaces/x"),
-    "/workspaces/x/sub",
+    substituteVars('${containerWorkspaceFolder}/sub', '/workspaces/x'),
+    '/workspaces/x/sub',
   );
 });
 
-Deno.test("substituteVars resolves ${localEnv:HOME}", () => {
-  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
+Deno.test('substituteVars resolves ${localEnv:HOME}', () => {
+  const home = Deno.env.get('HOME') ?? Deno.env.get('USERPROFILE') ?? '.';
   assertEquals(
-    substituteVars("${localEnv:HOME}/foo", "/workspaces/x"),
+    substituteVars('${localEnv:HOME}/foo', '/workspaces/x'),
     `${home}/foo`,
   );
 });
 
-Deno.test("substituteVars resolves an arbitrary ${localEnv:VAR}", () => {
-  const prev = Deno.env.get("SOME_VAR");
-  Deno.env.set("SOME_VAR", "/custom/path");
-  Deno.env.delete("UNSET_VAR");
+Deno.test('substituteVars resolves an arbitrary ${localEnv:VAR}', () => {
+  const prev = Deno.env.get('SOME_VAR');
+  Deno.env.set('SOME_VAR', '/custom/path');
+  Deno.env.delete('UNSET_VAR');
   try {
     assertEquals(
-      substituteVars("${localEnv:SOME_VAR}/foo", "/workspaces/x"),
-      "/custom/path/foo",
+      substituteVars('${localEnv:SOME_VAR}/foo', '/workspaces/x'),
+      '/custom/path/foo',
     );
     assertEquals(
-      substituteVars("${localEnv:UNSET_VAR}/foo", "/workspaces/x"),
-      "/foo",
+      substituteVars('${localEnv:UNSET_VAR}/foo', '/workspaces/x'),
+      '/foo',
     );
   } finally {
-    if (prev === undefined) Deno.env.delete("SOME_VAR");
-    else Deno.env.set("SOME_VAR", prev);
+    if (prev === undefined) Deno.env.delete('SOME_VAR');
+    else Deno.env.set('SOME_VAR', prev);
   }
 });
 
-Deno.test("substituteVars resolves both variables in one value", () => {
-  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
+Deno.test('substituteVars resolves both variables in one value', () => {
+  const home = Deno.env.get('HOME') ?? Deno.env.get('USERPROFILE') ?? '.';
   assertEquals(
     substituteVars(
-      "${localEnv:HOME}/data:${containerWorkspaceFolder}/data",
-      "/workspaces/x",
+      '${localEnv:HOME}/data:${containerWorkspaceFolder}/data',
+      '/workspaces/x',
     ),
     `${home}/data:/workspaces/x/data`,
   );
 });
 
-Deno.test("loadResolvedRemoteEnv returns remoteEnv from config with ${containerWorkspaceFolder} resolved", async () => {
+Deno.test('loadResolvedRemoteEnv returns remoteEnv from config with ${containerWorkspaceFolder} resolved', async () => {
   await withTempDir(async (tmp) => {
     await Deno.writeTextFile(
       `${tmp}/devcontainer.json`,
       JSON.stringify({
         remoteEnv: {
-          PROJECT_PATH: "${containerWorkspaceFolder}",
-          TZ: "America/Chicago",
+          PROJECT_PATH: '${containerWorkspaceFolder}',
+          TZ: 'America/Chicago',
         },
       }),
     );
     assertEquals(
       await loadResolvedRemoteEnv(
         `${tmp}/devcontainer.json`,
-        "/workspaces/myproject",
+        '/workspaces/myproject',
       ),
-      { PROJECT_PATH: "/workspaces/myproject", TZ: "America/Chicago" },
+      { PROJECT_PATH: '/workspaces/myproject', TZ: 'America/Chicago' },
     );
   });
 });
 
-Deno.test("loadResolvedRemoteEnv returns {} when config has no remoteEnv", async () => {
+Deno.test('loadResolvedRemoteEnv returns {} when config has no remoteEnv', async () => {
   await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(`${tmp}/devcontainer.json`, "{}");
+    await Deno.writeTextFile(`${tmp}/devcontainer.json`, '{}');
     assertEquals(
       await loadResolvedRemoteEnv(
         `${tmp}/devcontainer.json`,
-        "/workspaces/x",
+        '/workspaces/x',
       ),
       {},
     );
   });
 });
 
-Deno.test("loadResolvedRemoteEnv strips // line comments from config before parsing", async () => {
+Deno.test('loadResolvedRemoteEnv strips // line comments from config before parsing', async () => {
   await withTempDir(async (tmp) => {
     await Deno.writeTextFile(
       `${tmp}/devcontainer.json`,
@@ -164,16 +164,16 @@ Deno.test("loadResolvedRemoteEnv strips // line comments from config before pars
     assertEquals(
       await loadResolvedRemoteEnv(
         `${tmp}/devcontainer.json`,
-        "/workspaces/x",
+        '/workspaces/x',
       ),
-      { FOO: "bar" },
+      { FOO: 'bar' },
     );
   });
 });
 
 // A project's own devcontainer.json is hand-written, so the reader has to survive real JSONC
 // (not just whole-line `//`) and has to fail soft: losing env vars beats breaking `devc exec`.
-Deno.test("loadResolvedRemoteEnv parses trailing commas, block comments, and end-of-line comments", async () => {
+Deno.test('loadResolvedRemoteEnv parses trailing commas, block comments, and end-of-line comments', async () => {
   await withTempDir(async (tmp) => {
     await Deno.writeTextFile(
       `${tmp}/devcontainer.json`,
@@ -187,87 +187,87 @@ Deno.test("loadResolvedRemoteEnv parses trailing commas, block comments, and end
 }`,
     );
     assertEquals(
-      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, "/workspaces/x"),
-      { FOO: "bar", BAZ: "qux" },
+      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, '/workspaces/x'),
+      { FOO: 'bar', BAZ: 'qux' },
     );
   });
 });
 
-Deno.test("loadResolvedRemoteEnv returns {} for an unparseable config instead of throwing", async () => {
+Deno.test('loadResolvedRemoteEnv returns {} for an unparseable config instead of throwing', async () => {
   await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(`${tmp}/devcontainer.json`, "{ not json at all");
+    await Deno.writeTextFile(`${tmp}/devcontainer.json`, '{ not json at all');
     assertEquals(
-      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, "/workspaces/x"),
+      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, '/workspaces/x'),
       {},
     );
   });
 });
 
-Deno.test("loadResolvedRemoteEnv returns {} for a missing config instead of throwing", async () => {
+Deno.test('loadResolvedRemoteEnv returns {} for a missing config instead of throwing', async () => {
   await withTempDir(async (tmp) => {
     assertEquals(
-      await loadResolvedRemoteEnv(`${tmp}/nope.json`, "/workspaces/x"),
+      await loadResolvedRemoteEnv(`${tmp}/nope.json`, '/workspaces/x'),
       {},
     );
   });
 });
 
-Deno.test("loadResolvedRemoteEnv skips non-string remoteEnv values", async () => {
+Deno.test('loadResolvedRemoteEnv skips non-string remoteEnv values', async () => {
   await withTempDir(async (tmp) => {
     await Deno.writeTextFile(
       `${tmp}/devcontainer.json`,
-      JSON.stringify({ remoteEnv: { OK: "yes", N: 1, B: true, O: {} } }),
+      JSON.stringify({ remoteEnv: { OK: 'yes', N: 1, B: true, O: {} } }),
     );
     assertEquals(
-      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, "/workspaces/x"),
-      { OK: "yes" },
+      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, '/workspaces/x'),
+      { OK: 'yes' },
     );
   });
 });
 
-Deno.test("loadResolvedRemoteEnv resolves ${localWorkspaceFolder} and its basename when given the local folder", async () => {
+Deno.test('loadResolvedRemoteEnv resolves ${localWorkspaceFolder} and its basename when given the local folder', async () => {
   await withTempDir(async (tmp) => {
     await Deno.writeTextFile(
       `${tmp}/devcontainer.json`,
       JSON.stringify({
         remoteEnv: {
-          LOCAL: "${localWorkspaceFolder}",
-          BASE: "${localWorkspaceFolderBasename}",
+          LOCAL: '${localWorkspaceFolder}',
+          BASE: '${localWorkspaceFolderBasename}',
         },
       }),
     );
     assertEquals(
       await loadResolvedRemoteEnv(
         `${tmp}/devcontainer.json`,
-        "/workspaces/myproject",
-        "/home/me/src/myproject",
+        '/workspaces/myproject',
+        '/home/me/src/myproject',
       ),
-      { LOCAL: "/home/me/src/myproject", BASE: "myproject" },
+      { LOCAL: '/home/me/src/myproject', BASE: 'myproject' },
     );
   });
 });
 
 // `${localWorkspaceFolder}` is a prefix of `${localWorkspaceFolderBasename}`, so substituting
 // in the wrong order yields `/home/me/src/myprojectBasename}`.
-Deno.test("substituteVars substitutes the basename token before the folder token", () => {
+Deno.test('substituteVars substitutes the basename token before the folder token', () => {
   assertEquals(
     substituteVars(
-      "${localWorkspaceFolderBasename}:${localWorkspaceFolder}",
-      "/workspaces/x",
-      "/home/me/src/myproject",
+      '${localWorkspaceFolderBasename}:${localWorkspaceFolder}',
+      '/workspaces/x',
+      '/home/me/src/myproject',
     ),
-    "myproject:/home/me/src/myproject",
+    'myproject:/home/me/src/myproject',
   );
 });
 
-Deno.test("substituteVars leaves local-folder tokens alone when no local folder is given", () => {
+Deno.test('substituteVars leaves local-folder tokens alone when no local folder is given', () => {
   assertEquals(
-    substituteVars("${localWorkspaceFolder}/x", "/workspaces/x"),
-    "${localWorkspaceFolder}/x",
+    substituteVars('${localWorkspaceFolder}/x', '/workspaces/x'),
+    '${localWorkspaceFolder}/x',
   );
 });
 
-Deno.test("materializeDefaultConfig copies the embedded tree flat to cacheDir and returns the config path", async () => {
+Deno.test('materializeDefaultConfig copies the embedded tree flat to cacheDir and returns the config path', async () => {
   await withTempDir(async (cacheDir) => {
     const path = await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
     // Flat layout: zero-config uses no project `.devcontainer/`, so the cache holds the
@@ -276,13 +276,13 @@ Deno.test("materializeDefaultConfig copies the embedded tree flat to cacheDir an
 
     for (
       const file of [
-        "devcontainer.json",
-        "Dockerfile",
-        "post-create.sh",
-        "initialize-command.sh",
-        "scripts/agents-setup.sh",
-        "scripts/node-setup.sh",
-        "scripts/bashrc-additions.sh",
+        'devcontainer.json',
+        'Dockerfile',
+        'post-create.sh',
+        'initialize-command.sh',
+        'scripts/agents-setup.sh',
+        'scripts/node-setup.sh',
+        'scripts/bashrc-additions.sh',
       ]
     ) {
       assertEquals((await Deno.stat(`${cacheDir}/${file}`)).isFile, true);
@@ -290,7 +290,7 @@ Deno.test("materializeDefaultConfig copies the embedded tree flat to cacheDir an
   });
 });
 
-Deno.test("materialized (zero-config) devcontainer.json has no Feature and a top-level postCreateCommand", async () => {
+Deno.test('materialized (zero-config) devcontainer.json has no Feature and a top-level postCreateCommand', async () => {
   await withTempDir(async (cacheDir) => {
     await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
 
@@ -301,10 +301,10 @@ Deno.test("materialized (zero-config) devcontainer.json has no Feature and a top
       ),
     );
     // No local Feature reference (the baseline is delivered another way)...
-    assertEquals(Object.hasOwn(dc.features, "./features/devc"), false);
+    assertEquals(Object.hasOwn(dc.features, './features/devc'), false);
     // ...ghcr features kept...
     assertEquals(
-      Object.hasOwn(dc.features, "ghcr.io/devcontainers/features/node:1"),
+      Object.hasOwn(dc.features, 'ghcr.io/devcontainers/features/node:1'),
       true,
     );
     // ...and the baseline runtime runs via a top-level postCreateCommand, rewritten from the
@@ -316,22 +316,22 @@ Deno.test("materialized (zero-config) devcontainer.json has no Feature and a top
   });
 });
 
-Deno.test("canonical default devcontainer.json has no Feature and a project-relative postCreateCommand", async () => {
+Deno.test('canonical default devcontainer.json has no Feature and a project-relative postCreateCommand', async () => {
   // The embedded source is what `devc config` writes into a project: it references the copies
   // in the project's own .devcontainer/, so edits apply on recreate. (The zero-config cache
   // rewrites this to the baked path — see the materialize test above.)
   const text = await Deno.readTextFile(
-    new URL("../default/devcontainer.json", import.meta.url),
+    new URL('../default/devcontainer.json', import.meta.url),
   );
   const dc = JSON.parse(stripLineComments(text));
-  assertEquals(Object.hasOwn(dc.features, "./features/devc"), false);
+  assertEquals(Object.hasOwn(dc.features, './features/devc'), false);
   assertEquals(
     dc.postCreateCommand,
     'bash "${containerWorkspaceFolder}/.devcontainer/post-create.sh"',
   );
 });
 
-Deno.test("materializeDefaultConfig overwrites an existing copy without erroring", async () => {
+Deno.test('materializeDefaultConfig overwrites an existing copy without erroring', async () => {
   await withTempDir(async (cacheDir) => {
     await Deno.mkdir(cacheDir, { recursive: true });
     await Deno.writeTextFile(
@@ -342,26 +342,26 @@ Deno.test("materializeDefaultConfig overwrites an existing copy without erroring
     const second = await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
     assertEquals(first, second);
     const contents = await Deno.readTextFile(`${cacheDir}/devcontainer.json`);
-    assertEquals(contents.includes("STALE"), false);
+    assertEquals(contents.includes('STALE'), false);
   });
 });
 
-Deno.test("materializeDefaultConfig writes the embedded tree to real disk (default cache dir)", async () => {
+Deno.test('materializeDefaultConfig writes the embedded tree to real disk (default cache dir)', async () => {
   const path = await materializeDefaultConfig();
-  assertEquals(path.endsWith("/devcontainer.json"), true);
+  assertEquals(path.endsWith('/devcontainer.json'), true);
 
   const stat = await Deno.stat(path);
   assertEquals(stat.isFile, true);
 
-  const dir = path.slice(0, -"/devcontainer.json".length);
+  const dir = path.slice(0, -'/devcontainer.json'.length);
   for (
     const sibling of [
-      "Dockerfile",
-      "post-create.sh",
-      "initialize-command.sh",
-      "scripts/agents-setup.sh",
-      "scripts/node-setup.sh",
-      "scripts/bashrc-additions.sh",
+      'Dockerfile',
+      'post-create.sh',
+      'initialize-command.sh',
+      'scripts/agents-setup.sh',
+      'scripts/node-setup.sh',
+      'scripts/bashrc-additions.sh',
     ]
   ) {
     const siblingStat = await Deno.stat(`${dir}/${sibling}`);
@@ -369,7 +369,7 @@ Deno.test("materializeDefaultConfig writes the embedded tree to real disk (defau
   }
 });
 
-Deno.test("materializeDefaultConfig rewrites the initializeCommand host path to the cache copy", async () => {
+Deno.test('materializeDefaultConfig rewrites the initializeCommand host path to the cache copy', async () => {
   await withTempDir(async (tmp) => {
     const cacheDir = `${tmp}/cache`;
     const configPath = await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
@@ -393,7 +393,7 @@ Deno.test("materializeDefaultConfig rewrites the initializeCommand host path to 
 // ── user template layer ─────────────────────────────────────────────────────────────────────
 
 /** Sorted relative paths of every file under `dir`. */
-async function fileTree(dir: string, prefix = ""): Promise<string[]> {
+async function fileTree(dir: string, prefix = ''): Promise<string[]> {
   const out: string[] = [];
   for await (const entry of Deno.readDir(dir)) {
     const rel = `${prefix}${entry.name}`;
@@ -405,18 +405,18 @@ async function fileTree(dir: string, prefix = ""): Promise<string[]> {
 }
 
 /** The embedded `default/` tree as a real path, for byte-comparison against a cache dir. */
-const BUNDLED_DIR = fromFileUrl(new URL("../default", import.meta.url));
+const BUNDLED_DIR = fromFileUrl(new URL('../default', import.meta.url));
 
 /** The two path rewrites `materializeDefaultConfig` applies, for a given cache dir. */
 function withRewrites(configText: string, cacheDir: string): string {
   return configText
     .replaceAll(
-      "${localWorkspaceFolder}/.devcontainer/initialize-command.sh",
+      '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
       `${cacheDir}/initialize-command.sh`,
     )
     .replaceAll(
-      "${containerWorkspaceFolder}/.devcontainer/post-create.sh",
-      "/usr/local/share/devc/post-create.sh",
+      '${containerWorkspaceFolder}/.devcontainer/post-create.sh',
+      '/usr/local/share/devc/post-create.sh',
     );
 }
 
@@ -438,13 +438,13 @@ async function assertBundledExcept(
     const bundled = await Deno.readTextFile(`${BUNDLED_DIR}/${rel}`);
     assertEquals(
       actual,
-      rel === "devcontainer.json" ? withRewrites(bundled, cacheDir) : bundled,
+      rel === 'devcontainer.json' ? withRewrites(bundled, cacheDir) : bundled,
       rel,
     );
   }
 }
 
-Deno.test("materializeDefaultConfig with no templates dir yields the bundled tree plus the two rewrites", async () => {
+Deno.test('materializeDefaultConfig with no templates dir yields the bundled tree plus the two rewrites', async () => {
   await withTempDir(async (tmp) => {
     // An absent templates dir is a silent no-op, not an error — whether its parent exists or not.
     await materializeDefaultConfig(`${tmp}/a`, NO_TEMPLATES);
@@ -454,32 +454,32 @@ Deno.test("materializeDefaultConfig with no templates dir yields the bundled tre
   });
 });
 
-Deno.test("a templates dir holding only a Dockerfile overrides that file and nothing else", async () => {
+Deno.test('a templates dir holding only a Dockerfile overrides that file and nothing else', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await mkdir(templates);
-    await Deno.writeTextFile(`${templates}/Dockerfile`, "FROM scratch\n");
+    await Deno.writeTextFile(`${templates}/Dockerfile`, 'FROM scratch\n');
 
     const cacheDir = `${tmp}/cache`;
     await materializeDefaultConfig(cacheDir, templates);
 
     // Sparse overlay: the file list is identical, only the one file's contents changed.
-    await assertBundledExcept(cacheDir, { Dockerfile: "FROM scratch\n" });
+    await assertBundledExcept(cacheDir, { Dockerfile: 'FROM scratch\n' });
   });
 });
 
-Deno.test("a templates subdirectory file overrides the bundled one in place", async () => {
+Deno.test('a templates subdirectory file overrides the bundled one in place', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await mkdir(`${templates}/scripts`);
-    await Deno.writeTextFile(`${templates}/scripts/node-setup.sh`, "# mine\n");
+    await Deno.writeTextFile(`${templates}/scripts/node-setup.sh`, '# mine\n');
 
     const cacheDir = `${tmp}/cache`;
     await materializeDefaultConfig(cacheDir, templates);
 
     assertEquals(
       await Deno.readTextFile(`${cacheDir}/scripts/node-setup.sh`),
-      "# mine\n",
+      '# mine\n',
     );
     // Its siblings in the same subdirectory came from the bundle.
     assertEquals(
@@ -492,14 +492,14 @@ Deno.test("a templates subdirectory file overrides the bundled one in place", as
 // The two path rewrites have to run *after* the overlay, or a user template that keeps the
 // standard in-project references would resolve to a `.devcontainer/` that does not exist in the
 // zero-config path.
-Deno.test("a templates devcontainer.json still receives the initializeCommand/postCreateCommand rewrites", async () => {
+Deno.test('a templates devcontainer.json still receives the initializeCommand/postCreateCommand rewrites', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await mkdir(templates);
     await Deno.writeTextFile(
       `${templates}/devcontainer.json`,
       JSON.stringify({
-        name: "mine",
+        name: 'mine',
         initializeCommand:
           'bash "${localWorkspaceFolder}/.devcontainer/initialize-command.sh"',
         postCreateCommand:
@@ -511,7 +511,7 @@ Deno.test("a templates devcontainer.json still receives the initializeCommand/po
     const configPath = await materializeDefaultConfig(cacheDir, templates);
     const config = JSON.parse(await Deno.readTextFile(configPath));
 
-    assertEquals(config.name, "mine");
+    assertEquals(config.name, 'mine');
     assertEquals(
       config.initializeCommand,
       `bash "${cacheDir}/initialize-command.sh"`,
@@ -523,20 +523,20 @@ Deno.test("a templates devcontainer.json still receives the initializeCommand/po
   });
 });
 
-Deno.test("removing a file from the templates dir restores the bundled version", async () => {
+Deno.test('removing a file from the templates dir restores the bundled version', async () => {
   await withTempDir(async (tmp) => {
     const bundledDockerfile = await Deno.readTextFile(
-      new URL("../default/Dockerfile", import.meta.url),
+      new URL('../default/Dockerfile', import.meta.url),
     );
     const templates = `${tmp}/templates`;
     await mkdir(templates);
-    await Deno.writeTextFile(`${templates}/Dockerfile`, "FROM scratch\n");
+    await Deno.writeTextFile(`${templates}/Dockerfile`, 'FROM scratch\n');
 
     const cacheDir = `${tmp}/cache`;
     await materializeDefaultConfig(cacheDir, templates);
     assertEquals(
       await Deno.readTextFile(`${cacheDir}/Dockerfile`),
-      "FROM scratch\n",
+      'FROM scratch\n',
     );
 
     // The overlay is re-applied every run, so a deletion takes effect on the next call.
@@ -549,27 +549,27 @@ Deno.test("removing a file from the templates dir restores the bundled version",
   });
 });
 
-Deno.test("a file in a previous cache but in neither bundled nor templates is pruned", async () => {
+Deno.test('a file in a previous cache but in neither bundled nor templates is pruned', async () => {
   await withTempDir(async (tmp) => {
     const cacheDir = `${tmp}/cache`;
     await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
     await Deno.writeTextFile(
       `${cacheDir}/leftover.sh`,
-      "# from an older devc\n",
+      '# from an older devc\n',
     );
     await mkdir(`${cacheDir}/stale`);
-    await Deno.writeTextFile(`${cacheDir}/stale/x.sh`, "# also stale\n");
+    await Deno.writeTextFile(`${cacheDir}/stale/x.sh`, '# also stale\n');
 
     await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
 
     const tree = await fileTree(cacheDir);
-    assertEquals(tree.includes("leftover.sh"), false);
-    assertEquals(tree.includes("stale/x.sh"), false);
-    assertEquals(tree.includes("devcontainer.json"), true);
+    assertEquals(tree.includes('leftover.sh'), false);
+    assertEquals(tree.includes('stale/x.sh'), false);
+    assertEquals(tree.includes('devcontainer.json'), true);
   });
 });
 
-Deno.test("loadBundledDevcontainerJson prefers a templates devcontainer.json", async () => {
+Deno.test('loadBundledDevcontainerJson prefers a templates devcontainer.json', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await mkdir(templates);
@@ -584,38 +584,38 @@ Deno.test("loadBundledDevcontainerJson prefers a templates devcontainer.json", a
   });
 });
 
-Deno.test("loadBundledDevcontainerJson falls back to the embedded config when the template is absent", async () => {
+Deno.test('loadBundledDevcontainerJson falls back to the embedded config when the template is absent', async () => {
   assertEquals(
     await loadBundledDevcontainerJson(NO_TEMPLATES),
     await Deno.readTextFile(
-      new URL("../default/devcontainer.json", import.meta.url),
+      new URL('../default/devcontainer.json', import.meta.url),
     ),
   );
 });
 
 // `copyBundledAssets` skips `devcontainer.json` in both layers — the wizard writes that itself
 // (fenced), via `loadBundledDevcontainerJson`, which applies the template separately.
-Deno.test("installBundledAssets overlays templates but never writes devcontainer.json", async () => {
+Deno.test('installBundledAssets overlays templates but never writes devcontainer.json', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await mkdir(templates);
-    await Deno.writeTextFile(`${templates}/Dockerfile`, "FROM scratch\n");
+    await Deno.writeTextFile(`${templates}/Dockerfile`, 'FROM scratch\n');
     await Deno.writeTextFile(
       `${templates}/devcontainer.json`,
       '{"name":"mine"}',
     );
-    await Deno.writeTextFile(`${templates}/extra.txt`, "brought along\n");
+    await Deno.writeTextFile(`${templates}/extra.txt`, 'brought along\n');
 
     const dest = `${tmp}/.devcontainer`;
     await installBundledAssets(dest, templates);
 
     assertEquals(
       await Deno.readTextFile(`${dest}/Dockerfile`),
-      "FROM scratch\n",
+      'FROM scratch\n',
     );
     assertEquals(
       await Deno.readTextFile(`${dest}/extra.txt`),
-      "brought along\n",
+      'brought along\n',
     );
     assertEquals(
       await Deno.stat(`${dest}/devcontainer.json`).then(() => true).catch(() =>
@@ -631,7 +631,7 @@ Deno.test("installBundledAssets overlays templates but never writes devcontainer
   });
 });
 
-Deno.test("ensureClaudeSeedDir creates the directory and reports it", async () => {
+Deno.test('ensureClaudeSeedDir creates the directory and reports it', async () => {
   await withTempDir(async (tmp) => {
     const seed = `${tmp}/seed`;
     const result = await ensureClaudeSeedDir(seed, `${tmp}/claude`);
@@ -641,7 +641,7 @@ Deno.test("ensureClaudeSeedDir creates the directory and reports it", async () =
   });
 });
 
-Deno.test("ensureClaudeSeedDir is idempotent on an existing directory", async () => {
+Deno.test('ensureClaudeSeedDir is idempotent on an existing directory', async () => {
   await withTempDir(async (tmp) => {
     const seed = `${tmp}/seed`;
     await ensureClaudeSeedDir(seed, `${tmp}/claude`);
@@ -651,13 +651,13 @@ Deno.test("ensureClaudeSeedDir is idempotent on an existing directory", async ()
   });
 });
 
-Deno.test("ensureClaudeSeedDir migrates the three ~/.claude files on first creation", async () => {
+Deno.test('ensureClaudeSeedDir migrates the three ~/.claude files on first creation', async () => {
   await withTempDir(async (tmp) => {
     const claude = `${tmp}/claude`;
     await mkdir(claude);
-    await Deno.writeTextFile(`${claude}/CLAUDE.md`, "# instructions\n");
+    await Deno.writeTextFile(`${claude}/CLAUDE.md`, '# instructions\n');
     await Deno.writeTextFile(`${claude}/settings.devc.json`, '{"a":1}\n');
-    await Deno.writeTextFile(`${claude}/statusline.sh`, "#!/bin/sh\necho hi\n");
+    await Deno.writeTextFile(`${claude}/statusline.sh`, '#!/bin/sh\necho hi\n');
     await Deno.chmod(`${claude}/statusline.sh`, 0o755);
     // Not in the migration list — a directory must not come along.
     await mkdir(`${claude}/skills`);
@@ -667,15 +667,15 @@ Deno.test("ensureClaudeSeedDir migrates the three ~/.claude files on first creat
 
     assertEquals(result.created, true);
     assertEquals(result.migrated, [
-      "CLAUDE.md",
-      "settings.json",
-      "statusline.sh",
+      'CLAUDE.md',
+      'settings.json',
+      'statusline.sh',
     ]);
     // settings.devc.json is renamed; the .devc suffix is no longer needed.
     assertEquals(await Deno.readTextFile(`${seed}/settings.json`), '{"a":1}\n');
     assertEquals(
       await Deno.readTextFile(`${seed}/CLAUDE.md`),
-      "# instructions\n",
+      '# instructions\n',
     );
     assertEquals(
       await Deno.stat(`${seed}/settings.devc.json`).then(() => true).catch(
@@ -697,11 +697,11 @@ Deno.test("ensureClaudeSeedDir migrates the three ~/.claude files on first creat
   });
 });
 
-Deno.test("ensureClaudeSeedDir skips migration when the seed directory already exists", async () => {
+Deno.test('ensureClaudeSeedDir skips migration when the seed directory already exists', async () => {
   await withTempDir(async (tmp) => {
     const claude = `${tmp}/claude`;
     await mkdir(claude);
-    await Deno.writeTextFile(`${claude}/CLAUDE.md`, "# instructions\n");
+    await Deno.writeTextFile(`${claude}/CLAUDE.md`, '# instructions\n');
     const seed = `${tmp}/seed`;
     await mkdir(seed);
 
@@ -717,19 +717,19 @@ Deno.test("ensureClaudeSeedDir skips migration when the seed directory already e
   });
 });
 
-Deno.test("ensureClaudeSeedDir rejects a seed path that is not a directory", async () => {
+Deno.test('ensureClaudeSeedDir rejects a seed path that is not a directory', async () => {
   await withTempDir(async (tmp) => {
     const seed = `${tmp}/seed`;
-    await Deno.writeTextFile(seed, "oops\n");
+    await Deno.writeTextFile(seed, 'oops\n');
     await assertRejects(
       () => ensureClaudeSeedDir(seed, `${tmp}/claude`),
       Error,
-      "is not a directory",
+      'is not a directory',
     );
   });
 });
 
-Deno.test("ensureClaudeSeedDir rejects a dangling symlink at the seed path", async () => {
+Deno.test('ensureClaudeSeedDir rejects a dangling symlink at the seed path', async () => {
   await withTempDir(async (tmp) => {
     const seed = `${tmp}/seed`;
     // Recursive mkdir reports AlreadyExists here rather than following through, so the
@@ -738,7 +738,7 @@ Deno.test("ensureClaudeSeedDir rejects a dangling symlink at the seed path", asy
     await assertRejects(
       () => ensureClaudeSeedDir(seed, `${tmp}/claude`),
       Error,
-      "is not a directory",
+      'is not a directory',
     );
   });
 });

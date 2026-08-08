@@ -3,12 +3,14 @@
 
 /** Read a hand-written JSONC fixture. */
 export async function fixture(name: string): Promise<string> {
-  return await Deno.readTextFile(new URL(`./fixtures/${name}`, import.meta.url));
+  return await Deno.readTextFile(
+    new URL(`./fixtures/${name}`, import.meta.url),
+  );
 }
 
 /** Run `fn` with a fresh temp dir, removing it afterwards no matter what. */
 export async function withTemp<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await Deno.makeTempDir({ prefix: "devc-test-" });
+  const dir = await Deno.makeTempDir({ prefix: 'devc-test-' });
   try {
     return await fn(await Deno.realPath(dir));
   } finally {

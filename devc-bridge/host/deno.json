@@ -4,6 +4,14 @@
     "build": "deno desktop --output DevcBridge.app --include commands --icon ../icons/app.png --allow-read --allow-write --allow-run --allow-env --allow-net main.ts",
     "serve": "deno run --allow-read --allow-write --allow-run --allow-env --allow-net serve.ts"
   },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 80,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": true,
+    "proseWrap": "preserve"
+  },
   "imports": {
     "jsr:@std/path": "jsr:@std/path@^1"
   }

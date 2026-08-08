@@ -315,17 +315,17 @@ so add it by hand to pick up the user layer:
 tree and `.git` are host bind mounts. `scripts/git-setup.sh` (run by
 `post-create.sh`) re-applies the user-scope settings git needs each create:
 
-- **Your identity.** `initialize-command.sh` extracts `user.name` /
-  `user.email` from the host into
-  `~/.config/devc/gitconfig-identity`, which binds in read-only and is picked up
-  via `include.path`. Only those two keys cross the boundary — binding the whole
-  host `~/.gitconfig` would drag in host-absolute paths, credential helpers and
-  signing config that do not work in here. A host with no identity configured is
-  a warning at create time, not a failure.
+- **Your identity.** `initialize-command.sh` extracts `user.name` / `user.email`
+  from the host into `~/.config/devc/gitconfig-identity`, which binds in
+  read-only and is picked up via `include.path`. Only those two keys cross the
+  boundary — binding the whole host `~/.gitconfig` would drag in host-absolute
+  paths, credential helpers and signing config that do not work in here. A host
+  with no identity configured is a warning at create time, not a failure.
 - **LFS filters,** because the `git-lfs` feature installs them as root, where
   the `remoteUser` never sees them; without them every LFS asset shows as
   modified. Installed with `--skip-smudge`, so **LFS objects are not
-  materialized on checkout** — run `git lfs pull`, or `git lfs checkout --
+  materialized on checkout** — run `git lfs pull`, or
+  `git lfs checkout --
   <path>`, when you need the real bytes.
 - **`worktree.useRelativePaths`,** so a `git worktree add` run in here does not
   write container-absolute paths into a `.git` the host also reads.

@@ -121,7 +121,9 @@ export function initialState(
   pinned: PinnedEntry | null = null,
 ): PickerState {
   const normalizedRoots = roots === null ? null : roots.map((r) => resolve(r));
-  const pin = pinned === null ? null : { ...pinned, path: resolve(pinned.path) };
+  const pin = pinned === null
+    ? null
+    : { ...pinned, path: resolve(pinned.path) };
   // A single configured root needs no synthetic "roots" list — open straight inside it.
   const singleRoot = normalizedRoots !== null && normalizedRoots.length === 1;
   return {
@@ -524,9 +526,9 @@ export function render(state: PickerState, size: Size): string[] {
     const cursorRow = rows.findIndex((r) => r.selIndex === state.selCursor);
     const first = picksActive
       ? Math.max(
-          0,
-          Math.min(cursorRow - Math.floor(shown / 2), rows.length - shown),
-        )
+        0,
+        Math.min(cursorRow - Math.floor(shown / 2), rows.length - shown),
+      )
       : 0;
     rows.slice(first, first + shown).forEach((row, i) => {
       out.push(
@@ -562,8 +564,8 @@ export function render(state: PickerState, size: Size): string[] {
     const empty = atRoots
       ? '(no roots configured)'
       : state.entries.length === 0
-        ? '(no subfolders)'
-        : '(no matches)';
+      ? '(no subfolders)'
+      : '(no matches)';
     out.push('  ' + DIM(empty, color));
   }
   const first = Math.max(
@@ -579,14 +581,14 @@ export function render(state: PickerState, size: Size): string[] {
     const note = abs === null
       ? undefined
       : abs === pinned?.path
-        ? pinned.note
-        : state.derived.find((d) => d.path === abs)?.note;
+      ? pinned.note
+      : state.derived.find((d) => d.path === abs)?.note;
     // `◎` is `◉` with a hollow centre — on, but not by you, and not yours to change.
     const mark = note !== undefined
       ? '◎'
       : state.selected.includes(abs ?? '')
-        ? '◉'
-        : '◯';
+      ? '◉'
+      : '◯';
     const body = atRoots ? `  ${foldHome(name)}/` : `${mark} ${name}/`;
     let suffix: string | undefined;
     if (note !== undefined) {
@@ -595,8 +597,8 @@ export function render(state: PickerState, size: Size): string[] {
     } else if (!atRoots) {
       const flag = state.flags.get(name);
       if (flag?.worktree && !flag.valid) {
-        suffix =
-          '  ⚠ primary not mounted' + (flag.reason ? ` (${flag.reason})` : '');
+        suffix = '  ⚠ primary not mounted' +
+          (flag.reason ? ` (${flag.reason})` : '');
       }
     }
     out.push(listRow(body, { cursor: isCursor, color, suffix }));
@@ -613,13 +615,13 @@ export function render(state: PickerState, size: Size): string[] {
   const up = dirname(state.cwd) !== state.cwd
     ? '← up · '
     : state.roots !== null && state.roots.length > 0
-      ? '← roots · '
-      : '';
+    ? '← roots · '
+    : '';
   const legend = picksActive
     ? ' space remove · ↓ back to browse · ⏎ done · esc cancel'
     : atRoots
-      ? ` → open · ${intoPicks}⏎ done · esc cancel`
-      : ` space pick · → open · ${up}${intoPicks}⏎ done · esc cancel`;
+    ? ` → open · ${intoPicks}⏎ done · esc cancel`
+    : ` space pick · → open · ${up}${intoPicks}⏎ done · esc cancel`;
   out.push(DIM(legend, color));
   return out.slice(0, size.rows);
 }
@@ -701,8 +703,7 @@ export async function pickFolders(
   const raw = deps.raw ?? false;
   const readDir = deps.readDir ?? listDirs;
   if (raw) {
-    const isTerminal =
-      deps.isTerminal ??
+    const isTerminal = deps.isTerminal ??
       (() => Deno.stdin.isTerminal() && Deno.stdout.isTerminal());
     if (!isTerminal()) {
       deps.err?.(NOT_A_TERMINAL);

@@ -1,8 +1,8 @@
 # devc-bridge
 
-A tiny bridge that lets a **devcontainer** invoke allowlisted commands on the **host**
-— so, for example, Claude Code hooks running inside a container can `caffeinate` the
-host Mac while a session is active.
+A tiny bridge that lets a **devcontainer** invoke allowlisted commands on the
+**host** — so, for example, Claude Code hooks running inside a container can
+`caffeinate` the host Mac while a session is active.
 
 A Deno Desktop menu-bar icon (Deno 2.9+ `Deno.Tray`) shows whether anything is
 currently active (e.g. the Mac is being kept awake) vs. idle.
@@ -22,30 +22,32 @@ devc-bridge start   (background menu-bar app)
 
 ### Why TCP and not a bind-mounted unix socket?
 
-A bind-mounted AF_UNIX socket **does not cross the Docker Desktop VM boundary**: the
-container sees the socket inode but `connect()` is refused, because a unix socket needs
-both endpoints in the same kernel and the mount only shares the inode. So the server
-listens on host loopback TCP, and the container reaches it via `host.docker.internal`.
-A **shared token** — written by the server into the bind-mounted run dir (regular files
-*do* cross the mount) and read by the client — authorizes requests, so the loopback
-port isn't open to every process on the box. (On OrbStack, unix-over-mount reportedly
-works; we target Docker Desktop.)
+A bind-mounted AF_UNIX socket **does not cross the Docker Desktop VM boundary**:
+the container sees the socket inode but `connect()` is refused, because a unix
+socket needs both endpoints in the same kernel and the mount only shares the
+inode. So the server listens on host loopback TCP, and the container reaches it
+via `host.docker.internal`. A **shared token** — written by the server into the
+bind-mounted run dir (regular files _do_ cross the mount) and read by the client
+— authorizes requests, so the loopback port isn't open to every process on the
+box. (On OrbStack, unix-over-mount reportedly works; we target Docker Desktop.)
 
 ## How it works
 
-- **Server** (`devc-bridge`, a single `deno desktop` binary built from `host/main.ts`)
-  listens on loopback TCP and watches a state directory. `devc-bridge start` launches it
-  **in the background**; `stop`/`status`/`restart` manage it. It runs as a
-  **menu-bar-only accessory app** — no dock icon and no window. `host/tray.ts` holds the
-  tray, `host/core.ts` all the transport/dispatch logic (which also runs headless via
-  `host/serve.ts`), and `host/config.ts` resolves paths + seeds the command scripts on
-  first start.
-- **Client** (`client/devc-bridge.ts`, compiled to `devc-bridge`) runs in the container,
-  reads the token, sends one JSON request, prints the script's output, and exits with
-  its exit code.
-- **Commands** are executable files in `~/.config/devc-bridge/commands/` (seeded from
-  `host/commands/`). **The filename is the allowlist** — the container can only invoke
-  names that exist there, and it cannot read or edit the scripts (they are not mounted).
+- **Server** (`devc-bridge`, a single `deno desktop` binary built from
+  `host/main.ts`) listens on loopback TCP and watches a state directory.
+  `devc-bridge start` launches it **in the background**;
+  `stop`/`status`/`restart` manage it. It runs as a **menu-bar-only accessory
+  app** — no dock icon and no window. `host/tray.ts` holds the tray,
+  `host/core.ts` all the transport/dispatch logic (which also runs headless via
+  `host/serve.ts`), and `host/config.ts` resolves paths + seeds the command
+  scripts on first start.
+- **Client** (`client/devc-bridge.ts`, compiled to `devc-bridge`) runs in the
+  container, reads the token, sends one JSON request, prints the script's
+  output, and exits with its exit code.
+- **Commands** are executable files in `~/.config/devc-bridge/commands/` (seeded
+  from `host/commands/`). **The filename is the allowlist** — the container can
+  only invoke names that exist there, and it cannot read or edit the scripts
+  (they are not mounted).
 
 Protocol (newline-delimited JSON):
 
@@ -56,27 +58,29 @@ Protocol (newline-delimited JSON):
 ← {"ok":false,"error":"unauthorized"}
 ```
 
-Testing steps (in-container §A + host §B) live in [`docs/testing.md`](docs/testing.md).
+Testing steps (in-container §A + host §B) live in
+[`docs/testing.md`](docs/testing.md).
 
 ## Security / trust boundary
 
 ⚠️ This is a **deliberate hole in container isolation**. Anything running in the
-container can invoke any script in `host/commands/`, which runs on the host with your
-user's privileges. Treat those scripts as the security surface: keep them few, simple,
-and reviewed. Injection is not a concern for *arguments* — they are passed as `argv`,
-never interpolated into a shell — but a malicious or buggy script is still a malicious
-or buggy script running on your host.
+container can invoke any script in `host/commands/`, which runs on the host with
+your user's privileges. Treat those scripts as the security surface: keep them
+few, simple, and reviewed. Injection is not a concern for _arguments_ — they are
+passed as `argv`, never interpolated into a shell — but a malicious or buggy
+script is still a malicious or buggy script running on your host.
 
 The bridge listens on host **loopback** TCP and requires a **token** (written to
-`~/.config/devc-bridge/run/token`, shared with the container via the bind mount). This keeps
-other containers that never mounted the run dir from invoking commands, but anything
-that can read that token file — i.e. anything with access to your home dir — can. It is
-a convenience boundary for a single-user machine, not a hardened multi-tenant control.
+`~/.config/devc-bridge/run/token`, shared with the container via the bind
+mount). This keeps other containers that never mounted the run dir from invoking
+commands, but anything that can read that token file — i.e. anything with access
+to your home dir — can. It is a convenience boundary for a single-user machine,
+not a hardened multi-tenant control.
 
 ## Setup (macOS host)
 
-Build the `devc-bridge` binary once (requires Deno 2.9+), then it is self-contained — no
-config dir or command files to create by hand.
+Build the `devc-bridge` binary once (requires Deno 2.9+), then it is
+self-contained — no config dir or command files to create by hand.
 
 ```sh
 # 1. Build the host tool and put it on PATH (Deno 2.9+ needed only for this step).
@@ -100,30 +104,34 @@ devc-bridge stop       # stop the background tray
 devc-bridge restart
 ```
 
-To skip the build entirely, source the repo's shell integration instead — it defines a
-`devc-bridge` function that runs `host/main.ts` from source via Deno:
+To skip the build entirely, source the repo's shell integration instead — it
+defines a `devc-bridge` function that runs `host/main.ts` from source via Deno:
 
 ```sh
 source /path/to/devc-tools/scripts/bash_aliases.sh   # add this to ~/.bashrc
 ```
 
-(`start` still builds the tray `.app` bundle itself, since a menu-bar app must be launched
-via LaunchServices; Deno caches that compile.)
+(`start` still builds the tray `.app` bundle itself, since a menu-bar app must
+be launched via LaunchServices; Deno caches that compile.)
 
-Command scripts are seeded to `~/.config/devc-bridge/commands/` on first start and are
-**yours to edit** — later starts never overwrite them. To pick up new example scripts from
-a rebuilt binary, add them there yourself (or delete the ones you want re-seeded). During
-development you can also run the tray in the foreground with `deno task dev`.
+Command scripts are seeded to `~/.config/devc-bridge/commands/` on first start
+and are **yours to edit** — later starts never overwrite them. To pick up new
+example scripts from a rebuilt binary, add them there yourself (or delete the
+ones you want re-seeded). During development you can also run the tray in the
+foreground with `deno task dev`.
 
-Container wiring lives in the repo-root `.devc/` dir for this repo's devcontainer tool:
-`.devc/devc.json` adds the run-dir bind mount and sets `DEVC_BRIDGE_ADDR` /
-`DEVC_BRIDGE_TOKEN_FILE`, and `.devc/devc-postcreate.sh` builds/installs the container-side
-`devc-bridge` binary. If you use plain Dev Containers instead, put the equivalent `mounts`
-+ `containerEnv` + `postCreateCommand` in `.devcontainer/devcontainer.json`.
+Container wiring lives in the repo-root `.devc/` dir for this repo's
+devcontainer tool: `.devc/devc.json` adds the run-dir bind mount and sets
+`DEVC_BRIDGE_ADDR` / `DEVC_BRIDGE_TOKEN_FILE`, and `.devc/devc-postcreate.sh`
+builds/installs the container-side `devc-bridge` binary. If you use plain Dev
+Containers instead, put the equivalent `mounts`
+
+- `containerEnv` + `postCreateCommand` in `.devcontainer/devcontainer.json`.
 
 Port and bind host are configurable via `DEVC_BRIDGE_PORT` (default `48227`) and
-`DEVC_BRIDGE_HOST` (default `127.0.0.1`); if `host.docker.internal` can't reach loopback
-in your setup, set `DEVC_BRIDGE_HOST=0.0.0.0` (the token still guards access).
+`DEVC_BRIDGE_HOST` (default `127.0.0.1`); if `host.docker.internal` can't reach
+loopback in your setup, set `DEVC_BRIDGE_HOST=0.0.0.0` (the token still guards
+access).
 
 Then, from inside the container:
 
@@ -141,10 +149,18 @@ Have hooks call the client. Example `settings.json` (adjust events to taste):
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "devc-bridge caffeinate start" }] }
+      {
+        "hooks": [
+          { "type": "command", "command": "devc-bridge caffeinate start" }
+        ]
+      }
     ],
     "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "devc-bridge caffeinate stop" }] }
+      {
+        "hooks": [
+          { "type": "command", "command": "devc-bridge caffeinate stop" }
+        ]
+      }
     ]
   }
 }
@@ -152,45 +168,47 @@ Have hooks call the client. Example `settings.json` (adjust events to taste):
 
 ## Writing a command
 
-Drop an executable script in `host/commands/`. Its filename becomes the command name.
-For anything long-running that the tray should reflect, create a marker file in
-`$DEVC_BRIDGE_STATE` while active and remove it when done — see `host/commands/caffeinate`
-and `host/commands/toggle` for the pattern.
+Drop an executable script in `host/commands/`. Its filename becomes the command
+name. For anything long-running that the tray should reflect, create a marker
+file in `$DEVC_BRIDGE_STATE` while active and remove it when done — see
+`host/commands/caffeinate` and `host/commands/toggle` for the pattern.
 
 ### Backgrounding a long-running process
 
-A command should **return promptly** — the client blocks until it does. If you start a
-long-running process, **detach its stdio** or the call hangs: the bridge reads the
-script's output until EOF, and a backgrounded child inherits (and holds open) those
-pipes for its entire life, so `output()` never sees EOF until the child exits.
+A command should **return promptly** — the client blocks until it does. If you
+start a long-running process, **detach its stdio** or the call hangs: the bridge
+reads the script's output until EOF, and a backgrounded child inherits (and
+holds open) those pipes for its entire life, so `output()` never sees EOF until
+the child exits.
 
 ```bash
 caffeinate -dimsu </dev/null >/dev/null 2>&1 &   # detached — script returns now
 caffeinate -dimsu &                              # WRONG — client hangs until caffeinate dies
 ```
 
-Record its PID (e.g. in a `$DEVC_BRIDGE_STATE` marker) so a later `stop` can kill it.
+Record its PID (e.g. in a `$DEVC_BRIDGE_STATE` marker) so a later `stop` can
+kill it.
 
 ### The script's contract
 
 The bridge guarantees a command script exactly two things:
 
-1. **Args arrive as separate `argv` elements** — properly delimited, never re-parsed by
-   a shell. No injection, no word-splitting surprises.
-2. **The program that ran is one the host put in `commands/`** — the container cannot
-   substitute a different binary.
+1. **Args arrive as separate `argv` elements** — properly delimited, never
+   re-parsed by a shell. No injection, no word-splitting surprises.
+2. **The program that ran is one the host put in `commands/`** — the container
+   cannot substitute a different binary.
 
-Everything past that is the script's responsibility. From the script's point of view,
-`"$@"` is **untrusted and arbitrary**: any count, any values, any order, values that may
-look like flags. Escaping is handled *for* the script; **meaning is not**. The script is
-the only layer that understands its command's semantics, so it is the only layer that can
-reject a dangerous-but-well-formed request.
+Everything past that is the script's responsibility. From the script's point of
+view, `"$@"` is **untrusted and arbitrary**: any count, any values, any order,
+values that may look like flags. Escaping is handled _for_ the script; **meaning
+is not**. The script is the only layer that understands its command's semantics,
+so it is the only layer that can reject a dangerous-but-well-formed request.
 
 ### Safe arg handling — opt in, don't forward
 
-Treat args as a small, explicit vocabulary and *construct* the real command line yourself.
-Never relay `"$@"` to a powerful binary — that exposes the binary's own destructive flags
-(`--delete`, `-f`, `--exec`, …) to the container.
+Treat args as a small, explicit vocabulary and _construct_ the real command line
+yourself. Never relay `"$@"` to a powerful binary — that exposes the binary's
+own destructive flags (`--delete`, `-f`, `--exec`, …) to the container.
 
 ```bash
 # BEST — fixed verb enum; args select behavior, never supply flags
@@ -215,36 +233,40 @@ grep "$1" file      →      grep -- "$1" file
 
 Rules of thumb:
 
-- **Quote every expansion** (`"$1"`, `"$@"`); never pass args to `eval` / `sh -c` / backticks.
-- **Prefer a `case` verb enum**; it sidesteps both destructive flags and flag injection.
-- **If a value must pass through, validate its shape** and place it in a fixed argument
-  position; use `--` to stop option parsing for operands that could start with `-`.
-- **Validate/confine paths** — argv-safety stops shell injection, not path traversal.
+- **Quote every expansion** (`"$1"`, `"$@"`); never pass args to `eval` /
+  `sh -c` / backticks.
+- **Prefer a `case` verb enum**; it sidesteps both destructive flags and flag
+  injection.
+- **If a value must pass through, validate its shape** and place it in a fixed
+  argument position; use `--` to stop option parsing for operands that could
+  start with `-`.
+- **Validate/confine paths** — argv-safety stops shell injection, not path
+  traversal.
 
-The bridge deliberately does not filter args (e.g. no global "reject `-…`" rule): it can't
-know any command's semantics, and a false sense of safety is worse than none. Per-command
-validation is the honest boundary.
+The bridge deliberately does not filter args (e.g. no global "reject `-…`"
+rule): it can't know any command's semantics, and a false sense of safety is
+worse than none. Per-command validation is the honest boundary.
 
 ### Three nested allowlists
 
-The request picks the **command** (host-defined — the filenames in the commands dir); the
-script picks the **behavior** (its verb enum); any free value is **shape-validated data**,
-never a flag. And the backdrop for all of it: everything runs as your host user, so keep
-the scripts few and simple.
+The request picks the **command** (host-defined — the filenames in the commands
+dir); the script picks the **behavior** (its verb enum); any free value is
+**shape-validated data**, never a flag. And the backdrop for all of it:
+everything runs as your host user, so keep the scripts few and simple.
 
 ## Layout
 
 Paths are relative to `devc-bridge/` unless noted.
 
-| Path | Role |
-| --- | --- |
-| `host/main.ts` | `devc-bridge` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`) |
-| `host/config.ts` | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start) |
-| `host/tray.ts` | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI) |
-| `host/core.ts` | Headless TCP server + dispatch + state watcher |
-| `host/serve.ts` | Headless entrypoint (no tray) — used for testing |
-| `host/token.ts` | Generate/persist the shared token |
-| `host/commands/` | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands` |
-| `client/devc-bridge.ts` | Container client CLI |
-| `../.devc/` | Devcontainer tool config (repo root): run-dir bind-mount + env + client install |
-| `icons/` | Source PNGs for the app icon + the tray icons (embedded in `tray.ts`) |
+| Path                    | Role                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `host/main.ts`          | `devc-bridge` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`)                 |
+| `host/config.ts`        | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start)                       |
+| `host/tray.ts`          | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI)                        |
+| `host/core.ts`          | Headless TCP server + dispatch + state watcher                                                    |
+| `host/serve.ts`         | Headless entrypoint (no tray) — used for testing                                                  |
+| `host/token.ts`         | Generate/persist the shared token                                                                 |
+| `host/commands/`        | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands` |
+| `client/devc-bridge.ts` | Container client CLI                                                                              |
+| `../.devc/`             | Devcontainer tool config (repo root): run-dir bind-mount + env + client install                   |
+| `icons/`                | Source PNGs for the app icon + the tray icons (embedded in `tray.ts`)                             |

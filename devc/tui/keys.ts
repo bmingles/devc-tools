@@ -8,20 +8,20 @@
 // stays in the buffer and waits for the rest.
 
 export type KeyName =
-  | "up"
-  | "down"
-  | "left"
-  | "right"
-  | "pageup"
-  | "pagedown"
-  | "home"
-  | "end"
-  | "enter"
-  | "tab"
-  | "backspace"
-  | "escape"
-  | "ctrl-c"
-  | "char";
+  | 'up'
+  | 'down'
+  | 'left'
+  | 'right'
+  | 'pageup'
+  | 'pagedown'
+  | 'home'
+  | 'end'
+  | 'enter'
+  | 'tab'
+  | 'backspace'
+  | 'escape'
+  | 'ctrl-c'
+  | 'char';
 
 export interface Key {
   name: KeyName;
@@ -34,7 +34,7 @@ export function key(name: KeyName): Key {
 }
 
 export function charKey(char: string): Key {
-  return { name: "char", char };
+  return { name: 'char', char };
 }
 
 const ESC = 0x1b;
@@ -43,22 +43,22 @@ const SS3 = 0x4f; // 'O'
 
 /** Final letters shared by `\x1b[<L>` (CSI) and `\x1b O<L>` (application cursor mode). */
 const LETTER_KEYS: Record<string, KeyName> = {
-  A: "up",
-  B: "down",
-  C: "right",
-  D: "left",
-  H: "home",
-  F: "end",
+  A: 'up',
+  B: 'down',
+  C: 'right',
+  D: 'left',
+  H: 'home',
+  F: 'end',
 };
 
 /** `\x1b[<n>~` forms. */
 const TILDE_KEYS: Record<string, KeyName> = {
-  "1": "home",
-  "4": "end",
-  "5": "pageup",
-  "6": "pagedown",
-  "7": "home",
-  "8": "end",
+  '1': 'home',
+  '4': 'end',
+  '5': 'pageup',
+  '6': 'pagedown',
+  '7': 'home',
+  '8': 'end',
 };
 
 interface Step {
@@ -97,17 +97,19 @@ export class KeyDecoder {
 function decodeAt(buf: Uint8Array, i: number): Step | null {
   const b = buf[i];
   if (b === ESC) return decodeEscape(buf, i);
-  if (b === 0x0d || b === 0x0a) return { key: key("enter"), next: i + 1 };
-  if (b === 0x09) return { key: key("tab"), next: i + 1 };
-  if (b === 0x7f || b === 0x08) return { key: key("backspace"), next: i + 1 };
-  if (b === 0x03) return { key: key("ctrl-c"), next: i + 1 };
-  if (b >= 0x20 && b < 0x7f) return { key: charKey(String.fromCharCode(b)), next: i + 1 };
+  if (b === 0x0d || b === 0x0a) return { key: key('enter'), next: i + 1 };
+  if (b === 0x09) return { key: key('tab'), next: i + 1 };
+  if (b === 0x7f || b === 0x08) return { key: key('backspace'), next: i + 1 };
+  if (b === 0x03) return { key: key('ctrl-c'), next: i + 1 };
+  if (b >= 0x20 && b < 0x7f) {
+    return { key: charKey(String.fromCharCode(b)), next: i + 1 };
+  }
   return { next: i + 1 }; // other control bytes: ignored
 }
 
 function decodeEscape(buf: Uint8Array, i: number): Step | null {
   // Nothing followed it in this chunk: it really was the Escape key.
-  if (i + 1 >= buf.length) return { key: key("escape"), next: i + 1 };
+  if (i + 1 >= buf.length) return { key: key('escape'), next: i + 1 };
 
   const kind = buf[i + 1];
   if (kind === SS3) {
@@ -117,12 +119,12 @@ function decodeEscape(buf: Uint8Array, i: number): Step | null {
   }
   if (kind !== CSI) {
     // Alt-<key> and friends: report the Escape and let the rest decode on its own.
-    return { key: key("escape"), next: i + 1 };
+    return { key: key('escape'), next: i + 1 };
   }
 
   // CSI: parameter bytes (digits and ';') then one final byte.
   let j = i + 2;
-  let params = "";
+  let params = '';
   while (j < buf.length) {
     const c = buf[j];
     if ((c >= 0x30 && c <= 0x39) || c === 0x3b) {
@@ -135,7 +137,7 @@ function decodeEscape(buf: Uint8Array, i: number): Step | null {
   if (j >= buf.length) return null; // final byte not here yet
   const final = String.fromCharCode(buf[j]);
   const next = j + 1;
-  if (final === "~") {
+  if (final === '~') {
     const name = TILDE_KEYS[params];
     return { key: name === undefined ? undefined : key(name), next };
   }

@@ -41,7 +41,7 @@ export interface FenceSpan {
 export class UnterminatedFenceError extends Error {
   constructor(public readonly fenceId: string) {
     super(`unterminated devc:${fenceId} fence`);
-    this.name = "UnterminatedFenceError";
+    this.name = 'UnterminatedFenceError';
   }
 }
 
@@ -51,20 +51,23 @@ export function fenceId(id: string): string {
 }
 
 function openFenceRe(id: string): RegExp {
-  return new RegExp(`^[ \\t]*//[ \\t]*>>>[ \\t]*devc:${escapeRe(id)}\\b`, "m");
+  return new RegExp(`^[ \\t]*//[ \\t]*>>>[ \\t]*devc:${escapeRe(id)}\\b`, 'm');
 }
 
 function closeFenceRe(id: string): RegExp {
-  return new RegExp(`^[ \\t]*//[ \\t]*<<<[ \\t]*devc:${escapeRe(id)}[ \\t]*$`, "m");
+  return new RegExp(
+    `^[ \\t]*//[ \\t]*<<<[ \\t]*devc:${escapeRe(id)}[ \\t]*$`,
+    'm',
+  );
 }
 
 function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // --- scanner -------------------------------------------------------------------
 
-type Trivia = "code" | "space" | "comment";
+type Trivia = 'code' | 'space' | 'comment';
 
 /**
  * Classify every character of `src` once: code, whitespace, or comment. Strings count as
@@ -81,7 +84,7 @@ function classify(src: string): Uint8Array {
       const start = i;
       i++;
       while (i < src.length) {
-        if (src[i] === "\\") {
+        if (src[i] === '\\') {
           i += 2;
           continue;
         }
@@ -94,16 +97,16 @@ function classify(src: string): Uint8Array {
       out.fill(KIND.code, start, i);
       continue;
     }
-    if (c === "/" && src[i + 1] === "/") {
+    if (c === '/' && src[i + 1] === '/') {
       const start = i;
-      while (i < src.length && src[i] !== "\n") i++;
+      while (i < src.length && src[i] !== '\n') i++;
       out.fill(KIND.comment, start, i);
       continue;
     }
-    if (c === "/" && src[i + 1] === "*") {
+    if (c === '/' && src[i + 1] === '*') {
       const start = i;
       i += 2;
-      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
       i = Math.min(i + 2, src.length);
       out.fill(KIND.comment, start, i);
       continue;
@@ -115,13 +118,13 @@ function classify(src: string): Uint8Array {
 }
 
 function kindAt(kinds: Uint8Array, i: number): Trivia {
-  return kinds[i] === 0 ? "code" : kinds[i] === 1 ? "space" : "comment";
+  return kinds[i] === 0 ? 'code' : kinds[i] === 1 ? 'space' : 'comment';
 }
 
 /** First offset in `[from, to)` that is code, or `to`. */
 function nextCode(kinds: Uint8Array, from: number, to: number): number {
   let i = from;
-  while (i < to && kindAt(kinds, i) !== "code") i++;
+  while (i < to && kindAt(kinds, i) !== 'code') i++;
   return i;
 }
 
@@ -129,9 +132,11 @@ function nextCode(kinds: Uint8Array, from: number, to: number): number {
  * remaining text line up line-for-line). Used to hand JSONC to `JSON.parse`. */
 export function stripComments(src: string): string {
   const kinds = classify(src);
-  let out = "";
+  let out = '';
   for (let i = 0; i < src.length; i++) {
-    out += kindAt(kinds, i) === "comment" ? (src[i] === "\n" ? "\n" : " ") : src[i];
+    out += kindAt(kinds, i) === 'comment'
+      ? (src[i] === '\n' ? '\n' : ' ')
+      : src[i];
   }
   return out;
 }
@@ -153,17 +158,17 @@ export function findArraySpan(src: string, key: string): ArraySpan | null {
   let depth = 0;
   let i = 0;
   while (i < src.length) {
-    if (kindAt(kinds, i) !== "code") {
+    if (kindAt(kinds, i) !== 'code') {
       i++;
       continue;
     }
     const c = src[i];
-    if (c === "{" || c === "[") {
+    if (c === '{' || c === '[') {
       depth++;
       i++;
       continue;
     }
-    if (c === "}" || c === "]") {
+    if (c === '}' || c === ']') {
       depth--;
       i++;
       continue;
@@ -173,9 +178,9 @@ export function findArraySpan(src: string, key: string): ArraySpan | null {
       // Only a key at depth 1 (directly in the root object) counts.
       if (depth === 1 && src.slice(i, end) === needle) {
         const colon = nextCode(kinds, end, src.length);
-        if (src[colon] === ":") {
+        if (src[colon] === ':') {
           const open = nextCode(kinds, colon + 1, src.length);
-          if (src[open] === "[") {
+          if (src[open] === '[') {
             const close = matchBracket(src, kinds, open);
             if (close !== -1) return { open, close };
           }
@@ -193,7 +198,7 @@ export function findArraySpan(src: string, key: string): ArraySpan | null {
 function stringEnd(src: string, quote: number): number {
   let i = quote + 1;
   while (i < src.length) {
-    if (src[i] === "\\") {
+    if (src[i] === '\\') {
       i += 2;
       continue;
     }
@@ -204,18 +209,18 @@ function stringEnd(src: string, quote: number): number {
 }
 
 function matchBracket(src: string, kinds: Uint8Array, open: number): number {
-  const closer = src[open] === "[" ? "]" : "}";
+  const closer = src[open] === '[' ? ']' : '}';
   let depth = 0;
   for (let i = open; i < src.length; i++) {
-    if (kindAt(kinds, i) !== "code") continue;
+    if (kindAt(kinds, i) !== 'code') continue;
     const c = src[i];
     // Brackets inside a string literal are not brackets.
     if (c === '"') {
       i = stringEnd(src, i) - 1;
       continue;
     }
-    if (c === "[" || c === "{") depth++;
-    else if (c === "]" || c === "}") {
+    if (c === '[' || c === '{') depth++;
+    else if (c === ']' || c === '}') {
       depth--;
       if (depth === 0) return src[i] === closer ? i : -1;
     }
@@ -247,13 +252,13 @@ export function splitElements(src: string, span: ArraySpan): ElementSpan[] {
   };
   let i = span.open + 1;
   while (i < span.close) {
-    if (kindAt(kinds, i) !== "code") {
-      if (src[i] === "\n" && depth === 0) flush();
+    if (kindAt(kinds, i) !== 'code') {
+      if (src[i] === '\n' && depth === 0) flush();
       i++;
       continue;
     }
     const c = src[i];
-    if (c === "," && depth === 0) {
+    if (c === ',' && depth === 0) {
       flush();
       i++;
       continue;
@@ -265,8 +270,8 @@ export function splitElements(src: string, span: ArraySpan): ElementSpan[] {
       i = end;
       continue;
     }
-    if (c === "[" || c === "{") depth++;
-    else if (c === "]" || c === "}") depth--;
+    if (c === '[' || c === '{') depth++;
+    else if (c === ']' || c === '}') depth--;
     lastCode = i;
     i++;
   }
@@ -278,12 +283,16 @@ export function splitElements(src: string, span: ArraySpan): ElementSpan[] {
  * Locate the fence pair for `id` inside `span`. Returns null when the open fence is absent;
  * throws {@link UnterminatedFenceError} when it is present with no close after it.
  */
-export function findFence(src: string, span: ArraySpan, id: string): FenceSpan | null {
+export function findFence(
+  src: string,
+  span: ArraySpan,
+  id: string,
+): FenceSpan | null {
   const region = src.slice(span.open, span.close);
   const om = openFenceRe(id).exec(region);
   if (om === null) return null;
   const openLineStart = span.open + om.index;
-  let openLineEnd = src.indexOf("\n", openLineStart);
+  let openLineEnd = src.indexOf('\n', openLineStart);
   if (openLineEnd === -1 || openLineEnd > span.close) openLineEnd = span.close;
   else openLineEnd += 1;
 
@@ -300,11 +309,17 @@ export function findFence(src: string, span: ArraySpan, id: string): FenceSpan |
 }
 
 /** Raw text of each element inside the `id` fence, in order. */
-export function parseFenceEntries(src: string, span: ArraySpan, id: string): string[] {
+export function parseFenceEntries(
+  src: string,
+  span: ArraySpan,
+  id: string,
+): string[] {
   const fence = findFence(src, span, id);
   if (fence === null) return [];
   return splitElements(src, span)
-    .filter((e) => e.start >= fence.openLineEnd && e.end <= fence.closeLineStart)
+    .filter((e) =>
+      e.start >= fence.openLineEnd && e.end <= fence.closeLineStart
+    )
     .map((e) => src.slice(e.start, e.end));
 }
 
@@ -312,7 +327,7 @@ export function parseFenceEntries(src: string, span: ArraySpan, id: string): str
 
 /** Offset of the first character of the line containing `i`. */
 function lineStart(src: string, i: number): number {
-  const nl = src.lastIndexOf("\n", i - 1);
+  const nl = src.lastIndexOf('\n', i - 1);
   return nl === -1 ? 0 : nl + 1;
 }
 
@@ -320,7 +335,7 @@ function lineStart(src: string, i: number): number {
 function lineIndent(src: string, i: number): string {
   const start = lineStart(src, i);
   const m = /^[ \t]*/.exec(src.slice(start, i));
-  return m ? m[0] : "";
+  return m ? m[0] : '';
 }
 
 /**
@@ -330,9 +345,9 @@ function lineIndent(src: string, i: number): string {
  * the array, where a leading blank line would just pad the `[`.
  */
 function blankLineBefore(src: string, span: ArraySpan, at: number): string {
-  if (/^\s*$/.test(src.slice(span.open + 1, at))) return "";
+  if (/^\s*$/.test(src.slice(span.open + 1, at))) return '';
   const prevLine = src.slice(lineStart(src, at - 1), at - 1);
-  return /^[ \t]*$/.test(prevLine) ? "" : "\n";
+  return /^[ \t]*$/.test(prevLine) ? '' : '\n';
 }
 
 /**
@@ -343,7 +358,7 @@ export function elementIndent(src: string, span: ArraySpan): string {
   const els = splitElements(src, span);
   if (els.length > 0) return lineIndent(src, els[0].start);
   const keyIndent = lineIndent(src, span.open);
-  return keyIndent.length > 0 ? keyIndent + "  " : "    ";
+  return keyIndent.length > 0 ? keyIndent + '  ' : '    ';
 }
 
 function renderBlock(id: string, lines: string[], indent: string): string {
@@ -352,7 +367,7 @@ function renderBlock(id: string, lines: string[], indent: string): string {
     `${indent}// >>> ${fenceId(id)} (managed - do not edit)`,
     ...body,
     `${indent}// <<< ${fenceId(id)}`,
-  ].join("\n");
+  ].join('\n');
 }
 
 /**
@@ -373,19 +388,20 @@ export function spliceBlock(
   if (fence !== null) {
     // Rewrite in place — a fence the user moved stays where they put it.
     const gap = blankLineBefore(src, span, fence.openLineStart);
-    return src.slice(0, fence.openLineStart) + gap + block + src.slice(fence.closeLineEnd);
+    return src.slice(0, fence.openLineStart) + gap + block +
+      src.slice(fence.closeLineEnd);
   }
   const closeLine = lineStart(src, span.close);
   const beforeClose = src.slice(closeLine, span.close);
   if (/^[ \t]*$/.test(beforeClose)) {
     // `]` sits on its own line: drop the block in above it.
     const gap = blankLineBefore(src, span, closeLine);
-    return src.slice(0, closeLine) + gap + block + "\n" + src.slice(closeLine);
+    return src.slice(0, closeLine) + gap + block + '\n' + src.slice(closeLine);
   }
   // `]` shares a line with content (e.g. `"mounts": []`): open it up.
   const keyIndent = lineIndent(src, span.open);
-  const gap = /^\s*$/.test(src.slice(span.open + 1, span.close)) ? "" : "\n";
-  return src.slice(0, span.close) + "\n" + gap + block + "\n" + keyIndent +
+  const gap = /^\s*$/.test(src.slice(span.open + 1, span.close)) ? '' : '\n';
+  return src.slice(0, span.close) + '\n' + gap + block + '\n' + keyIndent +
     src.slice(span.close);
 }
 
@@ -401,11 +417,11 @@ export function normalizeArrayCommas(src: string, span: ArraySpan): string {
   for (let i = 0; i < els.length; i++) {
     const el = els[i];
     const next = nextCode(kinds, el.end, span.close);
-    const hasComma = next < span.close && src[next] === ",";
+    const hasComma = next < span.close && src[next] === ',';
     if (i === els.length - 1) {
-      if (hasComma) edits.push({ at: next, remove: 1, insert: "" });
+      if (hasComma) edits.push({ at: next, remove: 1, insert: '' });
     } else if (!hasComma) {
-      edits.push({ at: el.end, remove: 0, insert: "," });
+      edits.push({ at: el.end, remove: 0, insert: ',' });
     }
   }
   let out = src;
@@ -420,17 +436,19 @@ export function normalizeArrayCommas(src: string, span: ArraySpan): string {
  * object's `{` when it does not (with a trailing comma if the object already had members).
  * `indent` is the indentation for the inserted key and its `]`.
  */
-export function ensureArray(src: string, key: string, indent = "  "): string {
+export function ensureArray(src: string, key: string, indent = '  '): string {
   if (findArraySpan(src, key) !== null) return src;
   const kinds = classify(src);
   const brace = nextCode(kinds, 0, src.length);
-  if (src[brace] !== "{") {
+  if (src[brace] !== '{') {
     throw new Error(`devc: not a JSON object (cannot add "${key}")`);
   }
   const end = matchBracket(src, kinds, brace);
   const inner = end === -1 ? src.length : end;
   const hasMembers = nextCode(kinds, brace + 1, inner) < inner;
-  const text = `\n${indent}${JSON.stringify(key)}: [\n${indent}]${hasMembers ? "," : ""}`;
+  const text = `\n${indent}${JSON.stringify(key)}: [\n${indent}]${
+    hasMembers ? ',' : ''
+  }`;
   return src.slice(0, brace + 1) + text + src.slice(brace + 1);
 }
 
@@ -445,14 +463,20 @@ export function writeBlocks(
 ): string {
   let out = ensureArray(src, key);
   const span0 = findArraySpan(out, key);
-  if (span0 === null) throw new Error(`devc: could not locate the "${key}" array`);
+  if (span0 === null) {
+    throw new Error(`devc: could not locate the "${key}" array`);
+  }
   const indent = elementIndent(out, span0);
   for (const block of blocks) {
     const span = findArraySpan(out, key);
-    if (span === null) throw new Error(`devc: could not locate the "${key}" array`);
+    if (span === null) {
+      throw new Error(`devc: could not locate the "${key}" array`);
+    }
     out = spliceBlock(out, span, block.id, block.lines, indent);
   }
   const span = findArraySpan(out, key);
-  if (span === null) throw new Error(`devc: could not locate the "${key}" array`);
+  if (span === null) {
+    throw new Error(`devc: could not locate the "${key}" array`);
+  }
   return normalizeArrayCommas(out, span);
 }

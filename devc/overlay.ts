@@ -14,8 +14,8 @@
 //   need not know `devc` exists. Because the overlay is invisible to the repo, the
 //   `.devcontainer/` everyone else checks out is untouched by definition.
 
-import { parse as parseJsonc } from "jsr:@std/jsonc";
-import { CONFIG_DIR, substituteVars } from "./default_config.ts";
+import { parse as parseJsonc } from 'jsr:@std/jsonc';
+import { CONFIG_DIR, substituteVars } from './default_config.ts';
 
 /** The merged, validated contents of the overlay layer. Every field is always present. */
 export interface DevcOverlay {
@@ -28,7 +28,7 @@ export interface DevcOverlay {
 }
 
 /** The only three keys the overlay understands. Anything else warns and is ignored. */
-const OVERLAY_KEYS = ["mounts", "additionalFeatures", "remoteEnv"] as const;
+const OVERLAY_KEYS = ['mounts', 'additionalFeatures', 'remoteEnv'] as const;
 
 /**
  * Project-level overlay locations, relative to the project folder, in first-hit-wins order.
@@ -38,14 +38,14 @@ const OVERLAY_KEYS = ["mounts", "additionalFeatures", "remoteEnv"] as const;
  * while `.devc/` suits a repo that wants `devc`'s files grouped in one place.
  */
 const PROJECT_CANDIDATES = [
-  ".devc/devc.jsonc",
-  ".devc/devc.json",
-  ".devcontainer/devc.jsonc",
-  ".devcontainer/devc.json",
+  '.devc/devc.jsonc',
+  '.devc/devc.json',
+  '.devcontainer/devc.jsonc',
+  '.devcontainer/devc.json',
 ] as const;
 
 /** User-level overlay filenames, relative to the global config dir, in first-hit-wins order. */
-const USER_CANDIDATES = ["devc.jsonc", "devc.json"] as const;
+const USER_CANDIDATES = ['devc.jsonc', 'devc.json'] as const;
 
 /** An overlay contributing nothing. */
 export function emptyOverlay(): DevcOverlay {
@@ -109,9 +109,9 @@ function typeError(path: string, detail: string): Error {
  */
 function isTokenFree(text: string): boolean {
   return text
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/[^\n]*/g, "")
-    .trim() === "";
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '')
+    .trim() === '';
 }
 
 function readMounts(path: string, value: unknown): string[] {
@@ -119,7 +119,7 @@ function readMounts(path: string, value: unknown): string[] {
     throw typeError(path, '"mounts" must be an array of mount-spec strings');
   }
   return value.map((entry, i) => {
-    if (typeof entry !== "string") {
+    if (typeof entry !== 'string') {
       throw typeError(path, `"mounts"[${i}] must be a string`);
     }
     return entry;
@@ -131,7 +131,7 @@ function readObject(
   key: string,
   value: unknown,
 ): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw typeError(path, `"${key}" must be an object`);
   }
   return value as Record<string, unknown>;
@@ -141,10 +141,10 @@ function readRemoteEnv(
   path: string,
   value: unknown,
 ): Record<string, string> {
-  const obj = readObject(path, "remoteEnv", value);
+  const obj = readObject(path, 'remoteEnv', value);
   return Object.fromEntries(
     Object.entries(obj).map(([k, v]) => {
-      if (typeof v !== "string") {
+      if (typeof v !== 'string') {
         throw typeError(path, `"remoteEnv"."${k}" must be a string`);
       }
       return [k, v];
@@ -184,8 +184,8 @@ export async function loadOverlayFile(path: string): Promise<DevcOverlay> {
 
   // `parseJsonc` yields `null` for an empty (or whitespace/comment-only) file.
   if (parsed === null || parsed === undefined) return emptyOverlay();
-  if (typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw typeError(path, "expected a JSON object at the top level");
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw typeError(path, 'expected a JSON object at the top level');
   }
 
   const raw = parsed as Record<string, unknown>;
@@ -193,7 +193,7 @@ export async function loadOverlayFile(path: string): Promise<DevcOverlay> {
     if (!(OVERLAY_KEYS as readonly string[]).includes(key)) {
       console.error(
         `devc: ignoring unknown key "${key}" in ${path} (known keys: ${
-          OVERLAY_KEYS.join(", ")
+          OVERLAY_KEYS.join(', ')
         })`,
       );
     }
@@ -203,7 +203,7 @@ export async function loadOverlayFile(path: string): Promise<DevcOverlay> {
     mounts: raw.mounts === undefined ? [] : readMounts(path, raw.mounts),
     additionalFeatures: raw.additionalFeatures === undefined
       ? {}
-      : readObject(path, "additionalFeatures", raw.additionalFeatures),
+      : readObject(path, 'additionalFeatures', raw.additionalFeatures),
     remoteEnv: raw.remoteEnv === undefined
       ? {}
       : readRemoteEnv(path, raw.remoteEnv),
@@ -283,15 +283,15 @@ export function overlayArgs(
     substituteVars(v, containerWorkspaceFolder, localWorkspaceFolder);
 
   const args: string[] = [];
-  for (const mount of overlay.mounts) args.push("--mount", sub(mount));
+  for (const mount of overlay.mounts) args.push('--mount', sub(mount));
   if (Object.keys(overlay.additionalFeatures).length > 0) {
     args.push(
-      "--additional-features",
+      '--additional-features',
       JSON.stringify(overlay.additionalFeatures),
     );
   }
   for (const [key, value] of Object.entries(overlay.remoteEnv)) {
-    args.push("--remote-env", `${key}=${sub(value)}`);
+    args.push('--remote-env', `${key}=${sub(value)}`);
   }
   return args;
 }

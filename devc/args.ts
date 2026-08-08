@@ -8,9 +8,9 @@ export interface AttachArgs {
 
 /** Parses `devc attach` / `devc claude` arguments. */
 export function parseAttachArgs(args: string[]): AttachArgs {
-  const rebuild = args.includes("--build");
-  const noClear = args.includes("--no-clear");
-  const target = args.find((a) => !a.startsWith("--"));
+  const rebuild = args.includes('--build');
+  const noClear = args.includes('--no-clear');
+  const target = args.find((a) => !a.startsWith('--'));
   return { target, rebuild, noClear };
 }
 
@@ -24,8 +24,8 @@ export interface BuildArgs {
 
 /** Parses `devc build` arguments. */
 export function parseBuildArgs(args: string[]): BuildArgs {
-  const noCache = args.includes("--no-cache");
-  const json = args.includes("--json");
-  const target = args.find((a) => !a.startsWith("--"));
+  const noCache = args.includes('--no-cache');
+  const json = args.includes('--json');
+  const target = args.find((a) => !a.startsWith('--'));
   return { target, noCache, json };
 }
