@@ -42,8 +42,8 @@ export const CLAUDE_SEED_TARGET = '/usr/local/share/devc/claude-seed';
  */
 const CLAUDE_SEED_MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
   ['CLAUDE.md', 'CLAUDE.md'],
-  ['settings.devc.json', 'settings.json'],
-  ['statusline.sh', 'statusline.sh'],
+  // ['settings.devc.json', 'settings.json'],
+  // ['statusline.sh', 'statusline.sh'],
 ];
 
 /** Outcome of `ensureClaudeSeedDir`. */
