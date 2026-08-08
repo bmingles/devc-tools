@@ -1,11 +1,11 @@
-import { parse as parseJsonc } from "jsr:@std/jsonc";
-import { basenamePosix } from "./posix.ts";
+import { parse as parseJsonc } from 'jsr:@std/jsonc';
+import { basenamePosix } from './posix.ts';
 
 // Embedded `devc/default/` directory, read via Deno.readDir/Deno.readFile.
 // Under `deno run` this resolves to the real source tree; under a
 // `deno compile --include default` binary it resolves to the embedded
 // virtual filesystem.
-const DEFAULT_DIR_URL = new URL("./default/", import.meta.url);
+const DEFAULT_DIR_URL = new URL('./default/', import.meta.url);
 
 /** The global config directory, `~/.config/devc`. */
 export const CONFIG_DIR = `${homeDir()}/.config/devc`;
@@ -32,7 +32,7 @@ export const TEMPLATES_DIR = `${CONFIG_DIR}/templates`;
 export const CLAUDE_SEED_HOST_DIR = `${CONFIG_DIR}/.claude`;
 
 /** Container path the seed directory is bind-mounted at (mirrors the bundled default). */
-export const CLAUDE_SEED_TARGET = "/usr/local/share/devc/claude-seed";
+export const CLAUDE_SEED_TARGET = '/usr/local/share/devc/claude-seed';
 
 /**
  * Files copied out of `~/.claude` into the seed directory the first time it is created, so an
@@ -41,9 +41,9 @@ export const CLAUDE_SEED_TARGET = "/usr/local/share/devc/claude-seed";
  * `~/.claude/settings.json`; a dedicated directory removes the collision.
  */
 const CLAUDE_SEED_MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
-  ["CLAUDE.md", "CLAUDE.md"],
-  ["settings.devc.json", "settings.json"],
-  ["statusline.sh", "statusline.sh"],
+  ['CLAUDE.md', 'CLAUDE.md'],
+  ['settings.devc.json', 'settings.json'],
+  ['statusline.sh', 'statusline.sh'],
 ];
 
 /** Outcome of `ensureClaudeSeedDir`. */
@@ -119,7 +119,7 @@ export async function ensureClaudeSeedDir(
 export async function findOwnDevcontainerConfig(
   localFolder: string,
 ): Promise<string | null> {
-  for (const rel of [".devcontainer/devcontainer.json", ".devcontainer.json"]) {
+  for (const rel of ['.devcontainer/devcontainer.json', '.devcontainer.json']) {
     const path = `${localFolder}/${rel}`;
     try {
       await Deno.stat(path);
@@ -132,7 +132,7 @@ export async function findOwnDevcontainerConfig(
 }
 
 function homeDir(): string {
-  return Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
+  return Deno.env.get('HOME') ?? Deno.env.get('USERPROFILE') ?? '.';
 }
 
 /** Recursively copies the embedded `default/` tree to a real directory on disk. */
@@ -243,12 +243,12 @@ export async function materializeDefaultConfig(
   const raw = await Deno.readTextFile(configPath);
   const rewritten = raw
     .replaceAll(
-      "${localWorkspaceFolder}/.devcontainer/initialize-command.sh",
+      '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
       `${cacheDir}/initialize-command.sh`,
     )
     .replaceAll(
-      "${containerWorkspaceFolder}/.devcontainer/post-create.sh",
-      "/usr/local/share/devc/post-create.sh",
+      '${containerWorkspaceFolder}/.devcontainer/post-create.sh',
+      '/usr/local/share/devc/post-create.sh',
     );
   if (rewritten !== raw) await Deno.writeTextFile(configPath, rewritten);
 
@@ -272,7 +272,7 @@ export async function loadBundledDevcontainerJson(
   } catch (err) {
     if (!(err instanceof Deno.errors.NotFound)) throw err;
   }
-  return await Deno.readTextFile(new URL("devcontainer.json", DEFAULT_DIR_URL));
+  return await Deno.readTextFile(new URL('devcontainer.json', DEFAULT_DIR_URL));
 }
 
 /**
@@ -291,7 +291,7 @@ export async function copyBundledAssets(
 ): Promise<void> {
   await Deno.mkdir(destDir, { recursive: true });
   for await (const entry of Deno.readDir(DEFAULT_DIR_URL)) {
-    if (entry.name === "devcontainer.json") continue;
+    if (entry.name === 'devcontainer.json') continue;
     if (entry.isDirectory) {
       await copyDir(
         new URL(`${entry.name}/`, DEFAULT_DIR_URL),
@@ -305,7 +305,7 @@ export async function copyBundledAssets(
   await overlayDirFrom(
     templatesDir,
     destDir,
-    new Set(["devcontainer.json"]),
+    new Set(['devcontainer.json']),
   );
 }
 
@@ -336,7 +336,7 @@ export async function installBundledAssets(
     `${destDir}/initialize-command.sh`,
   ];
   for await (const entry of Deno.readDir(scriptsDir)) {
-    if (entry.isFile && entry.name.endsWith(".sh")) {
+    if (entry.isFile && entry.name.endsWith('.sh')) {
       executable.push(`${scriptsDir}/${entry.name}`);
     }
   }
@@ -368,7 +368,7 @@ export function substituteVars(
   localWorkspaceFolder?: string,
 ): string {
   let out = value.replaceAll(
-    "${containerWorkspaceFolder}",
+    '${containerWorkspaceFolder}',
     containerWorkspaceFolder,
   );
   if (localWorkspaceFolder !== undefined) {
@@ -377,13 +377,13 @@ export function substituteVars(
     // into `<path>Basename}`.
     out = out
       .replaceAll(
-        "${localWorkspaceFolderBasename}",
+        '${localWorkspaceFolderBasename}',
         basenamePosix(localWorkspaceFolder),
       )
-      .replaceAll("${localWorkspaceFolder}", localWorkspaceFolder);
+      .replaceAll('${localWorkspaceFolder}', localWorkspaceFolder);
   }
   return out.replace(/\$\{localEnv:([^}]+)\}/g, (_, varName: string) => {
-    return varName === "HOME" ? homeDir() : Deno.env.get(varName) ?? "";
+    return varName === 'HOME' ? homeDir() : Deno.env.get(varName) ?? '';
   });
 }
 
@@ -430,7 +430,7 @@ export async function loadResolvedRemoteEnv(
   return Object.fromEntries(
     Object.entries(baseEnv)
       .filter((entry): entry is [string, string] =>
-        typeof entry[1] === "string"
+        typeof entry[1] === 'string'
       )
       .map(([k, v]) => [
         k,

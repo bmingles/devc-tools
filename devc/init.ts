@@ -6,7 +6,7 @@ import {
   findOwnDevcontainerConfig,
   installBundledAssets,
   loadBundledDevcontainerJson,
-} from "./default_config.ts";
+} from './default_config.ts';
 
 export interface InitResult {
   /** Path of the written `devcontainer.json`. */
@@ -29,7 +29,7 @@ async function entryNames(dir: string): Promise<string[]> {
 
 /** `a, b, c, +2 more` — keeps the error line readable for a crowded directory. */
 function summarize(names: string[], limit = 4): string {
-  const shown = names.slice(0, limit).join(", ");
+  const shown = names.slice(0, limit).join(', ');
   return names.length > limit
     ? `${shown}, +${names.length - limit} more`
     : shown;
@@ -69,8 +69,8 @@ export async function initProject(
     // would still be there and trip the not-empty guard below — whereas the root form is a lone
     // file with nothing else to clear.
     const remedy = existing === `${projectDir}/.devcontainer.json`
-      ? "delete it"
-      : "delete the .devcontainer/ folder contents";
+      ? 'delete it'
+      : 'delete the .devcontainer/ folder contents';
     throw new Error(
       `${existing} already exists — use \`devc config\` to change mounts, or ${remedy} and run \`devc init\` again.`,
     );
@@ -84,7 +84,7 @@ export async function initProject(
           occupants,
         )
       }) — devc init only writes into a missing or empty .devcontainer/. ` +
-        "Move its contents aside and re-run, or hand-edit what is already there.",
+        'Move its contents aside and re-run, or hand-edit what is already there.',
     );
   }
 

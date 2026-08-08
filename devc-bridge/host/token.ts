@@ -7,7 +7,7 @@
 // run dir* from invoking host commands over the loopback TCP port; it does not
 // defend against other processes/users with filesystem access to your home dir.
 
-import { dirname } from "jsr:@std/path@^1";
+import { dirname } from 'jsr:@std/path@^1';
 
 /** Load the token at `path`, or generate + persist a new one if absent. */
 export async function ensureToken(path: string): Promise<string> {
@@ -19,9 +19,11 @@ export async function ensureToken(path: string): Promise<string> {
   }
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  const token = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(
+    '',
+  );
   await Deno.mkdir(dirname(path), { recursive: true });
-  await Deno.writeTextFile(path, token + "\n");
+  await Deno.writeTextFile(path, token + '\n');
   await Deno.chmod(path, 0o644);
   return token;
 }

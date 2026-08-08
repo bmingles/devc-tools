@@ -21,7 +21,7 @@ import {
   isAbsolutePosix,
   relativeUnderPosix,
   resolvePosix,
-} from "./posix.ts";
+} from './posix.ts';
 
 /** Minimal filesystem access the resolver needs, injected so tests can drive it headlessly. */
 export interface FsProbe {
@@ -81,7 +81,7 @@ export function longestRootAncestor(
 ): string | null {
   let best: string | null = null;
   for (const r of roots) {
-    if (absPath === r || absPath.startsWith(r + "/")) {
+    if (absPath === r || absPath.startsWith(r + '/')) {
       if (best === null || r.length > best.length) best = r;
     }
   }
@@ -97,7 +97,7 @@ export async function resolveWorktree(
   root: string | null,
   fs: FsProbe,
 ): Promise<WorktreeInfo> {
-  const gitFile = pickedAbs + "/.git";
+  const gitFile = pickedAbs + '/.git';
   // A plain repo has a `.git` *directory*; a non-repo has neither. Only a worktree (or
   // submodule) has a `.git` *file*.
   if (!(await fs.statIsFile(gitFile))) return { isWorktree: false };
@@ -111,7 +111,7 @@ export async function resolveWorktree(
   // A worktree's git dir ends `.../worktrees/<name>`; a submodule's is `.../modules/<name>`.
   if (!/\/worktrees\/[^/]+\/?$/.test(gitdirAbs)) return { isWorktree: false };
 
-  const primaryGitDir = gitdirAbs.slice(0, gitdirAbs.indexOf("/worktrees/"));
+  const primaryGitDir = gitdirAbs.slice(0, gitdirAbs.indexOf('/worktrees/'));
   const primaryRoot = dirnamePosix(primaryGitDir);
 
   // An absolute `gitdir:` is the only thing we cannot mount around (see the module header).
@@ -120,7 +120,7 @@ export async function resolveWorktree(
   // is the case that produces the same targets it always has. Otherwise mirror from the common
   // ancestor, which by construction holds both.
   const rootHoldsPrimary = root !== null &&
-    (primaryRoot === root || primaryRoot.startsWith(root + "/"));
+    (primaryRoot === root || primaryRoot.startsWith(root + '/'));
   const mountBase = rootHoldsPrimary
     ? root
     : commonAncestorPosix(pickedAbs, primaryRoot);
@@ -129,7 +129,7 @@ export async function resolveWorktree(
   return {
     isWorktree: true,
     valid,
-    reason: valid ? undefined : "worktree uses absolute paths",
+    reason: valid ? undefined : 'worktree uses absolute paths',
     primaryGitDir,
     primaryRoot,
     primaryGitTarget: rel === null ? undefined : `/workspaces/${rel}`,

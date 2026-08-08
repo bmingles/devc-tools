@@ -6,15 +6,15 @@
 // where `${localEnv:HOME}` folding happens. `jsonc_edit.ts` does the text surgery; this
 // module produces the JSON-string element text that goes inside a fence.
 
-import { relativeUnderPosix } from "./posix.ts";
+import { relativeUnderPosix } from './posix.ts';
 
 /** Container mount root for source-code folders. */
-export const SOURCE_CONTAINER_ROOT = "/workspaces";
+export const SOURCE_CONTAINER_ROOT = '/workspaces';
 /** Container mount root for per-folder skills (where the in-container agent looks). */
-export const SKILLS_CONTAINER_ROOT = "/home/vscode/.claude/skills";
+export const SKILLS_CONTAINER_ROOT = '/home/vscode/.claude/skills';
 
 /** Which managed fence a row belongs to. */
-export type MountKind = "source" | "skills";
+export type MountKind = 'source' | 'skills';
 
 /** One editable bind-mount row in the wizard. */
 export interface MountRow {
@@ -28,8 +28,8 @@ export interface MountRow {
 
 /** The last path segment of a `/`-separated path (trailing slashes ignored). */
 export function basename(path: string): string {
-  const trimmed = path.replace(/\/+$/, "");
-  const slash = trimmed.lastIndexOf("/");
+  const trimmed = path.replace(/\/+$/, '');
+  const slash = trimmed.lastIndexOf('/');
   return slash === -1 ? trimmed : trimmed.slice(slash + 1);
 }
 
@@ -40,18 +40,18 @@ export function basename(path: string): string {
  */
 export function foldHome(
   hostPath: string,
-  home: string | undefined = Deno.env.get("HOME"),
+  home: string | undefined = Deno.env.get('HOME'),
 ): string {
   if (
-    hostPath.startsWith("${localEnv:HOME}") || hostPath === "~" ||
-    hostPath.startsWith("~/")
+    hostPath.startsWith('${localEnv:HOME}') || hostPath === '~' ||
+    hostPath.startsWith('~/')
   ) {
     return hostPath;
   }
-  if (home !== undefined && home !== "") {
-    if (hostPath === home) return "${localEnv:HOME}";
-    if (hostPath.startsWith(home + "/")) {
-      return "${localEnv:HOME}" + hostPath.slice(home.length);
+  if (home !== undefined && home !== '') {
+    if (hostPath === home) return '${localEnv:HOME}';
+    if (hostPath.startsWith(home + '/')) {
+      return '${localEnv:HOME}' + hostPath.slice(home.length);
     }
   }
   return hostPath;
@@ -71,10 +71,10 @@ export function defaultTarget(
   hostPath: string,
   root?: string,
 ): string {
-  const containerRoot = kind === "source"
+  const containerRoot = kind === 'source'
     ? SOURCE_CONTAINER_ROOT
     : SKILLS_CONTAINER_ROOT;
-  if (kind === "source" && root !== undefined) {
+  if (kind === 'source' && root !== undefined) {
     const rel = relativeUnderPosix(root, hostPath);
     if (rel !== null) return `${containerRoot}/${rel}`;
   }
@@ -83,7 +83,7 @@ export function defaultTarget(
 
 /** Default read-only flag: off for source, on for skills. */
 export function defaultReadonly(kind: MountKind): boolean {
-  return kind === "skills";
+  return kind === 'skills';
 }
 
 /**
@@ -108,7 +108,7 @@ export function rowForHostPath(
 export function serializeMount(row: MountRow): string {
   const base =
     `type=bind,source=${row.source},target=${row.target},consistency=cached`;
-  return row.readonly ? base + ",readonly" : base;
+  return row.readonly ? base + ',readonly' : base;
 }
 
 /** A row serialized as a fence entry: the JSON-quoted spec string, ready for `writeBlocks`. */
@@ -125,7 +125,7 @@ export function parseEntry(entry: string): MountRow | null {
   if (spec.startsWith('"')) {
     try {
       const v = JSON.parse(spec);
-      if (typeof v !== "string") return null;
+      if (typeof v !== 'string') return null;
       spec = v;
     } catch {
       return null;
@@ -133,17 +133,17 @@ export function parseEntry(entry: string): MountRow | null {
   }
   const fields = new Map<string, string>();
   let readonly = false;
-  for (const part of spec.split(",")) {
-    const eq = part.indexOf("=");
+  for (const part of spec.split(',')) {
+    const eq = part.indexOf('=');
     if (eq === -1) {
-      if (part.trim() === "readonly") readonly = true;
+      if (part.trim() === 'readonly') readonly = true;
       continue;
     }
     fields.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim());
   }
-  if (fields.get("type") !== "bind") return null;
-  const source = fields.get("source");
-  const target = fields.get("target");
+  if (fields.get('type') !== 'bind') return null;
+  const source = fields.get('source');
+  const target = fields.get('target');
   if (source === undefined || target === undefined) return null;
   return { source, target, readonly };
 }
@@ -162,7 +162,7 @@ export function parseEntries(entries: string[]): MountRow[] {
 export class DuplicateTargetError extends Error {
   constructor(public readonly target: string) {
     super(`a mount with target ${target} already exists in this step`);
-    this.name = "DuplicateTargetError";
+    this.name = 'DuplicateTargetError';
   }
 }
 

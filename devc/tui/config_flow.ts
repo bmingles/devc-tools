@@ -8,17 +8,17 @@
 //   • global   — first-run: pick code roots then skills roots, stored folded to `~/…`.
 // Both are fully picker-driven: you *select* folders, never type paths.
 
-import { resolve } from "jsr:@std/path@^1";
+import { resolve } from 'jsr:@std/path@^1';
 import {
   displayPath,
   expandPath,
-  globalConfigExists,
   type GlobalConfig,
+  globalConfigExists,
   loadGlobalConfig,
   makeGlobalConfig,
   saveGlobalConfig,
-} from "../config.ts";
-import { loadBundledDevcontainerJson } from "../default_config.ts";
+} from '../config.ts';
+import { loadBundledDevcontainerJson } from '../default_config.ts';
 import {
   assertNoDuplicateTarget,
   basename,
@@ -31,29 +31,33 @@ import {
   parseEntries,
   rowForHostPath,
   serializeMount,
-} from "../mounts.ts";
-import { applySelection, type ApplyResult, type WizardSelection } from "../wizard_apply.ts";
+} from '../mounts.ts';
+import {
+  type ApplyResult,
+  applySelection,
+  type WizardSelection,
+} from '../wizard_apply.ts';
 import {
   type ContainerStatus,
   getContainerStatus,
   rebuildContainer,
-} from "../container.ts";
-import { findArraySpan, findFence, parseFenceEntries } from "../jsonc_edit.ts";
+} from '../container.ts';
+import { findArraySpan, findFence, parseFenceEntries } from '../jsonc_edit.ts';
 import {
   type FsProbe,
   longestRootAncestor,
   realFsProbe,
   resolvePickedMounts,
   resolveWorktree,
-} from "../worktree.ts";
+} from '../worktree.ts';
 import {
   type DerivedEntry,
   type EntryFlag,
-  pickFolders,
   type PickerDeps,
-} from "./folder_picker.ts";
-import { runConfirm } from "./prompts.ts";
-import type { Size } from "./term.ts";
+  pickFolders,
+} from './folder_picker.ts';
+import { runConfirm } from './prompts.ts';
+import type { Size } from './term.ts';
 
 export interface WizardIo {
   err: (msg: string) => void;
@@ -105,13 +109,13 @@ async function writeLines(
 ): Promise<void> {
   const w = output.getWriter();
   try {
-    await w.write(new TextEncoder().encode(lines.join("\n") + "\n"));
+    await w.write(new TextEncoder().encode(lines.join('\n') + '\n'));
   } finally {
     w.releaseLock();
   }
 }
 
-const HOME = () => Deno.env.get("HOME") ?? Deno.cwd();
+const HOME = () => Deno.env.get('HOME') ?? Deno.cwd();
 
 /**
  * Expand a stored mount `source` to an absolute path for pre-ticking in the picker. Handles the
@@ -120,10 +124,10 @@ const HOME = () => Deno.env.get("HOME") ?? Deno.cwd();
  */
 function expandToAbsolute(source: string): string | null {
   let s = source;
-  if (s.includes("${localEnv:HOME}")) {
-    const home = Deno.env.get("HOME");
+  if (s.includes('${localEnv:HOME}')) {
+    const home = Deno.env.get('HOME');
     if (!home) return null;
-    s = s.replaceAll("${localEnv:HOME}", home);
+    s = s.replaceAll('${localEnv:HOME}', home);
   }
   try {
     return resolve(expandPath(s));
@@ -181,7 +185,7 @@ async function buildSourceRows(
 
   for (const m of await resolvePickedMounts(paths, codeRoots, fs)) {
     add(
-      rowForHostPath("source", m.path, m.base),
+      rowForHostPath('source', m.path, m.base),
       () => warn(`  skipped ${m.path} — target already in use`),
     );
     // Right after its worktree, so the fence reads in the order the picker showed it.
@@ -200,21 +204,21 @@ async function buildSourceRows(
 }
 
 function reviewLines(sel: WizardSelection, projectDir: string): string[] {
-  const lines: string[] = ["", "Review:"];
+  const lines: string[] = ['', 'Review:'];
   // `note` is a mount the container makes on its own (the project folder) — it isn't written to
   // the fence, but listing it keeps an empty source fence from reading as "no source mounts".
   const block = (title: string, rows: MountRow[], note?: string) => {
     lines.push(`  ${title}`);
     if (note) lines.push(`    ${note}`);
-    if (rows.length === 0 && note === undefined) lines.push("    (none)");
+    if (rows.length === 0 && note === undefined) lines.push('    (none)');
     for (const r of rows) lines.push(`    ${serializeMount(r)}`);
   };
   block(
-    "devc:source",
+    'devc:source',
     sel.source,
     `${foldHome(projectDir)} — this project (always mounted)`,
   );
-  block("devc:skills", sel.skills);
+  block('devc:skills', sel.skills);
   return lines;
 }
 
@@ -251,7 +255,9 @@ export async function runProjectFlow(
 
   await writeLines(deps.output, [
     `Configuring devcontainer at ${opts.configPath}`,
-    `  (${opts.creating ? "creating a new config" : "updating the existing config"})`,
+    `  (${
+      opts.creating ? 'creating a new config' : 'updating the existing config'
+    })`,
   ]);
 
   // Flag each browsed subfolder that is a git worktree whose primary repo can't be mounted.
@@ -292,9 +298,9 @@ export async function runProjectFlow(
 
   const sourcePicked = await pickFolders({
     labels: {
-      screen: "WORKSPACE CONFIG",
-      picks: "Source Folders",
-      browse: "Add Source Folders",
+      screen: 'WORKSPACE CONFIG',
+      picks: 'Source Folders',
+      browse: 'Add Source Folders',
     },
     start: opts.codeRoots[0] ?? HOME(),
     roots: opts.codeRoots.length ? opts.codeRoots : undefined,
@@ -305,22 +311,22 @@ export async function runProjectFlow(
     // it. Show it as a fixed row rather than letting the picker read as zero source mounts.
     pinned: {
       path: resolve(opts.projectDir),
-      note: "this project (always mounted)",
+      note: 'this project (always mounted)',
     },
     annotate: annotateSource,
     derive: deriveSource,
     color: opts.color,
   }, pickerDeps(deps));
   if (sourcePicked === null) {
-    await writeLines(deps.output, ["Cancelled."]);
+    await writeLines(deps.output, ['Cancelled.']);
     return { applied: false, changed: false, rebuilt: false };
   }
 
   const skillsPicked = await pickFolders({
     labels: {
-      screen: "WORKSPACE CONFIG",
-      picks: "Skills",
-      browse: "Add Skills",
+      screen: 'WORKSPACE CONFIG',
+      picks: 'Skills',
+      browse: 'Add Skills',
     },
     start: opts.skillsRoots[0] ?? HOME(),
     roots: opts.skillsRoots.length ? opts.skillsRoots : undefined,
@@ -330,30 +336,30 @@ export async function runProjectFlow(
     color: opts.color,
   }, pickerDeps(deps));
   if (skillsPicked === null) {
-    await writeLines(deps.output, ["Cancelled."]);
+    await writeLines(deps.output, ['Cancelled.']);
     return { applied: false, changed: false, rebuilt: false };
   }
 
   const selection: WizardSelection = {
     source: await buildSourceRows(sourcePicked, opts.codeRoots, warn, fs),
-    skills: buildRows("skills", skillsPicked, warn),
+    skills: buildRows('skills', skillsPicked, warn),
   };
 
   await writeLines(deps.output, reviewLines(selection, opts.projectDir));
-  const ok = await runConfirm("Apply?", true, {
+  const ok = await runConfirm('Apply?', true, {
     input: deps.input,
     output: deps.output,
     raw: deps.raw,
   });
   if (!ok) {
-    await writeLines(deps.output, ["Cancelled — nothing written."]);
+    await writeLines(deps.output, ['Cancelled — nothing written.']);
     return { applied: false, changed: false, rebuilt: false };
   }
 
   const result = await apply(opts.projectDir, selection);
   const msg = [
     result.changed
-      ? `${result.created ? "Created" : "Updated"} ${result.configPath}`
+      ? `${result.created ? 'Created' : 'Updated'} ${result.configPath}`
       : `Unchanged ${result.configPath}`,
   ];
   if (result.created) {
@@ -380,7 +386,7 @@ async function maybeRebuild(
   deps: FlowDeps,
 ): Promise<boolean> {
   if (!changed) {
-    await writeLines(deps.output, ["No config changes — no rebuild needed."]);
+    await writeLines(deps.output, ['No config changes — no rebuild needed.']);
     return false;
   }
 
@@ -394,23 +400,27 @@ async function maybeRebuild(
     : await status(projectDir).catch(() => null);
   if (state === null || rebuild === undefined) {
     await writeLines(deps.output, [
-      "Config changed — run `devc build` to rebuild the dev container.",
+      'Config changed — run `devc build` to rebuild the dev container.',
     ]);
     return false;
   }
 
-  const existing = state !== "missing";
+  const existing = state !== 'missing';
   await writeLines(deps.output, [
-    "",
+    '',
     existing
-      ? "Config changed — the dev container must be rebuilt for the new mounts to take effect."
-      : "No dev container exists for this project yet.",
+      ? 'Config changed — the dev container must be rebuilt for the new mounts to take effect.'
+      : 'No dev container exists for this project yet.',
   ]);
-  const go = await runConfirm(existing ? "Rebuild now?" : "Build it now?", true, {
-    input: deps.input,
-    output: deps.output,
-    raw: deps.raw,
-  });
+  const go = await runConfirm(
+    existing ? 'Rebuild now?' : 'Build it now?',
+    true,
+    {
+      input: deps.input,
+      output: deps.output,
+      raw: deps.raw,
+    },
+  );
   if (!go) {
     await writeLines(deps.output, [
       "Skipped — run `devc build` when you're ready.",
@@ -446,16 +456,16 @@ export async function runGlobalFlow(
     }
   };
   await writeLines(deps.output, [
-    "Configure roots — pick your code folder root(s), then your skills root(s).",
-    "These scope where the project pickers can select from.",
+    'Configure roots — pick your code folder root(s), then your skills root(s).',
+    'These scope where the project pickers can select from.',
   ]);
 
   const codePre = expandedOrEmpty(cfg.codeRoots);
   const codeAbs = await pickFolders({
     labels: {
-      screen: "GLOBAL CONFIG",
-      picks: "Source Folder Roots",
-      browse: "Add Roots",
+      screen: 'GLOBAL CONFIG',
+      picks: 'Source Folder Roots',
+      browse: 'Add Roots',
     },
     start: codePre[0] ?? HOME(),
     preselected: codePre,
@@ -466,9 +476,9 @@ export async function runGlobalFlow(
   const skillsPre = expandedOrEmpty(cfg.skillsRoots);
   const skillsAbs = await pickFolders({
     labels: {
-      screen: "GLOBAL CONFIG",
-      picks: "Skills Folder Roots",
-      browse: "Add Roots",
+      screen: 'GLOBAL CONFIG',
+      picks: 'Skills Folder Roots',
+      browse: 'Add Roots',
     },
     start: skillsPre[0] ?? HOME(),
     preselected: skillsPre,
@@ -502,17 +512,17 @@ export async function seedRows(
   baseText: string,
   recentSkillsRaw: string[],
 ): Promise<{ sourceRows: MountRow[]; skillsRows: MountRow[] }> {
-  const span = findArraySpan(baseText, "mounts");
+  const span = findArraySpan(baseText, 'mounts');
   const hasFence = (id: string) =>
     span !== null && findFence(baseText, span, id) !== null;
-  const hadFences = hasFence("source") || hasFence("skills");
+  const hadFences = hasFence('source') || hasFence('skills');
 
   const sourceRows = span === null
     ? []
-    : parseEntries(parseFenceEntries(baseText, span, "source"));
+    : parseEntries(parseFenceEntries(baseText, span, 'source'));
   let skillsRows = span === null
     ? []
-    : parseEntries(parseFenceEntries(baseText, span, "skills"));
+    : parseEntries(parseFenceEntries(baseText, span, 'skills'));
 
   if (!hadFences) {
     skillsRows = [];
@@ -527,8 +537,8 @@ export async function seedRows(
       const folded = foldHome(raw);
       skillsRows.push({
         source: folded,
-        target: defaultTarget("skills", folded),
-        readonly: defaultReadonly("skills"),
+        target: defaultTarget('skills', folded),
+        readonly: defaultReadonly('skills'),
       });
     }
   }
@@ -553,8 +563,8 @@ function realDeps(): FlowDeps {
 }
 
 const colorEnabled = (): boolean => {
-  const f = Deno.env.get("NO_COLOR");
-  return f === undefined || f === "";
+  const f = Deno.env.get('NO_COLOR');
+  return f === undefined || f === '';
 };
 
 /**
@@ -581,7 +591,8 @@ export async function runProjectConfigWizard(
   // Bounded pickers need roots as their top level, so ensure roots exist first: on an explicit
   // first run, or whenever either root list is empty/unresolvable.
   let cfg = await loadGlobalConfig();
-  const rootsMissing = safeExpanded(() => cfg.codeRootsExpanded()).length === 0 ||
+  const rootsMissing =
+    safeExpanded(() => cfg.codeRootsExpanded()).length === 0 ||
     safeExpanded(() => cfg.skillsRootsExpanded()).length === 0;
   if (includeGlobalStep || rootsMissing) {
     await runGlobalConfigWizard(io);

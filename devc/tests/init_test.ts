@@ -1,6 +1,6 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@^1";
-import { initProject } from "../init.ts";
-import { loadBundledDevcontainerJson } from "../default_config.ts";
+import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { initProject } from '../init.ts';
+import { loadBundledDevcontainerJson } from '../default_config.ts';
 
 async function withTempDir(fn: (tmp: string) => Promise<void>) {
   const tmp = await Deno.makeTempDir();
@@ -13,7 +13,7 @@ async function withTempDir(fn: (tmp: string) => Promise<void>) {
 
 const mode = async (path: string) => (await Deno.stat(path)).mode! & 0o777;
 
-Deno.test("initProject writes the whole bundled .devcontainer/", async () => {
+Deno.test('initProject writes the whole bundled .devcontainer/', async () => {
   await withTempDir(async (tmp) => {
     const { configPath, written } = await initProject(tmp);
     assertEquals(configPath, `${tmp}/.devcontainer/devcontainer.json`);
@@ -34,7 +34,7 @@ Deno.test("initProject writes the whole bundled .devcontainer/", async () => {
   });
 });
 
-Deno.test("initProject writes devcontainer.json byte-identical to the bundled default", async () => {
+Deno.test('initProject writes devcontainer.json byte-identical to the bundled default', async () => {
   await withTempDir(async (tmp) => {
     const { configPath } = await initProject(tmp);
     assertEquals(
@@ -47,12 +47,12 @@ Deno.test("initProject writes devcontainer.json byte-identical to the bundled de
 // `devc config` inserts the fences later (see the applyFences "config that lacks them" test), so
 // init has no reason to write empty ones. Matching the real `// >>> devc:<id>` / `// <<< devc:<id>`
 // markers rather than the bare id — the bundled config mentions `devc:skills` in prose.
-Deno.test("initProject writes no mount fences", async () => {
+Deno.test('initProject writes no mount fences', async () => {
   await withTempDir(async (tmp) => {
     const text = await Deno.readTextFile((await initProject(tmp)).configPath);
-    for (const id of ["source", "skills"]) {
+    for (const id of ['source', 'skills']) {
       assertEquals(
-        new RegExp(`^[ \\t]*//[ \\t]*(>>>|<<<)[ \\t]*devc:${id}\\b`, "m").test(
+        new RegExp(`^[ \\t]*//[ \\t]*(>>>|<<<)[ \\t]*devc:${id}\\b`, 'm').test(
           text,
         ),
         false,
@@ -62,14 +62,14 @@ Deno.test("initProject writes no mount fences", async () => {
   });
 });
 
-Deno.test("initProject makes the lifecycle scripts and scripts/*.sh executable", async () => {
+Deno.test('initProject makes the lifecycle scripts and scripts/*.sh executable', async () => {
   await withTempDir(async (tmp) => {
     await initProject(tmp);
     const dir = `${tmp}/.devcontainer`;
     assertEquals(await mode(`${dir}/post-create.sh`), 0o755);
     assertEquals(await mode(`${dir}/initialize-command.sh`), 0o755);
     for await (const entry of Deno.readDir(`${dir}/scripts`)) {
-      if (entry.isFile && entry.name.endsWith(".sh")) {
+      if (entry.isFile && entry.name.endsWith('.sh')) {
         assertEquals(await mode(`${dir}/scripts/${entry.name}`), 0o755);
       }
     }
@@ -78,7 +78,7 @@ Deno.test("initProject makes the lifecycle scripts and scripts/*.sh executable",
   });
 });
 
-Deno.test("initProject refuses when .devcontainer/devcontainer.json exists, leaving it untouched", async () => {
+Deno.test('initProject refuses when .devcontainer/devcontainer.json exists, leaving it untouched', async () => {
   await withTempDir(async (tmp) => {
     await Deno.mkdir(`${tmp}/.devcontainer`);
     const configPath = `${tmp}/.devcontainer/devcontainer.json`;
@@ -88,7 +88,7 @@ Deno.test("initProject refuses when .devcontainer/devcontainer.json exists, leav
     await assertRejects(
       () => initProject(tmp),
       Error,
-      "delete the .devcontainer/ folder contents and run `devc init` again.",
+      'delete the .devcontainer/ folder contents and run `devc init` again.',
     );
     assertEquals(await Deno.readTextFile(configPath), '{ "name": "mine" }');
     // Nothing else was scaffolded alongside it.
@@ -103,14 +103,14 @@ Deno.test("initProject refuses when .devcontainer/devcontainer.json exists, leav
 
 // The root form counts too: scaffolding the directory form next to it would leave two configs
 // and make which one applies ambiguous.
-Deno.test("initProject refuses when a root .devcontainer.json exists", async () => {
+Deno.test('initProject refuses when a root .devcontainer.json exists', async () => {
   await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(`${tmp}/.devcontainer.json`, "{}");
+    await Deno.writeTextFile(`${tmp}/.devcontainer.json`, '{}');
     // A lone file, so here "delete it" is the whole remedy — no folder contents to clear.
     await assertRejects(
       () => initProject(tmp),
       Error,
-      "or delete it and run `devc init` again.",
+      'or delete it and run `devc init` again.',
     );
     assertEquals(
       await Deno.stat(`${tmp}/.devcontainer`).then(() => true).catch(() =>
@@ -124,15 +124,15 @@ Deno.test("initProject refuses when a root .devcontainer.json exists", async () 
 // Stricter than "no config yet": installBundledAssets overwrites exactly the bundle's own paths,
 // so scaffolding into an occupied directory would silently replace a hand-written Dockerfile or
 // scripts/*.sh and leave everything else behind as stale debris.
-Deno.test("initProject refuses when .devcontainer/ holds unrelated files, writing nothing", async () => {
+Deno.test('initProject refuses when .devcontainer/ holds unrelated files, writing nothing', async () => {
   await withTempDir(async (tmp) => {
     await Deno.mkdir(`${tmp}/.devcontainer`);
-    await Deno.writeTextFile(`${tmp}/.devcontainer/Dockerfile`, "FROM mine");
-    await Deno.writeTextFile(`${tmp}/.devcontainer/README.md`, "notes");
-    await assertRejects(() => initProject(tmp), Error, "is not empty");
+    await Deno.writeTextFile(`${tmp}/.devcontainer/Dockerfile`, 'FROM mine');
+    await Deno.writeTextFile(`${tmp}/.devcontainer/README.md`, 'notes');
+    await assertRejects(() => initProject(tmp), Error, 'is not empty');
     assertEquals(
       await Deno.readTextFile(`${tmp}/.devcontainer/Dockerfile`),
-      "FROM mine",
+      'FROM mine',
     );
     assertEquals(
       await Deno.stat(`${tmp}/.devcontainer/devcontainer.json`).then(() => true)
@@ -142,41 +142,41 @@ Deno.test("initProject refuses when .devcontainer/ holds unrelated files, writin
   });
 });
 
-Deno.test("initProject refuses when .devcontainer/ holds only a subdirectory", async () => {
+Deno.test('initProject refuses when .devcontainer/ holds only a subdirectory', async () => {
   await withTempDir(async (tmp) => {
     await Deno.mkdir(`${tmp}/.devcontainer/shell`, { recursive: true });
     await Deno.writeTextFile(
       `${tmp}/.devcontainer/shell/10-mine.sh`,
-      "alias m=1",
+      'alias m=1',
     );
-    await assertRejects(() => initProject(tmp), Error, "is not empty");
+    await assertRejects(() => initProject(tmp), Error, 'is not empty');
     assertEquals(
       await Deno.readTextFile(`${tmp}/.devcontainer/shell/10-mine.sh`),
-      "alias m=1",
+      'alias m=1',
     );
   });
 });
 
-Deno.test("initProject refuses when .devcontainer/ holds only a dotfile", async () => {
+Deno.test('initProject refuses when .devcontainer/ holds only a dotfile', async () => {
   await withTempDir(async (tmp) => {
     await Deno.mkdir(`${tmp}/.devcontainer`);
-    await Deno.writeTextFile(`${tmp}/.devcontainer/.gitkeep`, "");
-    await assertRejects(() => initProject(tmp), Error, "is not empty");
+    await Deno.writeTextFile(`${tmp}/.devcontainer/.gitkeep`, '');
+    await assertRejects(() => initProject(tmp), Error, 'is not empty');
   });
 });
 
-Deno.test("initProject names the offending directory and its contents in the error", async () => {
+Deno.test('initProject names the offending directory and its contents in the error', async () => {
   await withTempDir(async (tmp) => {
     await Deno.mkdir(`${tmp}/.devcontainer`);
-    await Deno.writeTextFile(`${tmp}/.devcontainer/stray.txt`, "");
+    await Deno.writeTextFile(`${tmp}/.devcontainer/stray.txt`, '');
     const err = await assertRejects(() => initProject(tmp), Error);
     assertEquals(err.message.includes(`${tmp}/.devcontainer`), true);
-    assertEquals(err.message.includes("stray.txt"), true);
+    assertEquals(err.message.includes('stray.txt'), true);
   });
 });
 
 // An empty directory is fine — someone may have `mkdir`'d it, and there is nothing to clobber.
-Deno.test("initProject succeeds into an existing but empty .devcontainer/", async () => {
+Deno.test('initProject succeeds into an existing but empty .devcontainer/', async () => {
   await withTempDir(async (tmp) => {
     await Deno.mkdir(`${tmp}/.devcontainer`);
     const { configPath } = await initProject(tmp);
@@ -187,12 +187,12 @@ Deno.test("initProject succeeds into an existing but empty .devcontainer/", asyn
   });
 });
 
-Deno.test("initProject is a no-op on a second run (refuses rather than overwriting)", async () => {
+Deno.test('initProject is a no-op on a second run (refuses rather than overwriting)', async () => {
   await withTempDir(async (tmp) => {
     const { configPath } = await initProject(tmp);
-    await Deno.writeTextFile(configPath, "// hand-edited\n{}");
-    await assertRejects(() => initProject(tmp), Error, "already exists");
-    assertEquals(await Deno.readTextFile(configPath), "// hand-edited\n{}");
+    await Deno.writeTextFile(configPath, '// hand-edited\n{}');
+    await assertRejects(() => initProject(tmp), Error, 'already exists');
+    assertEquals(await Deno.readTextFile(configPath), '// hand-edited\n{}');
   });
 });
 
@@ -202,7 +202,7 @@ Deno.test("initProject writes the template's Dockerfile instead of the bundled o
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await Deno.mkdir(templates, { recursive: true });
-    await Deno.writeTextFile(`${templates}/Dockerfile`, "FROM scratch\n");
+    await Deno.writeTextFile(`${templates}/Dockerfile`, 'FROM scratch\n');
 
     const project = `${tmp}/project`;
     await Deno.mkdir(project);
@@ -210,7 +210,7 @@ Deno.test("initProject writes the template's Dockerfile instead of the bundled o
 
     assertEquals(
       await Deno.readTextFile(`${project}/.devcontainer/Dockerfile`),
-      "FROM scratch\n",
+      'FROM scratch\n',
     );
     // Sparse overlay: everything else still came from the bundle.
     assertEquals(
@@ -242,7 +242,7 @@ Deno.test("initProject writes the template's devcontainer.json instead of the bu
 // clean-slate operation, and requiring an empty directory is what guarantees its output is
 // exactly the bundle with nothing carried over. A user with a local overlay moves it aside, runs
 // `init`, and moves it back — which is what the error already advises.
-Deno.test("initProject refuses a .devcontainer/ containing only devc.json, naming it", async () => {
+Deno.test('initProject refuses a .devcontainer/ containing only devc.json, naming it', async () => {
   await withTempDir(async (tmp) => {
     await Deno.mkdir(`${tmp}/.devcontainer`);
     const overlay = `${tmp}/.devcontainer/devc.json`;
@@ -250,11 +250,11 @@ Deno.test("initProject refuses a .devcontainer/ containing only devc.json, namin
     const err = await assertRejects(
       () => initProject(tmp),
       Error,
-      "is not empty",
+      'is not empty',
     );
-    assertEquals(err.message.includes("devc.json"), true);
+    assertEquals(err.message.includes('devc.json'), true);
     assertEquals(
-      err.message.includes("Move its contents aside and re-run"),
+      err.message.includes('Move its contents aside and re-run'),
       true,
     );
     // The overlay is left exactly as it was, and nothing was scaffolded.

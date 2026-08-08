@@ -10,18 +10,18 @@
 // running headless rather than crashing — which also lets the lifecycle be tested
 // in-container without a GUI.
 
-import { startServer } from "./core.ts";
-import { ensureToken } from "./token.ts";
-import { appendLog, type Config, errMsg } from "./config.ts";
+import { startServer } from './core.ts';
+import { ensureToken } from './token.ts';
+import { appendLog, type Config, errMsg } from './config.ts';
 
 // Icons are embedded (base64) rather than read from disk: the compiled binary runs
 // from a temp dir, so a path relative to import.meta.url would point at a nonexistent
 // file. Keep these in sync with icons/*.png (tiny template PNGs; regenerate with:
 // base64 -w0 icons/idle.png).
 const ICON_IDLE_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAAmElEQVR42sWVyxGAIAxE7YQ+6IFeuKcFmqMDGmE0h1xckQmjq5l5Fz5LWCBs288RlGiEN8SK0pQdaNa3vEhW+kAQ6TbWFcUhiBRPpjipKqIkQ6wNx+WZp7h9mSQhA1uCxwJx2CYeSxps3xsVbsvFhtVs77I+2RGhMy0IJ5gbPxGmWUE7POp1oz0Q2pOmFiFq2aQWeurX9CgOudGk4ZXdJwgAAAAASUVORK5CYII=";
+  'iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAAmElEQVR42sWVyxGAIAxE7YQ+6IFeuKcFmqMDGmE0h1xckQmjq5l5Fz5LWCBs288RlGiEN8SK0pQdaNa3vEhW+kAQ6TbWFcUhiBRPpjipKqIkQ6wNx+WZp7h9mSQhA1uCxwJx2CYeSxps3xsVbsvFhtVs77I+2RGhMy0IJ5gbPxGmWUE7POp1oz0Q2pOmFiFq2aQWeurX9CgOudGk4ZXdJwgAAAAASUVORK5CYII=';
 const ICON_ACTIVE_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAAeklEQVR42sWVwQ3AIAhF3cQ9nMpBGJJFCOXApcQarfyW5J00T/NVLOXnqkZzaoaMDDY0wD62vUg3ZCCMiM9dKloQRmhlp/qSPstUDsTylDkdSKeRcIKYRzFoErc4WqK4fSKGRQE7POh1gz0Q2JOGNiFo24Q2eujXdFQXv7QL2NPzn44AAAAASUVORK5CYII=";
+  'iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAAeklEQVR42sWVwQ3AIAhF3cQ9nMpBGJJFCOXApcQarfyW5J00T/NVLOXnqkZzaoaMDDY0wD62vUg3ZCCMiM9dKloQRmhlp/qSPstUDsTylDkdSKeRcIKYRzFoErc4WqK4fSKGRQE7POh1gz0Q2JOGNiFo24Q2eujXdFQXv7QL2NPzn44AAAAASUVORK5CYII=';
 
 function decodeIcon(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -62,7 +62,10 @@ async function runTrayInner(cfg: Config): Promise<void> {
   try {
     await Deno.writeTextFile(cfg.pidfile, `${Deno.pid}\n`);
   } catch (e) {
-    await appendLog(cfg.logfile, `could not write pidfile ${cfg.pidfile}: ${errMsg(e)}`);
+    await appendLog(
+      cfg.logfile,
+      `could not write pidfile ${cfg.pidfile}: ${errMsg(e)}`,
+    );
   }
 
   const shutdown = () => {
@@ -73,15 +76,15 @@ async function runTrayInner(cfg: Config): Promise<void> {
     Deno.exit(0);
   };
   // `devc-bridge stop` sends SIGTERM; also handle Ctrl-C in the foreground `run`.
-  Deno.addSignalListener("SIGINT", shutdown);
-  Deno.addSignalListener("SIGTERM", shutdown);
+  Deno.addSignalListener('SIGINT', shutdown);
+  Deno.addSignalListener('SIGTERM', shutdown);
 
   const painted = trySetupTray(cfg, server.active(), shutdown);
   paint = painted ?? (() => {});
   await appendLog(
     cfg.logfile,
     `listening on ${server.address} (commands: ${cfg.commands})` +
-      (painted ? "" : " — tray unavailable, running headless"),
+      (painted ? '' : ' — tray unavailable, running headless'),
   );
 
   // Keep the process alive; the tray event loop and signal handlers drive shutdown.
@@ -99,7 +102,7 @@ function trySetupTray(
 ): ((active: string[]) => void) | null {
   // deno-lint-ignore no-explicit-any
   const D = Deno as any;
-  if (typeof D.Tray !== "function") return null;
+  if (typeof D.Tray !== 'function') return null;
 
   try {
     const idleIcon = decodeIcon(ICON_IDLE_B64);
@@ -115,11 +118,11 @@ function trySetupTray(
     } catch { /* non-macOS */ }
     try {
       const win = new D.BrowserWindow();
-      win.navigate("data:text/html,<html></html>");
+      win.navigate('data:text/html,<html></html>');
       win.hide();
     } catch { /* no implicit window (raw backend) */ }
     try {
-      Deno.serve({ onListen() {} }, () => new Response(""));
+      Deno.serve({ onListen() {} }, () => new Response(''));
     } catch { /* backend doesn't expect a server */ }
 
     const tray = new D.Tray();
@@ -128,30 +131,40 @@ function trySetupTray(
       const awake = active.length > 0;
       tray.setIcon(awake ? activeIcon : idleIcon);
       tray.setTooltip(
-        awake ? `devc-bridge: active — ${active.join(", ")}` : "devc-bridge: idle",
+        awake
+          ? `devc-bridge: active — ${active.join(', ')}`
+          : 'devc-bridge: idle',
       );
       const menu: unknown[] = [];
       if (awake) {
         for (const name of active) {
-          menu.push({ item: { label: `● ${name}`, id: `active:${name}`, enabled: false } });
+          menu.push({
+            item: { label: `● ${name}`, id: `active:${name}`, enabled: false },
+          });
         }
-        menu.push("separator");
+        menu.push('separator');
       } else {
-        menu.push({ item: { label: "idle", id: "idle", enabled: false } });
-        menu.push("separator");
+        menu.push({ item: { label: 'idle', id: 'idle', enabled: false } });
+        menu.push('separator');
       }
-      menu.push({ item: { label: "Open commands folder", id: "open-commands", enabled: true } });
-      menu.push({ item: { label: "Quit", id: "quit", enabled: true } });
+      menu.push({
+        item: {
+          label: 'Open commands folder',
+          id: 'open-commands',
+          enabled: true,
+        },
+      });
+      menu.push({ item: { label: 'Quit', id: 'quit', enabled: true } });
       tray.setMenu(menu);
     };
 
-    tray.addEventListener("menuclick", (e: { detail: { id: string } }) => {
+    tray.addEventListener('menuclick', (e: { detail: { id: string } }) => {
       switch (e.detail.id) {
-        case "quit":
+        case 'quit':
           shutdown();
           break;
-        case "open-commands":
-          new Deno.Command("open", { args: [cfg.commands] }).spawn();
+        case 'open-commands':
+          new Deno.Command('open', { args: [cfg.commands] }).spawn();
           break;
       }
     });
@@ -159,7 +172,9 @@ function trySetupTray(
     render(initialActive);
     return render;
   } catch (e) {
-    console.error(`devc-bridge: tray setup failed (${errMsg(e)}); running headless`);
+    console.error(
+      `devc-bridge: tray setup failed (${errMsg(e)}); running headless`,
+    );
     return null;
   }
 }

@@ -10,15 +10,16 @@
 //   DEVC_BRIDGE_STATE       active-marker dir      (default /tmp/devc-bridge/state)
 //   DEVC_BRIDGE_TOKEN_FILE  shared token path      (default /tmp/devc-bridge/token)
 
-import { startServer } from "./core.ts";
-import { ensureToken } from "./token.ts";
+import { startServer } from './core.ts';
+import { ensureToken } from './token.ts';
 
-const hostname = Deno.env.get("DEVC_BRIDGE_HOST") ?? "127.0.0.1";
-const port = Number(Deno.env.get("DEVC_BRIDGE_PORT") ?? "48227");
-const commandsDir = Deno.env.get("DEVC_BRIDGE_COMMANDS") ??
-  new URL("./commands", import.meta.url).pathname;
-const stateDir = Deno.env.get("DEVC_BRIDGE_STATE") ?? "/tmp/devc-bridge/state";
-const tokenFile = Deno.env.get("DEVC_BRIDGE_TOKEN_FILE") ?? "/tmp/devc-bridge/token";
+const hostname = Deno.env.get('DEVC_BRIDGE_HOST') ?? '127.0.0.1';
+const port = Number(Deno.env.get('DEVC_BRIDGE_PORT') ?? '48227');
+const commandsDir = Deno.env.get('DEVC_BRIDGE_COMMANDS') ??
+  new URL('./commands', import.meta.url).pathname;
+const stateDir = Deno.env.get('DEVC_BRIDGE_STATE') ?? '/tmp/devc-bridge/state';
+const tokenFile = Deno.env.get('DEVC_BRIDGE_TOKEN_FILE') ??
+  '/tmp/devc-bridge/token';
 
 const token = await ensureToken(tokenFile);
 
@@ -36,11 +37,11 @@ console.log(`commands: ${commandsDir}`);
 console.log(`state:    ${stateDir}`);
 console.log(`token:    ${tokenFile}`);
 
-Deno.addSignalListener("SIGINT", () => {
+Deno.addSignalListener('SIGINT', () => {
   server.close();
   Deno.exit(0);
 });
-Deno.addSignalListener("SIGTERM", () => {
+Deno.addSignalListener('SIGTERM', () => {
   server.close();
   Deno.exit(0);
 });

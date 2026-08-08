@@ -11,18 +11,18 @@
 import {
   installBundledAssets,
   loadBundledDevcontainerJson,
-} from "./default_config.ts";
+} from './default_config.ts';
 import {
   loadGlobalConfig,
   makeGlobalConfig,
   saveGlobalConfig,
-} from "./config.ts";
+} from './config.ts';
 import {
   findArraySpan,
   UnterminatedFenceError,
   writeBlocks,
-} from "./jsonc_edit.ts";
-import { type MountRow, rowToEntry } from "./mounts.ts";
+} from './jsonc_edit.ts';
+import { type MountRow, rowToEntry } from './mounts.ts';
 
 /** The wizard's selected mounts for the two managed fences. */
 export interface WizardSelection {
@@ -31,13 +31,13 @@ export interface WizardSelection {
 }
 
 /** Where the two managed fences live in the file (`findArraySpan(src, "mounts")`). */
-const MOUNTS_KEY = "mounts";
+const MOUNTS_KEY = 'mounts';
 
 /** Rewrite (or insert) the two managed fences in `src`, preserving everything else. */
 export function applyFences(src: string, selection: WizardSelection): string {
   return writeBlocks(src, MOUNTS_KEY, [
-    { id: "source", lines: selection.source.map(rowToEntry) },
-    { id: "skills", lines: selection.skills.map(rowToEntry) },
+    { id: 'source', lines: selection.source.map(rowToEntry) },
+    { id: 'skills', lines: selection.skills.map(rowToEntry) },
   ]);
 }
 

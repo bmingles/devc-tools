@@ -18,10 +18,10 @@ export interface TerminalOptions {
   size?: () => Size;
 }
 
-const ENTER = "\x1b[?1049h\x1b[?25l"; // alternate screen, hide cursor
-const LEAVE = "\x1b[?25h\x1b[?1049l"; // show cursor, normal screen
+const ENTER = '\x1b[?1049h\x1b[?25l'; // alternate screen, hide cursor
+const LEAVE = '\x1b[?25h\x1b[?1049l'; // show cursor, normal screen
 
-const SIGNALS: Deno.Signal[] = ["SIGINT", "SIGTERM"];
+const SIGNALS: Deno.Signal[] = ['SIGINT', 'SIGTERM'];
 
 export class Terminal {
   #writer: WritableStreamDefaultWriter<Uint8Array>;
@@ -67,7 +67,7 @@ export class Terminal {
     this.#resize = cb;
     if (!this.#raw) return;
     try {
-      Deno.addSignalListener("SIGWINCH", this.#onWinch);
+      Deno.addSignalListener('SIGWINCH', this.#onWinch);
     } catch {
       // No SIGWINCH here (Windows): the next keystroke repaints at the new size.
     }
@@ -100,7 +100,7 @@ export class Terminal {
       }
       if (this.#resize !== null) {
         try {
-          Deno.removeSignalListener("SIGWINCH", this.#onWinch);
+          Deno.removeSignalListener('SIGWINCH', this.#onWinch);
         } catch { /* never added */ }
       }
     }
@@ -117,7 +117,7 @@ export class Terminal {
 
 /** The bytes of one frame. Exported for tests. */
 export function frame(lines: string[]): string {
-  return "\x1b[H" + lines.join("\x1b[K\r\n") + "\x1b[K";
+  return '\x1b[H' + lines.join('\x1b[K\r\n') + '\x1b[K';
 }
 
 function defaultSize(): Size {

@@ -3,7 +3,7 @@
   "mounts": [
     /* a block comment, with a comma and a ] in it */
     "type=bind,source=/host/a],target=/x//y",
-    "type=bind,source=/host/b,target=/y",
+    "type=bind,source=/host/b,target=/y"
   ],
   "runArgs": ["--rm", "--name=mounts"]
 }

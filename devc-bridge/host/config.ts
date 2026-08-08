@@ -12,7 +12,7 @@
 // host's to edit. Under `deno task dev` (uncompiled) the same URL resolves to the
 // repo's host/commands, so seeding still works without a build.
 
-import { join } from "jsr:@std/path@^1";
+import { join } from 'jsr:@std/path@^1';
 
 export interface Config {
   /** Root of the config tree (default ~/.config/devc-bridge). */
@@ -36,19 +36,20 @@ export interface Config {
 }
 
 export function loadConfig(): Config {
-  const home = Deno.env.get("HOME") ?? ".";
-  const base = Deno.env.get("DEVC_BRIDGE_BASE") ?? join(home, ".config", "devc-bridge");
-  const run = join(base, "run");
+  const home = Deno.env.get('HOME') ?? '.';
+  const base = Deno.env.get('DEVC_BRIDGE_BASE') ??
+    join(home, '.config', 'devc-bridge');
+  const run = join(base, 'run');
   return {
     base,
     run,
-    state: Deno.env.get("DEVC_BRIDGE_STATE") ?? join(base, "state"),
-    commands: Deno.env.get("DEVC_BRIDGE_COMMANDS") ?? join(base, "commands"),
-    token: Deno.env.get("DEVC_BRIDGE_TOKEN_FILE") ?? join(run, "token"),
-    pidfile: join(run, "tray.pid"),
-    logfile: join(base, "devc-bridge.log"),
-    hostname: Deno.env.get("DEVC_BRIDGE_HOST") ?? "127.0.0.1",
-    port: Number(Deno.env.get("DEVC_BRIDGE_PORT") ?? "48227"),
+    state: Deno.env.get('DEVC_BRIDGE_STATE') ?? join(base, 'state'),
+    commands: Deno.env.get('DEVC_BRIDGE_COMMANDS') ?? join(base, 'commands'),
+    token: Deno.env.get('DEVC_BRIDGE_TOKEN_FILE') ?? join(run, 'token'),
+    pidfile: join(run, 'tray.pid'),
+    logfile: join(base, 'devc-bridge.log'),
+    hostname: Deno.env.get('DEVC_BRIDGE_HOST') ?? '127.0.0.1',
+    port: Number(Deno.env.get('DEVC_BRIDGE_PORT') ?? '48227'),
   };
 }
 
@@ -71,13 +72,13 @@ async function ensureDir(path: string): Promise<void> {
     await Deno.mkdir(path, { recursive: true });
   } catch (e) {
     if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
-    let kind = "not a directory";
+    let kind = 'not a directory';
     try {
       if ((await Deno.stat(path)).isDirectory) return; // symlink to a real dir — fine
     } catch {
       const link = await Deno.readLink(path).catch(() => null);
       kind = link === null
-        ? "not a directory"
+        ? 'not a directory'
         : `a broken symlink → ${link} (retarget or remove it)`;
     }
     throw new Error(`devc-bridge: ${path} is ${kind}`);
@@ -89,7 +90,7 @@ async function ensureDir(path: string): Promise<void> {
  * exist (they are host-editable — never clobber). Returns the names written.
  */
 export async function seedCommands(commandsDir: string): Promise<string[]> {
-  const embedded = new URL("./commands", import.meta.url);
+  const embedded = new URL('./commands', import.meta.url);
   const written: string[] = [];
   let entries: AsyncIterable<Deno.DirEntry>;
   try {
@@ -108,7 +109,9 @@ export async function seedCommands(commandsDir: string): Promise<string[]> {
     } catch {
       // not present — seed it
     }
-    const content = await Deno.readFile(new URL(`./commands/${entry.name}`, import.meta.url));
+    const content = await Deno.readFile(
+      new URL(`./commands/${entry.name}`, import.meta.url),
+    );
     await Deno.writeFile(target, content);
     await Deno.chmod(target, 0o755);
     written.push(entry.name);
@@ -127,6 +130,8 @@ export function errMsg(e: unknown): string {
  */
 export async function appendLog(logfile: string, msg: string): Promise<void> {
   try {
-    await Deno.writeTextFile(logfile, msg.endsWith("\n") ? msg : `${msg}\n`, { append: true });
+    await Deno.writeTextFile(logfile, msg.endsWith('\n') ? msg : `${msg}\n`, {
+      append: true,
+    });
   } catch { /* diagnostics only — never fail the caller */ }
 }

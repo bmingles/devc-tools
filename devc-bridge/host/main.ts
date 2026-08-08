@@ -14,31 +14,31 @@
 //     process. stop/status use the pidfile the tray writes.
 //   • Inside that built .app it runs with no args → the tray (runTray in tray.ts).
 
-import { dirname, fromFileUrl, join } from "jsr:@std/path@^1";
-import { type Config, ensureConfig, errMsg, loadConfig } from "./config.ts";
-import { runTray } from "./tray.ts";
+import { dirname, fromFileUrl, join } from 'jsr:@std/path@^1';
+import { type Config, ensureConfig, errMsg, loadConfig } from './config.ts';
+import { runTray } from './tray.ts';
 
-const USAGE = "usage: devc-bridge {start|stop|status|restart|run}";
+const USAGE = 'usage: devc-bridge {start|stop|status|restart|run}';
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const sub = Deno.args[0];
   switch (sub) {
-    case "start":
+    case 'start':
       await start(cfg);
       break;
-    case "stop":
+    case 'stop':
       await stop(cfg);
       break;
-    case "status":
+    case 'status':
       await status(cfg);
       break;
-    case "restart":
+    case 'restart':
       await stop(cfg);
       await start(cfg);
       break;
     case undefined:
-    case "run":
+    case 'run':
       await runTray(cfg); // never returns
       break;
     default:
@@ -62,32 +62,40 @@ async function start(cfg: Config): Promise<void> {
   // Build the tray bundle from this source. Deno caches the compile, so rebuilding on
   // every start is cheap and always reflects the current source. --include embeds the
   // command scripts; paths are relative to the host/ dir (where main.ts lives).
-  const appPath = join(cfg.base, "DevcBridge.app");
+  const appPath = join(cfg.base, 'DevcBridge.app');
   const hostDir = dirname(fromFileUrl(Deno.mainModule));
-  console.error("devc-bridge: building tray app…");
-  const build = await new Deno.Command("deno", {
+  console.error('devc-bridge: building tray app…');
+  const build = await new Deno.Command('deno', {
     args: [
-      "desktop",
-      "--output", appPath,
-      "--include", "commands",
-      "--icon", "../icons/app.png",
-      "--allow-read", "--allow-write", "--allow-run", "--allow-env", "--allow-net",
-      "main.ts",
+      'desktop',
+      '--output',
+      appPath,
+      '--include',
+      'commands',
+      '--icon',
+      '../icons/app.png',
+      '--allow-read',
+      '--allow-write',
+      '--allow-run',
+      '--allow-env',
+      '--allow-net',
+      'main.ts',
     ],
     cwd: hostDir,
-    stdout: "piped",
-    stderr: "piped",
+    stdout: 'piped',
+    stderr: 'piped',
   }).output();
   if (!build.success) {
-    console.error("devc-bridge: failed to build the tray app:");
+    console.error('devc-bridge: failed to build the tray app:');
     await Deno.stderr.write(build.stderr);
     Deno.exit(1);
   }
 
   // Launch it via LaunchServices (`-g` = don't steal focus). A GUI app can only be put
   // in the background this way — a detached terminal process never brings the tray up.
-  console.error("devc-bridge: launching…");
-  const opened = await new Deno.Command("open", { args: ["-g", appPath] }).output();
+  console.error('devc-bridge: launching…');
+  const opened = await new Deno.Command('open', { args: ['-g', appPath] })
+    .output();
   if (!opened.success) {
     console.error(`devc-bridge: 'open -g ${appPath}' failed:`);
     await Deno.stderr.write(opened.stderr);
@@ -101,9 +109,13 @@ async function start(cfg: Config): Promise<void> {
   }, 30_000);
 
   if (!ok) {
-    console.error(`devc-bridge: tray launched but never reported ready — see ${cfg.logfile}`);
+    console.error(
+      `devc-bridge: tray launched but never reported ready — see ${cfg.logfile}`,
+    );
     await printLogTail(cfg.logfile);
-    console.error(`devc-bridge: (to see its errors directly, run: open ${appPath})`);
+    console.error(
+      `devc-bridge: (to see its errors directly, run: open ${appPath})`,
+    );
     Deno.exit(1);
   }
 
@@ -113,14 +125,14 @@ async function start(cfg: Config): Promise<void> {
 async function stop(cfg: Config): Promise<void> {
   const pid = await readPid(cfg);
   if (pid === null) {
-    console.log("not running");
+    console.log('not running');
     return;
   }
   try {
-    Deno.kill(pid, "SIGTERM");
+    Deno.kill(pid, 'SIGTERM');
   } catch {
     // Process already gone — fall through to clear the stale pidfile.
-    console.log("not running");
+    console.log('not running');
     await removePidfile(cfg);
     return;
   }
@@ -128,19 +140,21 @@ async function stop(cfg: Config): Promise<void> {
   // process for the TCP port (the tray's SIGTERM handler also removes the pidfile).
   await waitFor(async () => !await pidAlive(pid), 3000);
   await removePidfile(cfg);
-  console.log("stopped");
+  console.log('stopped');
 }
 
 async function status(cfg: Config): Promise<void> {
   const pid = await readPid(cfg);
   if (pid !== null && await pidAlive(pid)) {
     const active = await scanActive(cfg.state);
-    const suffix = active.length > 0 ? ` — active: ${active.join(", ")}` : " — idle";
+    const suffix = active.length > 0
+      ? ` — active: ${active.join(', ')}`
+      : ' — idle';
     console.log(`running (pid ${pid})${suffix}`);
     return;
   }
   if (pid !== null) await removePidfile(cfg); // stale
-  console.log("stopped");
+  console.log('stopped');
   Deno.exit(1);
 }
 
@@ -160,7 +174,7 @@ async function readPid(cfg: Config): Promise<number | null> {
 async function pidAlive(pid: number): Promise<boolean> {
   await Promise.resolve();
   try {
-    Deno.kill(pid, "SIGCONT");
+    Deno.kill(pid, 'SIGCONT');
     return true;
   } catch {
     return false;
@@ -184,7 +198,10 @@ async function scanActive(stateDir: string): Promise<string[]> {
 }
 
 /** Poll `check` until it returns true or `ms` elapses. */
-async function waitFor(check: () => Promise<boolean>, ms: number): Promise<boolean> {
+async function waitFor(
+  check: () => Promise<boolean>,
+  ms: number,
+): Promise<boolean> {
   const deadline = performance.now() + ms;
   while (performance.now() < deadline) {
     if (await check()) return true;
@@ -196,7 +213,7 @@ async function waitFor(check: () => Promise<boolean>, ms: number): Promise<boole
 async function printLogTail(logfile: string, lines = 20): Promise<void> {
   try {
     const text = await Deno.readTextFile(logfile);
-    const tail = text.split("\n").slice(-lines).join("\n");
+    const tail = text.split('\n').slice(-lines).join('\n');
     if (tail.trim().length > 0) console.error(tail);
   } catch (e) {
     console.error(`devc-bridge: (no log at ${logfile}: ${errMsg(e)})`);
@@ -208,10 +225,10 @@ try {
 } catch (e) {
   // Our own failures carry a "devc-bridge: …" message and are worth reading on their own;
   // anything else is a bug, so keep its stack.
-  if (e instanceof Error && e.message.startsWith("devc-bridge:")) {
+  if (e instanceof Error && e.message.startsWith('devc-bridge:')) {
     console.error(e.message);
   } else {
-    console.error("devc-bridge: unexpected failure");
+    console.error('devc-bridge: unexpected failure');
     console.error(e);
   }
   Deno.exit(1);

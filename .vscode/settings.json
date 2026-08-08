@@ -4,6 +4,9 @@
   "deno.enable": true,
   "deno.enablePaths": ["devc"],
   "deno.disablePaths": ["devc-bridge"],
+  "[markdown]": {
+    "editor.defaultFormatter": "denoland.vscode-deno"
+  },
   "[typescript]": {
     "editor.defaultFormatter": "denoland.vscode-deno"
   }

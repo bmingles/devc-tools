@@ -1,41 +1,41 @@
-import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@^1";
+import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@^1';
 import {
   applyFences,
   applySelection,
   type WizardSelection,
-} from "../wizard_apply.ts";
-import { findArraySpan, parseFenceEntries, parseJsonc } from "../jsonc_edit.ts";
-import { parseEntries } from "../mounts.ts";
+} from '../wizard_apply.ts';
+import { findArraySpan, parseFenceEntries, parseJsonc } from '../jsonc_edit.ts';
+import { parseEntries } from '../mounts.ts';
 import {
   loadGlobalConfig,
   makeGlobalConfig,
   saveGlobalConfig,
-} from "../config.ts";
-import { withTemp } from "./helpers.ts";
+} from '../config.ts';
+import { withTemp } from './helpers.ts';
 
 const SEL: WizardSelection = {
   source: [{
-    source: "${localEnv:HOME}/code/p",
-    target: "/workspaces/p",
+    source: '${localEnv:HOME}/code/p',
+    target: '/workspaces/p',
     readonly: false,
   }],
   skills: [{
-    source: "/srv/skills/agent",
-    target: "/home/vscode/.claude/skills/agent",
+    source: '/srv/skills/agent',
+    target: '/home/vscode/.claude/skills/agent',
     readonly: true,
   }],
 };
 
 /** Read the source/skills fence rows back out of a written config. */
 function fenceRows(text: string) {
-  const span = findArraySpan(text, "mounts")!;
+  const span = findArraySpan(text, 'mounts')!;
   return {
-    source: parseEntries(parseFenceEntries(text, span, "source")),
-    skills: parseEntries(parseFenceEntries(text, span, "skills")),
+    source: parseEntries(parseFenceEntries(text, span, 'source')),
+    skills: parseEntries(parseFenceEntries(text, span, 'skills')),
   };
 }
 
-Deno.test("first creation: populated fences, infra intact, Dockerfile + entry scripts + scripts/ copied", async () => {
+Deno.test('first creation: populated fences, infra intact, Dockerfile + entry scripts + scripts/ copied', async () => {
   await withTemp(async (dir) => {
     const cfgPath = `${dir}/config.json`;
     const result = await applySelection(dir, SEL, {
@@ -47,8 +47,8 @@ Deno.test("first creation: populated fences, infra intact, Dockerfile + entry sc
       `${dir}/.devcontainer/devcontainer.json`,
     );
     // Both fences present and populated.
-    assertStringIncludes(text, "devc:source");
-    assertStringIncludes(text, "devc:skills");
+    assertStringIncludes(text, 'devc:source');
+    assertStringIncludes(text, 'devc:skills');
     const rows = fenceRows(text);
     assertEquals(rows.source, SEL.source);
     assertEquals(rows.skills, SEL.skills);
@@ -56,14 +56,14 @@ Deno.test("first creation: populated fences, infra intact, Dockerfile + entry sc
     // Infra mounts from the bundled default survive untouched.
     const parsed = parseJsonc(text) as { mounts: string[] };
     assert(
-      parsed.mounts.some((m) => m.includes("claude-code-config-")),
-      "claude-config volume mount missing",
+      parsed.mounts.some((m) => m.includes('claude-code-config-')),
+      'claude-config volume mount missing',
     );
     assert(
       parsed.mounts.some((m) =>
-        m.includes("target=/usr/local/share/devc/claude-seed")
+        m.includes('target=/usr/local/share/devc/claude-seed')
       ),
-      "~/.claude seed bind missing",
+      '~/.claude seed bind missing',
     );
 
     // No local Feature; the baseline runs via a top-level postCreateCommand.
@@ -73,7 +73,7 @@ Deno.test("first creation: populated fences, infra intact, Dockerfile + entry sc
       initializeCommand?: unknown;
     };
     assertEquals(
-      Object.hasOwn(dc.features ?? {}, "./features/devc"),
+      Object.hasOwn(dc.features ?? {}, './features/devc'),
       false,
     );
     // Project mode references the copies in the project's own .devcontainer/, so edits
@@ -92,18 +92,18 @@ Deno.test("first creation: populated fences, infra intact, Dockerfile + entry sc
     assert((await Deno.stat(`${dir}/.devcontainer/Dockerfile`)).isFile);
     for (
       const rel of [
-        "post-create.sh",
-        "initialize-command.sh",
-        "scripts/agents-setup.sh",
-        "scripts/node-setup.sh",
-        "scripts/bashrc-additions.sh",
+        'post-create.sh',
+        'initialize-command.sh',
+        'scripts/agents-setup.sh',
+        'scripts/node-setup.sh',
+        'scripts/bashrc-additions.sh',
       ]
     ) {
       const st = await Deno.stat(`${dir}/.devcontainer/${rel}`);
       assert(st.isFile, `${rel} missing`);
       assertEquals(st.mode! & 0o111, 0o111, `${rel} not executable`);
     }
-    for (const gone of ["features", "post-create.user.sh"]) {
+    for (const gone of ['features', 'post-create.user.sh']) {
       assertEquals(
         await Deno.stat(`${dir}/.devcontainer/${gone}`).then(() => true).catch(
           () => false,
@@ -115,11 +115,11 @@ Deno.test("first creation: populated fences, infra intact, Dockerfile + entry sc
 
     // recentSkills persisted (raw host paths).
     const cfg = await loadGlobalConfig(cfgPath);
-    assertEquals(cfg.recentSkills, ["/srv/skills/agent"]);
+    assertEquals(cfg.recentSkills, ['/srv/skills/agent']);
   });
 });
 
-Deno.test("idempotence: applying the same selection twice is byte-identical", async () => {
+Deno.test('idempotence: applying the same selection twice is byte-identical', async () => {
   await withTemp(async (dir) => {
     const cfgPath = `${dir}/config.json`;
     await applySelection(dir, SEL, { globalConfigPath: cfgPath });
@@ -129,7 +129,7 @@ Deno.test("idempotence: applying the same selection twice is byte-identical", as
     const result2 = await applySelection(dir, SEL, {
       globalConfigPath: cfgPath,
     });
-    assert(!result2.created, "second apply must be an update");
+    assert(!result2.created, 'second apply must be an update');
     const second = await Deno.readTextFile(
       `${dir}/.devcontainer/devcontainer.json`,
     );
@@ -137,7 +137,7 @@ Deno.test("idempotence: applying the same selection twice is byte-identical", as
   });
 });
 
-Deno.test("update preserves a hand-added mount + comment; infra removed by hand stays gone", async () => {
+Deno.test('update preserves a hand-added mount + comment; infra removed by hand stays gone', async () => {
   await withTemp(async (dir) => {
     const cfgPath = `${dir}/config.json`;
     await applySelection(dir, SEL, { globalConfigPath: cfgPath });
@@ -150,7 +150,7 @@ Deno.test("update preserves a hand-added mount + comment; infra removed by hand 
       '"mounts": [\n    // my own mount\n    "type=bind,source=/host/mine,target=/mnt/mine",',
     );
     // Remove the go-cache infra mount line entirely.
-    text = text.split("\n").filter((l) => !l.includes("go-cache-")).join("\n");
+    text = text.split('\n').filter((l) => !l.includes('go-cache-')).join('\n');
     await Deno.writeTextFile(path, text);
     const handEdited = await Deno.readTextFile(path);
 
@@ -160,27 +160,27 @@ Deno.test("update preserves a hand-added mount + comment; infra removed by hand 
     const after = await Deno.readTextFile(path);
 
     // The hand comment and mount survive byte-for-byte.
-    assertStringIncludes(after, "    // my own mount\n");
+    assertStringIncludes(after, '    // my own mount\n');
     assertStringIncludes(
       after,
       '"type=bind,source=/host/mine,target=/mnt/mine"',
     );
     // The removed infra mount is NOT re-asserted.
-    assert(!after.includes("go-cache-"), "infra mount was wrongly re-asserted");
+    assert(!after.includes('go-cache-'), 'infra mount was wrongly re-asserted');
     // Fence contents are unchanged from what we recovered.
     assertEquals(fenceRows(after), recovered);
   });
 });
 
-Deno.test("applyFences inserts fences into a config that lacks them (no Dockerfile/features)", () => {
+Deno.test('applyFences inserts fences into a config that lacks them (no Dockerfile/features)', () => {
   const src =
     '{\n  "name": "x",\n  "mounts": [\n    "type=bind,source=/a,target=/b"\n  ]\n}\n';
   const out = applyFences(src, SEL);
-  assertStringIncludes(out, "devc:source");
-  assertStringIncludes(out, "devc:skills");
+  assertStringIncludes(out, 'devc:source');
+  assertStringIncludes(out, 'devc:skills');
   const parsed = parseJsonc(out) as { mounts: string[]; name: string };
-  assertEquals(parsed.name, "x");
-  assert(parsed.mounts.includes("type=bind,source=/a,target=/b"));
+  assertEquals(parsed.name, 'x');
+  assert(parsed.mounts.includes('type=bind,source=/a,target=/b'));
 });
 
 Deno.test("remembered list seeds a fresh project's skills (existing host paths only)", async () => {
@@ -196,12 +196,12 @@ Deno.test("remembered list seeds a fresh project's skills (existing host paths o
       skills: [
         {
           source: a,
-          target: "/home/vscode/.claude/skills/skillA",
+          target: '/home/vscode/.claude/skills/skillA',
           readonly: true,
         },
         {
           source: b,
-          target: "/home/vscode/.claude/skills/skillB",
+          target: '/home/vscode/.claude/skills/skillB',
           readonly: true,
         },
       ],
@@ -225,26 +225,26 @@ Deno.test("remembered list seeds a fresh project's skills (existing host paths o
   });
 });
 
-Deno.test("saveGlobalConfig round-trips recentSkills and preserves unknown keys", async () => {
+Deno.test('saveGlobalConfig round-trips recentSkills and preserves unknown keys', async () => {
   await withTemp(async (dir) => {
     const path = `${dir}/config.json`;
-    const cfg = makeGlobalConfig(["~/code"], ["~/skills"], path, { misc: 1 }, [
-      "~/skills/x",
+    const cfg = makeGlobalConfig(['~/code'], ['~/skills'], path, { misc: 1 }, [
+      '~/skills/x',
     ]);
     await saveGlobalConfig(cfg);
     const loaded = await loadGlobalConfig(path);
-    assertEquals(loaded.recentSkills, ["~/skills/x"]);
-    assertEquals(loaded.codeRoots, ["~/code"]);
+    assertEquals(loaded.recentSkills, ['~/skills/x']);
+    assertEquals(loaded.codeRoots, ['~/code']);
     assertEquals(loaded.extra, { misc: 1 });
   });
 });
 
-Deno.test("changed: true on creation, false when the selection round-trips identically", async () => {
+Deno.test('changed: true on creation, false when the selection round-trips identically', async () => {
   await withTemp(async (dir) => {
     const cfgPath = `${dir}/config.json`;
     const first = await applySelection(dir, SEL, { globalConfigPath: cfgPath });
     assert(first.created);
-    assert(first.changed, "first creation must count as a change");
+    assert(first.changed, 'first creation must count as a change');
 
     const path = `${dir}/.devcontainer/devcontainer.json`;
     const before = await Deno.readTextFile(path);
@@ -262,7 +262,7 @@ Deno.test("changed: true on creation, false when the selection round-trips ident
   });
 });
 
-Deno.test("changed: true when the selection differs from what is on disk", async () => {
+Deno.test('changed: true when the selection differs from what is on disk', async () => {
   await withTemp(async (dir) => {
     const cfgPath = `${dir}/config.json`;
     await applySelection(dir, SEL, { globalConfigPath: cfgPath });
@@ -274,7 +274,7 @@ Deno.test("changed: true when the selection differs from what is on disk", async
     const result = await applySelection(dir, edited, {
       globalConfigPath: cfgPath,
     });
-    assert(result.changed, "dropping a mount must count as a change");
+    assert(result.changed, 'dropping a mount must count as a change');
     const rows = fenceRows(
       await Deno.readTextFile(`${dir}/.devcontainer/devcontainer.json`),
     );
@@ -282,7 +282,7 @@ Deno.test("changed: true when the selection differs from what is on disk", async
   });
 });
 
-Deno.test("changed: false leaves the fences and a toggled-and-restored row intact", async () => {
+Deno.test('changed: false leaves the fences and a toggled-and-restored row intact', async () => {
   await withTemp(async (dir) => {
     const cfgPath = `${dir}/config.json`;
     await applySelection(dir, SEL, { globalConfigPath: cfgPath });
@@ -296,7 +296,7 @@ Deno.test("changed: false leaves the fences and a toggled-and-restored row intac
     const restored = await applySelection(dir, SEL, {
       globalConfigPath: cfgPath,
     });
-    assert(restored.changed, "restoring the row is itself a change from disk");
+    assert(restored.changed, 'restoring the row is itself a change from disk');
 
     const noop = await applySelection(dir, SEL, { globalConfigPath: cfgPath });
     assertEquals(noop.changed, false);
@@ -309,7 +309,7 @@ Deno.test("changed: false leaves the fences and a toggled-and-restored row intac
 // A user template `devcontainer.json` becomes the base text the fences are inserted into. It need
 // not have a `mounts` array at all — `writeBlocks` calls `ensureArray` — so a minimal template
 // must still get both fences.
-Deno.test("first creation from a template devcontainer.json with no mounts array", async () => {
+Deno.test('first creation from a template devcontainer.json with no mounts array', async () => {
   await withTemp(async (dir) => {
     const templates = `${dir}/templates`;
     await Deno.mkdir(templates, { recursive: true });
@@ -329,7 +329,7 @@ Deno.test("first creation from a template devcontainer.json with no mounts array
     const text = await Deno.readTextFile(result.configPath);
     // The template's own keys survived...
     const parsed = parseJsonc(text) as { name: string; mounts: string[] };
-    assertEquals(parsed.name, "mine");
+    assertEquals(parsed.name, 'mine');
     // ...the mounts array was created, and holds only what the wizard put there.
     const rows = fenceRows(text);
     assertEquals(rows.source, SEL.source);
@@ -338,11 +338,11 @@ Deno.test("first creation from a template devcontainer.json with no mounts array
   });
 });
 
-Deno.test("first creation overlays a template Dockerfile onto the copied assets", async () => {
+Deno.test('first creation overlays a template Dockerfile onto the copied assets', async () => {
   await withTemp(async (dir) => {
     const templates = `${dir}/templates`;
     await Deno.mkdir(templates, { recursive: true });
-    await Deno.writeTextFile(`${templates}/Dockerfile`, "FROM scratch\n");
+    await Deno.writeTextFile(`${templates}/Dockerfile`, 'FROM scratch\n');
 
     const project = `${dir}/project`;
     await Deno.mkdir(project);
@@ -353,7 +353,7 @@ Deno.test("first creation overlays a template Dockerfile onto the copied assets"
 
     assertEquals(
       await Deno.readTextFile(`${project}/.devcontainer/Dockerfile`),
-      "FROM scratch\n",
+      'FROM scratch\n',
     );
   });
 });

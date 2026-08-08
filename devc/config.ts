@@ -11,7 +11,7 @@
 //   2. **Never drop user data.** Unknown top-level keys are kept in `extra` and written
 //      back verbatim on save.
 
-import { CONFIG_DIR } from "./default_config.ts";
+import { CONFIG_DIR } from './default_config.ts';
 
 /** Absolute path of the global config file. */
 export const GLOBAL_CONFIG_PATH = `${CONFIG_DIR}/config.json`;
@@ -19,7 +19,7 @@ export const GLOBAL_CONFIG_PATH = `${CONFIG_DIR}/config.json`;
 /** A variable set to the empty string counts as unset. */
 function envOrNull(name: string): string | null {
   const value = Deno.env.get(name);
-  return value === undefined || value === "" ? null : value;
+  return value === undefined || value === '' ? null : value;
 }
 
 /**
@@ -36,8 +36,8 @@ export function expandPath(value: string): string {
   };
 
   let out = value;
-  if (out === "~" || out.startsWith("~/")) {
-    out = (envOrNull("HOME") ?? fail("HOME")) + out.slice(1);
+  if (out === '~' || out.startsWith('~/')) {
+    out = (envOrNull('HOME') ?? fail('HOME')) + out.slice(1);
   }
   return out.replace(
     /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g,
@@ -50,9 +50,9 @@ export function expandPath(value: string): string {
 
 /** Collapse `$HOME` → `~` so messages match what the user typed in their shell. */
 export function displayPath(path: string): string {
-  const home = Deno.env.get("HOME");
-  if (home !== undefined && home !== "" && path.startsWith(home + "/")) {
-    return "~" + path.slice(home.length);
+  const home = Deno.env.get('HOME');
+  if (home !== undefined && home !== '' && path.startsWith(home + '/')) {
+    return '~' + path.slice(home.length);
   }
   return path;
 }
@@ -82,7 +82,7 @@ export interface GlobalConfig {
 
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((v): v is string => typeof v === "string");
+  return value.filter((v): v is string => typeof v === 'string');
 }
 
 function makeConfig(
@@ -130,7 +130,7 @@ export async function loadGlobalConfig(
     const text = await Deno.readTextFile(path);
     const parsed = JSON.parse(text);
     if (
-      typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
     ) {
       raw = parsed as Record<string, unknown>;
     }
@@ -144,13 +144,13 @@ export async function loadGlobalConfig(
   let recentSkills: string[] = [];
   for (const [k, v] of Object.entries(raw)) {
     switch (k) {
-      case "codeRoots":
+      case 'codeRoots':
         codeRoots = stringList(v);
         break;
-      case "skillsRoots":
+      case 'skillsRoots':
         skillsRoots = stringList(v);
         break;
-      case "recentSkills":
+      case 'recentSkills':
         recentSkills = stringList(v);
         break;
       default:
@@ -165,8 +165,8 @@ export async function loadGlobalConfig(
  * `skillsRoots` first, then any preserved unknown keys. Creates parent dirs as needed.
  */
 export async function saveGlobalConfig(cfg: GlobalConfig): Promise<void> {
-  const dir = cfg.path.slice(0, Math.max(0, cfg.path.lastIndexOf("/")));
-  if (dir !== "") {
+  const dir = cfg.path.slice(0, Math.max(0, cfg.path.lastIndexOf('/')));
+  if (dir !== '') {
     await Deno.mkdir(dir, { recursive: true }).catch((e) => {
       if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
     });
@@ -177,7 +177,7 @@ export async function saveGlobalConfig(cfg: GlobalConfig): Promise<void> {
     recentSkills: cfg.recentSkills,
     ...cfg.extra,
   };
-  await Deno.writeTextFile(cfg.path, JSON.stringify(out, null, 2) + "\n");
+  await Deno.writeTextFile(cfg.path, JSON.stringify(out, null, 2) + '\n');
 }
 
 /** Construct a config value from explicit lists (used by tests and the wizard save path). */

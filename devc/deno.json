@@ -6,6 +6,14 @@
     "test": "deno test --allow-run=git --allow-read --allow-write --allow-env",
     "build": "deno compile --allow-run=docker,devcontainer,git,tmux,tty --allow-read --allow-write --allow-env --include default --output devc main.ts"
   },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 80,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": true,
+    "proseWrap": "preserve"
+  },
   "imports": {
     "jsr:@std/path": "jsr:@std/path@^1",
     "jsr:@std/assert": "jsr:@std/assert@^1",

@@ -13,7 +13,7 @@
 // The desktop entrypoint (server.ts) imports startServer() and adds the tray by
 // subscribing to `onActiveChange`.
 
-import { dirname, resolve } from "jsr:@std/path@^1";
+import { dirname, resolve } from 'jsr:@std/path@^1';
 
 export interface ServerOptions {
   /** Address to bind. Default host is 127.0.0.1 (reachable via host.docker.internal). */
@@ -56,14 +56,14 @@ const decoder = new TextDecoder();
 
 /** Yield newline-delimited chunks from a connection until EOF. */
 async function* readLines(conn: Deno.Conn): AsyncGenerator<string> {
-  let buf = "";
+  let buf = '';
   const chunk = new Uint8Array(4096);
   while (true) {
     const n = await conn.read(chunk);
     if (n === null) break;
     buf += decoder.decode(chunk.subarray(0, n), { stream: true });
     let idx: number;
-    while ((idx = buf.indexOf("\n")) >= 0) {
+    while ((idx = buf.indexOf('\n')) >= 0) {
       yield buf.slice(0, idx);
       buf = buf.slice(idx + 1);
     }
@@ -78,15 +78,24 @@ async function dispatch(
   stateDir: string,
 ): Promise<Response> {
   const name = req.command;
-  if (typeof name !== "string" || !NAME_RE.test(name) || name === "." || name === "..") {
-    return { ok: false, error: `invalid command name: ${JSON.stringify(name)}` };
+  if (
+    typeof name !== 'string' || !NAME_RE.test(name) || name === '.' ||
+    name === '..'
+  ) {
+    return {
+      ok: false,
+      error: `invalid command name: ${JSON.stringify(name)}`,
+    };
   }
 
   const commandsRoot = resolve(commandsDir);
   const scriptPath = resolve(commandsRoot, name);
   // Defense in depth: the resolved path must sit directly inside commandsDir.
   if (dirname(scriptPath) !== commandsRoot) {
-    return { ok: false, error: `invalid command name: ${JSON.stringify(name)}` };
+    return {
+      ok: false,
+      error: `invalid command name: ${JSON.stringify(name)}`,
+    };
   }
 
   let info: Deno.FileInfo;
@@ -110,8 +119,8 @@ async function dispatch(
     const cmd = new Deno.Command(scriptPath, {
       args,
       env: { ...Deno.env.toObject(), DEVC_BRIDGE_STATE: stateDir },
-      stdout: "piped",
-      stderr: "piped",
+      stdout: 'piped',
+      stderr: 'piped',
     });
     const out = await cmd.output();
     return {
@@ -121,7 +130,12 @@ async function dispatch(
       stderr: decoder.decode(out.stderr),
     };
   } catch (e) {
-    return { ok: false, error: `failed to run ${name}: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      ok: false,
+      error: `failed to run ${name}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    };
   }
 }
 
@@ -157,7 +171,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   (async () => {
     for await (const _ev of watcher) {
       const next = await scanActive(stateDir);
-      if (next.join("\0") !== currentActive.join("\0")) {
+      if (next.join('\0') !== currentActive.join('\0')) {
         currentActive = next;
         opts.onActiveChange?.(currentActive);
       }
@@ -177,14 +191,19 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
             try {
               const req = JSON.parse(line) as Request;
               if (req.token !== opts.token) {
-                resp = { ok: false, error: "unauthorized" };
+                resp = { ok: false, error: 'unauthorized' };
               } else {
                 resp = await dispatch(req, commandsDir, stateDir);
               }
             } catch (e) {
-              resp = { ok: false, error: `bad request: ${e instanceof Error ? e.message : String(e)}` };
+              resp = {
+                ok: false,
+                error: `bad request: ${
+                  e instanceof Error ? e.message : String(e)
+                }`,
+              };
             }
-            await conn.write(encoder.encode(JSON.stringify(resp) + "\n"));
+            await conn.write(encoder.encode(JSON.stringify(resp) + '\n'));
           }
         } catch (e) {
           if (!closed) log(`connection error: ${e}`);

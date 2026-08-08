@@ -9,21 +9,21 @@ import {
   sessionNameForWorkspaceFolder,
   startContainer,
   stopContainer,
-} from "./container.ts";
-import { parseAttachArgs, parseBuildArgs } from "./args.ts";
-import { initProject } from "./init.ts";
+} from './container.ts';
+import { parseAttachArgs, parseBuildArgs } from './args.ts';
+import { initProject } from './init.ts';
 import {
   globalConfigExists,
   runGlobalConfigWizard,
   runProjectConfigWizard,
-} from "./tui/config_flow.ts";
+} from './tui/config_flow.ts';
 import {
   COMMAND_HELP,
   COMMANDS,
   helpRequested,
   topLevelHelp,
   VERSION,
-} from "./help.ts";
+} from './help.ts';
 
 const subcommand = Deno.args[0];
 const KNOWN_COMMANDS = new Set(COMMANDS.map((c) => c.name));
@@ -52,10 +52,10 @@ async function attach(rawArgs: string[], command?: string): Promise<void> {
 
   // Derive session name from the git root of the local folder so it matches
   // $PROJECT_PATH basename in the container, even when devc is run on a subfolder.
-  const gitRootResult = await new Deno.Command("git", {
-    args: ["-C", target, "rev-parse", "--show-toplevel"],
-    stdout: "piped",
-    stderr: "null",
+  const gitRootResult = await new Deno.Command('git', {
+    args: ['-C', target, 'rev-parse', '--show-toplevel'],
+    stdout: 'piped',
+    stderr: 'null',
   }).output();
   const projectRoot = gitRootResult.code === 0
     ? new TextDecoder().decode(gitRootResult.stdout).trim()
@@ -73,15 +73,20 @@ async function attach(rawArgs: string[], command?: string): Promise<void> {
 // Help / version / unknown-command dispatch. Runs before the first-run global-config hook and
 // before any folder resolution or Docker call, so `devc up --help` (etc.) prints help and exits
 // without launching the wizard or requiring Docker.
-if (subcommand === "-V" || subcommand === "--version") {
+if (subcommand === '-V' || subcommand === '--version') {
   console.log(`devc ${VERSION}`);
   Deno.exit(0);
 }
-if (subcommand === undefined || subcommand === "-h" || subcommand === "--help") {
+if (
+  subcommand === undefined || subcommand === '-h' || subcommand === '--help'
+) {
   console.log(topLevelHelp());
   Deno.exit(0);
 }
-if (KNOWN_COMMANDS.has(subcommand) && helpRequested(subcommand, Deno.args.slice(1))) {
+if (
+  KNOWN_COMMANDS.has(subcommand) &&
+  helpRequested(subcommand, Deno.args.slice(1))
+) {
   console.log(COMMAND_HELP[subcommand]);
   Deno.exit(0);
 }
@@ -94,18 +99,18 @@ if (!KNOWN_COMMANDS.has(subcommand)) {
 // `devc init [PATH]`: write the bundled default `.devcontainer/` into PATH (default cwd) and
 // exit. Like `config`, dispatched before the first-run global-config hook below — scaffolding
 // needs no folder roots, so it must never trigger that wizard.
-if (subcommand === "init") {
+if (subcommand === 'init') {
   const target = resolveLocalFolder(
-    Deno.args.find((a, i) => i > 0 && !a.startsWith("--")),
+    Deno.args.find((a, i) => i > 0 && !a.startsWith('--')),
   );
   const { written } = await initProject(target).catch(fail);
   console.log(`Wrote .devcontainer/ for ${target}`);
   for (const path of written) {
     const rel = path.slice(`${target}/.devcontainer/`.length);
-    console.log(`  ${rel}${path.endsWith("/scripts") ? "/" : ""}`);
+    console.log(`  ${rel}${path.endsWith('/scripts') ? '/' : ''}`);
   }
   console.log(
-    "Next: `devc up` to create the container, or `devc config` to add source/skills mounts.",
+    'Next: `devc up` to create the container, or `devc config` to add source/skills mounts.',
   );
   Deno.exit(0);
 }
@@ -113,14 +118,14 @@ if (subcommand === "init") {
 // `devc config [PATH]`: open the full four-step project wizard for PATH (default cwd). The
 // Global config step is prepended (as the first step) when the global config is missing and
 // stdin is a TTY, so the very first run configures roots then continues into the project steps.
-if (subcommand === "config") {
+if (subcommand === 'config') {
   // `--global` reconfigures the code/skills roots only (free-mode folder picker), then exits.
-  if (Deno.args.includes("--global")) {
+  if (Deno.args.includes('--global')) {
     await runGlobalConfigWizard({ err: (m) => console.error(m) });
     Deno.exit(0);
   }
   const target = resolveLocalFolder(
-    Deno.args.find((a, i) => i > 0 && !a.startsWith("--")),
+    Deno.args.find((a, i) => i > 0 && !a.startsWith('--')),
   );
   const includeGlobalStep = !(await globalConfigExists()) &&
     Deno.stdin.isTerminal();
@@ -139,38 +144,38 @@ if (!(await globalConfigExists()) && Deno.stdin.isTerminal()) {
   await runGlobalConfigWizard({ err: (m) => console.error(m) });
 }
 
-if (subcommand === "attach") {
+if (subcommand === 'attach') {
   await attach(Deno.args.slice(1));
 }
 
-if (subcommand === "claude") {
-  await attach(Deno.args.slice(1), "claude");
+if (subcommand === 'claude') {
+  await attach(Deno.args.slice(1), 'claude');
 }
 
-if (subcommand === "stop") {
+if (subcommand === 'stop') {
   const target = resolveLocalFolder(Deno.args[1]);
   await stopContainer(target);
   console.log(`Stopped container for ${target}`);
   Deno.exit(0);
 }
 
-if (subcommand === "down") {
+if (subcommand === 'down') {
   const target = resolveLocalFolder(Deno.args[1]);
   await downContainer(target);
   console.log(`Removed container for ${target}`);
   Deno.exit(0);
 }
 
-if (subcommand === "status") {
+if (subcommand === 'status') {
   const target = resolveLocalFolder(Deno.args[1]);
   console.log(await getContainerStatus(target));
   Deno.exit(0);
 }
 
-if (subcommand === "up") {
+if (subcommand === 'up') {
   const rest = Deno.args.slice(1);
-  const json = rest.includes("--json");
-  const target = resolveLocalFolder(rest.find((a) => !a.startsWith("--")));
+  const json = rest.includes('--json');
+  const target = resolveLocalFolder(rest.find((a) => !a.startsWith('--')));
   const info = await startContainer(target, false).catch(fail);
   if (json) {
     console.log(JSON.stringify(info));
@@ -185,8 +190,10 @@ if (subcommand === "up") {
 // `devc build [PATH]`: recreate the container from scratch, without attaching. This is the
 // operation that makes a `devcontainer.json` change take effect, since mounts are bound at
 // container-create time; `--no-cache` also rebuilds the image without the layer cache.
-if (subcommand === "build") {
-  const { target: rawTarget, noCache, json } = parseBuildArgs(Deno.args.slice(1));
+if (subcommand === 'build') {
+  const { target: rawTarget, noCache, json } = parseBuildArgs(
+    Deno.args.slice(1),
+  );
   const target = resolveLocalFolder(rawTarget);
   if (!json) console.log(`Rebuilding dev container for ${target}...`);
   const info = await rebuildContainer(target, { noCache }).catch(fail);
@@ -200,12 +207,12 @@ if (subcommand === "build") {
   Deno.exit(0);
 }
 
-if (subcommand === "exec") {
+if (subcommand === 'exec') {
   const rest = Deno.args.slice(1);
 
   // Everything after the `--` separator is the command, verbatim (exec'd
   // directly — no shell). Flags/path are parsed only from before it.
-  const sepIndex = rest.indexOf("--");
+  const sepIndex = rest.indexOf('--');
   const flagArgs = sepIndex === -1 ? rest : rest.slice(0, sepIndex);
   const cmd = sepIndex === -1 ? [] : rest.slice(sepIndex + 1);
 
@@ -214,23 +221,23 @@ if (subcommand === "exec") {
   const env: Record<string, string> = {};
   for (let i = 0; i < flagArgs.length; i++) {
     const a = flagArgs[i];
-    if (a === "--cwd") {
+    if (a === '--cwd') {
       cwd = flagArgs[++i];
-    } else if (a === "--env") {
-      const kv = flagArgs[++i] ?? "";
-      const eq = kv.indexOf("=");
+    } else if (a === '--env') {
+      const kv = flagArgs[++i] ?? '';
+      const eq = kv.indexOf('=');
       if (eq === -1) {
         console.error(`devc: --env expects K=V, got "${kv}"`);
         Deno.exit(125);
       }
       env[kv.slice(0, eq)] = kv.slice(eq + 1);
-    } else if (!a.startsWith("--") && target === undefined) {
+    } else if (!a.startsWith('--') && target === undefined) {
       target = a;
     }
   }
 
   if (cmd.length === 0) {
-    console.error("devc: exec requires a command after `--`");
+    console.error('devc: exec requires a command after `--`');
     Deno.exit(125);
   }
 
@@ -247,10 +254,10 @@ if (subcommand === "exec") {
   }
 }
 
-if (subcommand === "mounts") {
+if (subcommand === 'mounts') {
   const rest = Deno.args.slice(1);
-  const json = rest.includes("--json");
-  const target = resolveLocalFolder(rest.find((a) => !a.startsWith("--")));
+  const json = rest.includes('--json');
+  const target = resolveLocalFolder(rest.find((a) => !a.startsWith('--')));
   const m = await getContainerMounts(target);
   if (json) {
     console.log(JSON.stringify(m ?? []));
@@ -260,7 +267,7 @@ if (subcommand === "mounts") {
     for (const mount of m) {
       console.log(
         `${mount.type}\t${mount.source} -> ${mount.destination}\t${
-          mount.rw ? "rw" : "ro"
+          mount.rw ? 'rw' : 'ro'
         }`,
       );
     }

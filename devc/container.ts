@@ -1,22 +1,22 @@
-import { normalizePath as _normalizePath } from "./paths.ts";
-import { basenamePosix, dirnamePosix, resolvePosix } from "./posix.ts";
+import { normalizePath as _normalizePath } from './paths.ts';
+import { basenamePosix, dirnamePosix, resolvePosix } from './posix.ts';
 import {
   CLAUDE_SEED_HOST_DIR,
   ensureClaudeSeedDir,
   findOwnDevcontainerConfig,
   loadResolvedRemoteEnv,
   materializeDefaultConfig,
-} from "./default_config.ts";
-import { displayPath } from "./config.ts";
+} from './default_config.ts';
+import { displayPath } from './config.ts';
 import {
   type DevcOverlay,
   isEmptyOverlay,
   loadMergedOverlay,
   overlayArgs,
   resolveOverlayRemoteEnv,
-} from "./overlay.ts";
+} from './overlay.ts';
 
-export type ContainerStatus = "running" | "stopped" | "missing";
+export type ContainerStatus = 'running' | 'stopped' | 'missing';
 
 export interface ContainerInfo {
   containerId: string;
@@ -35,7 +35,7 @@ export interface ExecOptions {
 }
 
 export interface ContainerMount {
-  type: "bind" | "volume";
+  type: 'bind' | 'volume';
   /** Host-side path. For volumes, the docker-managed `/var/lib/docker/...` dir. */
   source: string;
   /** Container-side mount point. */
@@ -57,29 +57,29 @@ async function findContainer(
   localFolder: string,
   all: boolean,
 ): Promise<{ id: string; state: string } | null> {
-  const cmd = new Deno.Command("docker", {
+  const cmd = new Deno.Command('docker', {
     args: [
-      "ps",
-      ...(all ? ["-a"] : []),
-      "--filter",
-      "label=devcontainer.local_folder",
-      "--format",
+      'ps',
+      ...(all ? ['-a'] : []),
+      '--filter',
+      'label=devcontainer.local_folder',
+      '--format',
       '{{.ID}}\t{{.Label "devcontainer.local_folder"}}\t{{.State}}',
     ],
-    stdout: "piped",
-    stderr: "inherit",
+    stdout: 'piped',
+    stderr: 'inherit',
   });
 
   const { code, stdout } = await cmd.output();
   if (code !== 0) return null;
 
   const target = normalizePath(localFolder);
-  const lines = new TextDecoder().decode(stdout).trim().split("\n").filter(
+  const lines = new TextDecoder().decode(stdout).trim().split('\n').filter(
     Boolean,
   );
 
   for (const line of lines) {
-    const [id, labelPath, state] = line.split("\t");
+    const [id, labelPath, state] = line.split('\t');
     if (normalizePath(labelPath) === target) return { id, state };
   }
 
@@ -90,8 +90,8 @@ export async function getContainerStatus(
   localFolder: string,
 ): Promise<ContainerStatus> {
   const found = await findContainer(localFolder, true);
-  if (found === null) return "missing";
-  return found.state === "running" ? "running" : "stopped";
+  if (found === null) return 'missing';
+  return found.state === 'running' ? 'running' : 'stopped';
 }
 
 /**
@@ -114,14 +114,14 @@ export function buildExecArgs(input: {
   const merged = { ...remoteEnv, ...env };
   const envFlags = Object.entries(merged).flatMap((
     [k, v],
-  ) => ["-e", `${k}=${v}`]);
+  ) => ['-e', `${k}=${v}`]);
   return [
-    "exec",
-    "-i",
+    'exec',
+    '-i',
     ...envFlags,
-    "-u",
+    '-u',
     remoteUser,
-    "-w",
+    '-w',
     cwd,
     containerId,
     ...cmd,
@@ -149,11 +149,11 @@ export async function execInContainer(
     env: opts.env ?? {},
     cmd: opts.cmd,
   });
-  const { code } = await new Deno.Command("docker", {
+  const { code } = await new Deno.Command('docker', {
     args,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
   }).spawn().status;
   return code;
 }
@@ -175,7 +175,7 @@ export function parseMounts(json: string | null): ContainerMount[] {
   }
   if (!Array.isArray(raw)) return [];
   return raw.map((m) => ({
-    type: m.Type === "volume" ? "volume" : "bind",
+    type: m.Type === 'volume' ? 'volume' : 'bind',
     source: m.Source,
     destination: m.Destination,
     rw: m.RW === true,
@@ -193,21 +193,21 @@ export async function getContainerMounts(
 ): Promise<ContainerMount[] | null> {
   const found = await findContainer(localFolder, true);
   if (found === null) return null;
-  const json = await dockerInspect(found.id, "{{json .Mounts}}");
+  const json = await dockerInspect(found.id, '{{json .Mounts}}');
   return parseMounts(json);
 }
 
 async function isGitWorktree(localFolder: string): Promise<boolean> {
   const [commonDir, gitDir] = await Promise.all([
-    new Deno.Command("git", {
-      args: ["-C", localFolder, "rev-parse", "--git-common-dir"],
-      stdout: "piped",
-      stderr: "null",
+    new Deno.Command('git', {
+      args: ['-C', localFolder, 'rev-parse', '--git-common-dir'],
+      stdout: 'piped',
+      stderr: 'null',
     }).output(),
-    new Deno.Command("git", {
-      args: ["-C", localFolder, "rev-parse", "--git-dir"],
-      stdout: "piped",
-      stderr: "null",
+    new Deno.Command('git', {
+      args: ['-C', localFolder, 'rev-parse', '--git-dir'],
+      stdout: 'piped',
+      stderr: 'null',
     }).output(),
   ]);
   if (commonDir.code !== 0 || gitDir.code !== 0) return false;
@@ -219,10 +219,10 @@ async function runGitRevParse(
   cwd: string,
   flag: string,
 ): Promise<string | null> {
-  const cmd = new Deno.Command("git", {
-    args: ["-C", cwd, "rev-parse", flag],
-    stdout: "piped",
-    stderr: "null",
+  const cmd = new Deno.Command('git', {
+    args: ['-C', cwd, 'rev-parse', flag],
+    stdout: 'piped',
+    stderr: 'null',
   });
   const { code, stdout } = await cmd.output();
   if (code !== 0) return null;
@@ -245,7 +245,7 @@ export function resolveLocalFolder(
   pathArg?: string,
   cwd: string = Deno.cwd(),
 ): string {
-  return resolvePosix(_normalizePath(cwd), _normalizePath(pathArg ?? "."));
+  return resolvePosix(_normalizePath(cwd), _normalizePath(pathArg ?? '.'));
 }
 
 /**
@@ -265,14 +265,14 @@ export async function computeContainerWorkspaceFolder(
 ): Promise<string> {
   const normalizedLocal = _normalizePath(localFolder);
 
-  const cdup = await runGitRevParse(localFolder, "--show-cdup");
-  const gitRoot = cdup === null || cdup === ""
+  const cdup = await runGitRevParse(localFolder, '--show-cdup');
+  const gitRoot = cdup === null || cdup === ''
     ? normalizedLocal
     : resolvePosix(normalizedLocal, cdup);
 
   const [commonDir, gitDir] = await Promise.all([
-    runGitRevParse(gitRoot, "--git-common-dir"),
-    runGitRevParse(gitRoot, "--git-dir"),
+    runGitRevParse(gitRoot, '--git-common-dir'),
+    runGitRevParse(gitRoot, '--git-dir'),
   ]);
 
   if (commonDir === null || gitDir === null || commonDir === gitDir) {
@@ -294,7 +294,7 @@ export async function computeContainerWorkspaceFolder(
     f = parent;
   }
 
-  return `/workspaces/${segments.join("/")}`;
+  return `/workspaces/${segments.join('/')}`;
 }
 
 /**
@@ -315,15 +315,15 @@ export async function containerNameForLocalFolder(
 ): Promise<string> {
   const normalized = normalizePath(localFolder);
   const digest = await crypto.subtle.digest(
-    "SHA-256",
+    'SHA-256',
     new TextEncoder().encode(normalized),
   );
   const hash = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
     .slice(0, 8);
-  const base = basenamePosix(normalized).replace(/[^a-zA-Z0-9_.-]/g, "-") ||
-    "workspace";
+  const base = basenamePosix(normalized).replace(/[^a-zA-Z0-9_.-]/g, '-') ||
+    'workspace';
   return `devc-${base}-${hash}`;
 }
 
@@ -332,10 +332,10 @@ async function dockerInspect(
   format: string,
 ): Promise<string | null> {
   try {
-    const cmd = new Deno.Command("docker", {
-      args: ["inspect", "--format", format, containerId],
-      stdout: "piped",
-      stderr: "null",
+    const cmd = new Deno.Command('docker', {
+      args: ['inspect', '--format', format, containerId],
+      stdout: 'piped',
+      stderr: 'null',
     });
     const { code, stdout } = await cmd.output();
     if (code !== 0) return null;
@@ -370,25 +370,25 @@ async function renameContainerIfNeeded(
   localFolder: string,
 ): Promise<void> {
   try {
-    const currentName = await dockerInspect(containerId, "{{.Name}}");
+    const currentName = await dockerInspect(containerId, '{{.Name}}');
     if (
-      currentName !== null && currentName.replace(/^\//, "") === desiredName
+      currentName !== null && currentName.replace(/^\//, '') === desiredName
     ) return;
 
-    const cmd = new Deno.Command("docker", {
+    const cmd = new Deno.Command('docker', {
       args: [
-        "ps",
-        "-a",
-        "--filter",
+        'ps',
+        '-a',
+        '--filter',
         `name=^${desiredName}$`,
-        "--format",
-        "{{.ID}}",
+        '--format',
+        '{{.ID}}',
       ],
-      stdout: "piped",
-      stderr: "null",
+      stdout: 'piped',
+      stderr: 'null',
     });
     const { stdout } = await cmd.output();
-    const conflictId = new TextDecoder().decode(stdout).trim().split("\n")
+    const conflictId = new TextDecoder().decode(stdout).trim().split('\n')
       .map((id) => id.trim())
       .find((id) => id && id !== containerId);
 
@@ -400,7 +400,7 @@ async function renameContainerIfNeeded(
       console.error(
         `warning: could not rename container ${containerId} (workspace: ${localFolder}) to ` +
           `"${desiredName}" — container ${conflictId} (workspace: ${
-            otherLocalFolder ?? "unknown"
+            otherLocalFolder ?? 'unknown'
           }) ` +
           `already has that name. If ${conflictId} is being removed, this is transient — re-run ` +
           `\`devc attach\` once it's gone. ${containerId} will keep its default name for now.`,
@@ -408,10 +408,10 @@ async function renameContainerIfNeeded(
       return;
     }
 
-    await new Deno.Command("docker", {
-      args: ["rename", containerId, desiredName],
-      stdout: "null",
-      stderr: "inherit",
+    await new Deno.Command('docker', {
+      args: ['rename', containerId, desiredName],
+      stdout: 'null',
+      stderr: 'inherit',
     }).output();
   } catch {
     // naming is cosmetic — never abort devc attach
@@ -433,13 +433,13 @@ async function tagImageIfNeeded(
   name: string,
 ): Promise<void> {
   try {
-    const imageId = await dockerInspect(containerId, "{{.Image}}");
+    const imageId = await dockerInspect(containerId, '{{.Image}}');
     if (imageId === null) return;
 
-    await new Deno.Command("docker", {
-      args: ["tag", imageId, `${name}:latest`],
-      stdout: "null",
-      stderr: "inherit",
+    await new Deno.Command('docker', {
+      args: ['tag', imageId, `${name}:latest`],
+      stdout: 'null',
+      stderr: 'inherit',
     }).output();
   } catch {
     // image alias tagging is cosmetic — never abort devc attach
@@ -457,18 +457,18 @@ async function tagImageIfNeeded(
 function dumpBuildOutput(text: string): void {
   const trimmed = text.trim();
   if (!trimmed) return;
-  console.error("--- devcontainer up output ---");
-  for (const line of trimmed.split("\n")) {
+  console.error('--- devcontainer up output ---');
+  for (const line of trimmed.split('\n')) {
     try {
       const rec = JSON.parse(line);
       console.error(
-        typeof rec?.text === "string" ? rec.text.replace(/\r?\n$/, "") : line,
+        typeof rec?.text === 'string' ? rec.text.replace(/\r?\n$/, '') : line,
       );
     } catch {
       console.error(line);
     }
   }
-  console.error("--- end devcontainer up output ---");
+  console.error('--- end devcontainer up output ---');
 }
 
 /**
@@ -520,11 +520,11 @@ export function buildUpArgs(input: {
   overlay: DevcOverlay;
   containerWorkspaceFolder: string;
 }): string[] {
-  const args = ["up", "--workspace-folder", input.localFolder];
-  if (input.worktree) args.push("--mount-git-worktree-common-dir");
-  if (input.rebuild) args.push("--remove-existing-container");
-  if (input.noCache) args.push("--build-no-cache");
-  if (input.configArg !== null) args.push("--config", input.configArg);
+  const args = ['up', '--workspace-folder', input.localFolder];
+  if (input.worktree) args.push('--mount-git-worktree-common-dir');
+  if (input.rebuild) args.push('--remove-existing-container');
+  if (input.noCache) args.push('--build-no-cache');
+  if (input.configArg !== null) args.push('--config', input.configArg);
   args.push(
     ...overlayArgs(
       input.overlay,
@@ -549,7 +549,7 @@ export async function startContainer(
   const seed = await ensureClaudeSeedDir();
   if (seed.migrated.length > 0) {
     console.log(
-      `devc: moved ${seed.migrated.join(", ")} into ${
+      `devc: moved ${seed.migrated.join(', ')} into ${
         displayPath(CLAUDE_SEED_HOST_DIR)
       }`,
     );
@@ -568,7 +568,7 @@ export async function startContainer(
   const overlay = await loadMergedOverlay(localFolder);
   // Only pay for the git subprocesses when there is actually something to substitute.
   const containerWorkspaceFolder = isEmptyOverlay(overlay)
-    ? ""
+    ? ''
     : await computeContainerWorkspaceFolder(localFolder);
 
   const args = buildUpArgs({
@@ -581,17 +581,17 @@ export async function startContainer(
     containerWorkspaceFolder,
   });
 
-  const cmd = new Deno.Command("devcontainer", {
+  const cmd = new Deno.Command('devcontainer', {
     args,
-    stdout: "piped",
-    stderr: "inherit",
+    stdout: 'piped',
+    stderr: 'inherit',
   });
 
   const { code, stdout } = await cmd.output();
   const text = new TextDecoder().decode(stdout);
 
   // devcontainer up emits one JSON object per line; the final line is the outcome
-  const lines = text.trim().split("\n").filter(Boolean);
+  const lines = text.trim().split('\n').filter(Boolean);
   if (lines.length === 0) {
     dumpBuildOutput(text);
     throw new Error(
@@ -612,7 +612,7 @@ export async function startContainer(
     );
   }
 
-  if (result.outcome !== "success") {
+  if (result.outcome !== 'success') {
     dumpBuildOutput(text);
     throw new Error(
       `devcontainer up failed: ${result.message ?? JSON.stringify(result)}`,
@@ -672,10 +672,10 @@ export async function stopContainer(localFolder: string): Promise<void> {
   const found = await findContainer(localFolder, false);
   if (found === null) return;
 
-  await new Deno.Command("docker", {
-    args: ["stop", found.id],
-    stdout: "inherit",
-    stderr: "inherit",
+  await new Deno.Command('docker', {
+    args: ['stop', found.id],
+    stdout: 'inherit',
+    stderr: 'inherit',
   }).output();
 }
 
@@ -688,18 +688,18 @@ export async function downContainer(localFolder: string): Promise<void> {
   const found = await findContainer(localFolder, true);
   if (found === null) return;
 
-  if (found.state === "running") {
-    await new Deno.Command("docker", {
-      args: ["stop", found.id],
-      stdout: "inherit",
-      stderr: "inherit",
+  if (found.state === 'running') {
+    await new Deno.Command('docker', {
+      args: ['stop', found.id],
+      stdout: 'inherit',
+      stderr: 'inherit',
     }).output();
   }
 
-  await new Deno.Command("docker", {
-    args: ["rm", found.id],
-    stdout: "inherit",
-    stderr: "inherit",
+  await new Deno.Command('docker', {
+    args: ['rm', found.id],
+    stdout: 'inherit',
+    stderr: 'inherit',
   }).output();
 }
 
@@ -729,14 +729,14 @@ export interface AttachOptions {
 export function sessionNameForWorkspaceFolder(
   remoteWorkspaceFolder: string,
 ): string {
-  const name = basenamePosix(remoteWorkspaceFolder).replace(/[.:]/g, "_");
-  return name || "main";
+  const name = basenamePosix(remoteWorkspaceFolder).replace(/[.:]/g, '_');
+  return name || 'main';
 }
 
 // Solarized Dark — visually marks an attached container shell apart from local
 // terminals for the duration of the attach.
-const ATTACH_BG = "#002b36";
-const ATTACH_FG = "#839496";
+const ATTACH_BG = '#002b36';
+const ATTACH_FG = '#839496';
 
 /**
  * Reports whether the terminal devc is running in is a genuine tmux client.
@@ -748,22 +748,22 @@ const ATTACH_FG = "#839496";
  * pointer resolves to the original pane, whose tty differs from the child's pty.
  */
 async function hostIsTmux(): Promise<boolean> {
-  if (!Deno.env.get("TMUX")) return false;
+  if (!Deno.env.get('TMUX')) return false;
   const decode = (o: Deno.CommandOutput) =>
-    o.code === 0 ? new TextDecoder().decode(o.stdout).trim() : "";
+    o.code === 0 ? new TextDecoder().decode(o.stdout).trim() : '';
   const [paneTty, ownTty] = await Promise.all([
-    new Deno.Command("tmux", {
-      args: ["display-message", "-p", "#{pane_tty}"],
-      stdout: "piped",
-      stderr: "null",
-    }).output().then(decode).catch(() => ""),
-    new Deno.Command("tty", {
-      stdin: "inherit",
-      stdout: "piped",
-      stderr: "null",
-    }).output().then(decode).catch(() => ""),
+    new Deno.Command('tmux', {
+      args: ['display-message', '-p', '#{pane_tty}'],
+      stdout: 'piped',
+      stderr: 'null',
+    }).output().then(decode).catch(() => ''),
+    new Deno.Command('tty', {
+      stdin: 'inherit',
+      stdout: 'piped',
+      stderr: 'null',
+    }).output().then(decode).catch(() => ''),
   ]);
-  return paneTty !== "" && paneTty === ownTty;
+  return paneTty !== '' && paneTty === ownTty;
 }
 
 /**
@@ -785,18 +785,18 @@ async function applyAttachColors(
   if (inTmux) {
     const style = `bg=${ATTACH_BG},fg=${ATTACH_FG}`;
     const setStyle = (name: string, value?: string) =>
-      new Deno.Command("tmux", {
+      new Deno.Command('tmux', {
         args: value === undefined
-          ? ["set", "-uw", name]
-          : ["set", "-w", name, value],
-        stdout: "null",
-        stderr: "null",
+          ? ['set', '-uw', name]
+          : ['set', '-w', name, value],
+        stdout: 'null',
+        stderr: 'null',
       }).output().catch(() => {});
-    await setStyle("window-style", style);
-    await setStyle("window-active-style", style);
+    await setStyle('window-style', style);
+    await setStyle('window-active-style', style);
     return async () => {
-      await setStyle("window-style");
-      await setStyle("window-active-style");
+      await setStyle('window-style');
+      await setStyle('window-active-style');
     };
   }
   const enc = new TextEncoder();
@@ -827,10 +827,10 @@ export async function attachToContainer(
   // rename that window — it's what the host terminal actually displays, not any
   // title set from inside the container.
   if (inTmux) {
-    await new Deno.Command("tmux", {
-      args: ["rename-window", sessionName],
-      stdout: "null",
-      stderr: "null",
+    await new Deno.Command('tmux', {
+      args: ['rename-window', sessionName],
+      stdout: 'null',
+      stderr: 'null',
     }).output().catch(() => {});
   }
   await Deno.stdout.write(
@@ -843,11 +843,11 @@ export async function attachToContainer(
   // `clear` wipes login-init clutter before the command runs, mirroring the
   // first-prompt clear a plain attach does via DEVC_ATTACH.
   const loginShell = (clear: boolean): string[] => {
-    if (!command) return ["/bin/bash", "-l"];
+    if (!command) return ['/bin/bash', '-l'];
     const inner = clear
       ? `clear; printf '\\033[3J'; exec ${command}`
       : `exec ${command}`;
-    return ["/bin/bash", "-lc", inner];
+    return ['/bin/bash', '-lc', inner];
   };
 
   const shellArgs = loginShell(!noClear);
@@ -861,49 +861,49 @@ export async function attachToContainer(
   //                          sequence (which `/terminal-setup` makes VS Code emit)
   //   TERM_PROGRAM_VERSION — companion to TERM_PROGRAM
   // Placed before remoteEnv so explicit remoteEnv overrides still win.
-  const termIdentityFlags = ["TERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION"]
+  const termIdentityFlags = ['TERM', 'TERM_PROGRAM', 'TERM_PROGRAM_VERSION']
     .flatMap((k) => {
       const v = Deno.env.get(k);
-      return v ? ["-e", `${k}=${v}`] : [];
+      return v ? ['-e', `${k}=${v}`] : [];
     });
   const baseEnvFlags = [
     ...termIdentityFlags,
-    ...Object.entries(info.remoteEnv).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+    ...Object.entries(info.remoteEnv).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
   ];
 
   // Claude only requests extended keys (shift+enter et al.) from the outer terminal
   // when it detects tmux via $TMUX, which `docker exec` drops — so a host-tmux user
   // loses shift+enter inside the container despite the correct TERM. Re-inject the
   // host $TMUX (only set when the host really is in tmux) so the container app sees it.
-  const hostTmux = Deno.env.get("TMUX");
-  const tmuxEnvFlags = hostTmux ? ["-e", `TMUX=${hostTmux}`] : [];
+  const hostTmux = Deno.env.get('TMUX');
+  const tmuxEnvFlags = hostTmux ? ['-e', `TMUX=${hostTmux}`] : [];
 
   // DEVC_ATTACH=1 arms the first-prompt clear in bashrc-additions.sh. Skip it
   // when the caller asked to keep output on screen (--no-clear), or when running
   // a command (no interactive prompt fires — the clear is baked into the command
   // via loginShell()).
-  const attachFlag = noClear || command ? [] : ["-e", "DEVC_ATTACH=1"];
+  const attachFlag = noClear || command ? [] : ['-e', 'DEVC_ATTACH=1'];
   const envFlags = [...baseEnvFlags, ...tmuxEnvFlags, ...attachFlag];
 
   // Tint the terminal for the duration of the attach; reset on detach (including
   // on a non-zero exit or a thrown error via finally).
   const resetColors = await applyAttachColors(inTmux);
   try {
-    const { code } = await new Deno.Command("docker", {
+    const { code } = await new Deno.Command('docker', {
       args: [
-        "exec",
-        "-it",
+        'exec',
+        '-it',
         ...envFlags,
-        "-u",
+        '-u',
         info.remoteUser,
-        "-w",
+        '-w',
         info.remoteWorkspaceFolder,
         info.containerId,
         ...shellArgs,
       ],
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
     }).spawn().status;
 
     if (code !== 0) throw new Error(`docker exec exited with code ${code}`);

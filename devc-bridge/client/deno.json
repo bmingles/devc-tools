@@ -2,5 +2,13 @@
   "tasks": {
     "build": "deno compile --allow-read --allow-net --allow-env=DEVC_BRIDGE_ADDR,DEVC_BRIDGE_TOKEN_FILE --output devc-bridge devc-bridge.ts",
     "run": "deno run --allow-read --allow-net --allow-env=DEVC_BRIDGE_ADDR,DEVC_BRIDGE_TOKEN_FILE devc-bridge.ts"
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 80,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": true,
+    "proseWrap": "preserve"
   }
 }

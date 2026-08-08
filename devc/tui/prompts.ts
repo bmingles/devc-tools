@@ -4,7 +4,7 @@
 // prompt does. It toggles raw mode itself (to read one key without Enter) but never enters the
 // alternate screen. All IO is injected, so tests script a key stream with no TTY.
 
-import { type Key, KeyDecoder } from "./keys.ts";
+import { type Key, KeyDecoder } from './keys.ts';
 
 export interface ConfirmState {
   question: string;
@@ -14,28 +14,31 @@ export interface ConfirmState {
   done: boolean;
 }
 
-export function confirmState(question: string, defaultYes: boolean): ConfirmState {
+export function confirmState(
+  question: string,
+  defaultYes: boolean,
+): ConfirmState {
   return { question, defaultYes, answer: null, done: false };
 }
 
 /** The prompt line, e.g. `Apply? [Y/n]` (default upper-cased). Pure. */
 export function confirmLine(state: ConfirmState): string {
-  const hint = state.defaultYes ? "[Y/n]" : "[y/N]";
+  const hint = state.defaultYes ? '[Y/n]' : '[y/N]';
   return `${state.question} ${hint} `;
 }
 
 export function confirmReduce(state: ConfirmState, key: Key): ConfirmState {
   if (state.done) return state;
   switch (key.name) {
-    case "enter":
+    case 'enter':
       return { ...state, answer: state.defaultYes, done: true };
-    case "escape":
-    case "ctrl-c":
+    case 'escape':
+    case 'ctrl-c':
       return { ...state, answer: false, done: true };
-    case "char": {
-      const c = (key.char ?? "").toLowerCase();
-      if (c === "y") return { ...state, answer: true, done: true };
-      if (c === "n") return { ...state, answer: false, done: true };
+    case 'char': {
+      const c = (key.char ?? '').toLowerCase();
+      if (c === 'y') return { ...state, answer: true, done: true };
+      if (c === 'n') return { ...state, answer: false, done: true };
       return state; // ignore any other character
     }
     default:
@@ -93,7 +96,7 @@ export async function runConfirm(
         Deno.stdin.setRaw(false);
       } catch { /* already restored */ }
     }
-    const choice = state.answer ? "yes" : "no";
+    const choice = state.answer ? 'yes' : 'no';
     await write(`${choice}\n`);
     writer.releaseLock();
   }

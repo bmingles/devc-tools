@@ -1,20 +1,20 @@
 // The project-config flow driven headlessly: a scripted key stream + fake `readDir`, asserting
 // that `apply` receives the rows the pickers produced. No TTY (raw off).
 
-import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@^1";
+import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@^1';
 import {
   type FlowDeps,
   type FlowResult,
   type ProjectFlowOptions,
   runProjectFlow,
-} from "../tui/config_flow.ts";
-import type { WizardSelection } from "../wizard_apply.ts";
-import type { FsProbe } from "../worktree.ts";
-import type { ContainerStatus } from "../container.ts";
+} from '../tui/config_flow.ts';
+import type { WizardSelection } from '../wizard_apply.ts';
+import type { FsProbe } from '../worktree.ts';
+import type { ContainerStatus } from '../container.ts';
 
 const FS: Record<string, string[]> = {
-  "/code": ["app", "lib"],
-  "/skills": ["review", "writing"],
+  '/code': ['app', 'lib'],
+  '/skills': ['review', 'writing'],
 };
 const fakeReadDir = (p: string) => Promise.resolve(FS[p] ?? []);
 
@@ -35,29 +35,29 @@ function sink(): WritableStream<Uint8Array> {
 
 function baseOpts(): ProjectFlowOptions {
   return {
-    projectDir: "/proj",
-    configPath: "/proj/.devcontainer/devcontainer.json",
+    projectDir: '/proj',
+    configPath: '/proj/.devcontainer/devcontainer.json',
     creating: true,
     sourceRows: [],
     skillsRows: [],
-    codeRoots: ["/code"],
-    skillsRoots: ["/skills"],
+    codeRoots: ['/code'],
+    skillsRoots: ['/skills'],
     color: false,
   };
 }
 
-const SPACE = " ";
-const ENTER = "\r";
-const DOWN = "\x1b[B";
-const RIGHT = "\x1b[C";
-const ESC = "\x1b";
+const SPACE = ' ';
+const ENTER = '\r';
+const DOWN = '\x1b[B';
+const RIGHT = '\x1b[C';
+const ESC = '\x1b';
 
-Deno.test("project flow: pick one source + one skills folder, apply gets the rows", async () => {
+Deno.test('project flow: pick one source + one skills folder, apply gets the rows', async () => {
   let captured: WizardSelection | null = null;
   const deps: FlowDeps = {
     // A single configured root opens inside itself — no → needed to enter it.
     // source: tick "app", Enter · skills: down to "writing", tick, Enter · confirm y
-    input: streamOfKeys([SPACE, ENTER, DOWN, SPACE, ENTER, "y"]),
+    input: streamOfKeys([SPACE, ENTER, DOWN, SPACE, ENTER, 'y']),
     output: sink(),
     size: () => ({ columns: 80, rows: 24 }),
     raw: false,
@@ -67,7 +67,7 @@ Deno.test("project flow: pick one source + one skills folder, apply gets the row
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: "/proj/.devcontainer/devcontainer.json",
+        configPath: '/proj/.devcontainer/devcontainer.json',
         written: [],
       });
     },
@@ -79,22 +79,22 @@ Deno.test("project flow: pick one source + one skills folder, apply gets the row
   const sel = captured as unknown as WizardSelection;
 
   assertEquals(sel.source, [{
-    source: "/code/app",
-    target: "/workspaces/app",
+    source: '/code/app',
+    target: '/workspaces/app',
     readonly: false,
   }]);
   assertEquals(sel.skills, [{
-    source: "/skills/writing",
-    target: "/home/vscode/.claude/skills/writing",
+    source: '/skills/writing',
+    target: '/home/vscode/.claude/skills/writing',
     readonly: true,
   }]);
 });
 
-Deno.test("project flow: declining the confirm applies nothing", async () => {
+Deno.test('project flow: declining the confirm applies nothing', async () => {
   let called = false;
   const deps: FlowDeps = {
     // single roots open inside · src: pick, done · skills: none, done · confirm n
-    input: streamOfKeys([SPACE, ENTER, ENTER, "n"]),
+    input: streamOfKeys([SPACE, ENTER, ENTER, 'n']),
     output: sink(),
     size: () => ({ columns: 80, rows: 24 }),
     raw: false,
@@ -104,7 +104,7 @@ Deno.test("project flow: declining the confirm applies nothing", async () => {
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: "x",
+        configPath: 'x',
         written: [],
       });
     },
@@ -114,7 +114,7 @@ Deno.test("project flow: declining the confirm applies nothing", async () => {
   assertEquals(called, false);
 });
 
-Deno.test("project flow: Esc in the source picker cancels the whole flow", async () => {
+Deno.test('project flow: Esc in the source picker cancels the whole flow', async () => {
   let called = false;
   const deps: FlowDeps = {
     input: streamOfKeys([ESC]),
@@ -127,7 +127,7 @@ Deno.test("project flow: Esc in the source picker cancels the whole flow", async
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: "x",
+        configPath: 'x',
         written: [],
       });
     },
@@ -137,12 +137,12 @@ Deno.test("project flow: Esc in the source picker cancels the whole flow", async
   assertEquals(called, false);
 });
 
-Deno.test("project flow: the project folder is pinned in the picker, not a pick", async () => {
+Deno.test('project flow: the project folder is pinned in the picker, not a pick', async () => {
   let captured: WizardSelection | null = null;
-  const opts = { ...baseOpts(), projectDir: "/code/app" };
+  const opts = { ...baseOpts(), projectDir: '/code/app' };
   const deps: FlowDeps = {
     // src: space on "app" (the project folder — inert), done · skills: none, done · confirm y
-    input: streamOfKeys([SPACE, ENTER, ENTER, "y"]),
+    input: streamOfKeys([SPACE, ENTER, ENTER, 'y']),
     output: sink(),
     size: () => ({ columns: 80, rows: 24 }),
     raw: false,
@@ -152,7 +152,7 @@ Deno.test("project flow: the project folder is pinned in the picker, not a pick"
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: "/code/app/.devcontainer/devcontainer.json",
+        configPath: '/code/app/.devcontainer/devcontainer.json',
         written: [],
       });
     },
@@ -168,12 +168,12 @@ Deno.test("project flow: the project folder is pinned in the picker, not a pick"
 // ── worktree-aware source mounts ────────────────────────────────────────────────
 
 const WFS: Record<string, string[]> = {
-  "/": ["code", "skills", "srv"],
-  "/code": ["myproject", "myproject.worktrees"],
-  "/code/myproject.worktrees": ["feature1", "feature2"],
-  "/srv": ["proj", "proj.worktrees"],
-  "/srv/proj.worktrees": ["f1"],
-  "/skills": [],
+  '/': ['code', 'skills', 'srv'],
+  '/code': ['myproject', 'myproject.worktrees'],
+  '/code/myproject.worktrees': ['feature1', 'feature2'],
+  '/srv': ['proj', 'proj.worktrees'],
+  '/srv/proj.worktrees': ['f1'],
+  '/skills': [],
 };
 const wReadDir = (p: string) => Promise.resolve(WFS[p] ?? []);
 
@@ -203,7 +203,7 @@ async function runWith(
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: "x",
+        configPath: 'x',
         written: [],
       });
     },
@@ -214,79 +214,81 @@ async function runWith(
   return captured as unknown as WizardSelection;
 }
 
-Deno.test("worktree flow: source keeps its sub-path and mounts the primary .git", async () => {
+Deno.test('worktree flow: source keeps its sub-path and mounts the primary .git', async () => {
   // start in /code, down to myproject.worktrees, open it, tick feature1, done · skills none · y
   const sel = await runWith(
-    [DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    [DOWN, RIGHT, SPACE, ENTER, ENTER, 'y'],
     {
-      "/code/myproject.worktrees/feature1/.git":
-        "gitdir: ../../myproject/.git/worktrees/feature1\n",
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature1\n',
     },
   );
   assertEquals(sel.source, [
     {
-      source: "/code/myproject.worktrees/feature1",
-      target: "/workspaces/myproject.worktrees/feature1",
+      source: '/code/myproject.worktrees/feature1',
+      target: '/workspaces/myproject.worktrees/feature1',
       readonly: false,
     },
     {
-      source: "/code/myproject/.git",
-      target: "/workspaces/myproject/.git",
+      source: '/code/myproject/.git',
+      target: '/workspaces/myproject/.git',
       readonly: false,
     },
   ]);
 });
 
-Deno.test("worktree flow: an absolute-path worktree mounts the folder but not the primary", async () => {
+Deno.test('worktree flow: an absolute-path worktree mounts the folder but not the primary', async () => {
   const sel = await runWith(
-    [DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    [DOWN, RIGHT, SPACE, ENTER, ENTER, 'y'],
     {
-      "/code/myproject.worktrees/feature1/.git":
-        "gitdir: /code/myproject/.git/worktrees/feature1\n",
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: /code/myproject/.git/worktrees/feature1\n',
     },
   );
   assertEquals(sel.source, [
     {
-      source: "/code/myproject.worktrees/feature1",
-      target: "/workspaces/myproject.worktrees/feature1",
+      source: '/code/myproject.worktrees/feature1',
+      target: '/workspaces/myproject.worktrees/feature1',
       readonly: false,
     },
   ]);
 });
 
-Deno.test("worktree flow: two worktrees of one primary share a single .git mount", async () => {
+Deno.test('worktree flow: two worktrees of one primary share a single .git mount', async () => {
   // start in /code, down, open worktrees, tick feature1, down, tick feature2, done · skills · y
   const sel = await runWith(
-    [DOWN, RIGHT, SPACE, DOWN, SPACE, ENTER, ENTER, "y"],
+    [DOWN, RIGHT, SPACE, DOWN, SPACE, ENTER, ENTER, 'y'],
     {
-      "/code/myproject.worktrees/feature1/.git":
-        "gitdir: ../../myproject/.git/worktrees/feature1\n",
-      "/code/myproject.worktrees/feature2/.git":
-        "gitdir: ../../myproject/.git/worktrees/feature2\n",
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature1\n',
+      '/code/myproject.worktrees/feature2/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature2\n',
     },
   );
-  const primaries = sel.source.filter((r) => r.target === "/workspaces/myproject/.git");
+  const primaries = sel.source.filter((r) =>
+    r.target === '/workspaces/myproject/.git'
+  );
   assertEquals(primaries.length, 1);
   const targets = sel.source.map((r) => r.target).sort();
   assertEquals(targets, [
-    "/workspaces/myproject.worktrees/feature1",
-    "/workspaces/myproject.worktrees/feature2",
-    "/workspaces/myproject/.git",
+    '/workspaces/myproject.worktrees/feature1',
+    '/workspaces/myproject.worktrees/feature2',
+    '/workspaces/myproject/.git',
   ]);
 });
 
-Deno.test("worktree flow: picking the primary working tree too skips the redundant .git mount", async () => {
+Deno.test('worktree flow: picking the primary working tree too skips the redundant .git mount', async () => {
   // start in /code, tick myproject, down to worktrees, open, tick feature1, done · skills · y
   const sel = await runWith(
-    [SPACE, DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    [SPACE, DOWN, RIGHT, SPACE, ENTER, ENTER, 'y'],
     {
-      "/code/myproject.worktrees/feature1/.git":
-        "gitdir: ../../myproject/.git/worktrees/feature1\n",
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature1\n',
     },
   );
   assertEquals(sel.source.map((r) => r.target).sort(), [
-    "/workspaces/myproject",
-    "/workspaces/myproject.worktrees/feature1",
+    '/workspaces/myproject',
+    '/workspaces/myproject.worktrees/feature1',
   ]);
 });
 
@@ -311,108 +313,111 @@ async function sourceFrames(
       Promise.resolve({
         created: true,
         changed: false,
-        configPath: "x",
+        configPath: 'x',
         written: [],
       }),
   });
-  return out.filter((f) => f.includes("Source Folders"));
+  return out.filter((f) => f.includes('Source Folders'));
 }
 
-Deno.test("worktree flow: the primary .git shows in the picks as soon as the worktree is ticked", async () => {
+Deno.test('worktree flow: the primary .git shows in the picks as soon as the worktree is ticked', async () => {
   // down to myproject.worktrees, open it, tick feature1 · done · skills none · y
   const frames = await sourceFrames(
-    [DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    [DOWN, RIGHT, SPACE, ENTER, ENTER, 'y'],
     {
-      "/code/myproject.worktrees/feature1/.git":
-        "gitdir: ../../myproject/.git/worktrees/feature1\n",
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature1\n',
     },
   );
   // Before the tick there is nothing to drag in; after it the mount is listed under its worktree.
   assert(
-    !frames[0].includes("/code/myproject/.git"),
-    "the primary .git is not shown before the worktree is picked",
+    !frames[0].includes('/code/myproject/.git'),
+    'the primary .git is not shown before the worktree is picked',
   );
   assertStringIncludes(
     frames[frames.length - 1],
-    "◉ /code/myproject.worktrees/feature1",
+    '◉ /code/myproject.worktrees/feature1',
   );
   assertStringIncludes(
     frames[frames.length - 1],
-    "◎ /code/myproject/.git  required by worktree feature1",
+    '◎ /code/myproject/.git  required by worktree feature1',
   );
 });
 
-Deno.test("worktree flow: unticking the worktree takes its primary .git with it", async () => {
+Deno.test('worktree flow: unticking the worktree takes its primary .git with it', async () => {
   // down, open worktrees, tick feature1, tick it again (untick) · done · skills none · y
   const frames = await sourceFrames(
-    [DOWN, RIGHT, SPACE, SPACE, ENTER, ENTER, "y"],
+    [DOWN, RIGHT, SPACE, SPACE, ENTER, ENTER, 'y'],
     {
-      "/code/myproject.worktrees/feature1/.git":
-        "gitdir: ../../myproject/.git/worktrees/feature1\n",
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature1\n',
     },
   );
   assertStringIncludes(
     frames[frames.length - 2],
-    "◎ /code/myproject/.git",
+    '◎ /code/myproject/.git',
   ); // present while ticked
   assert(
-    !frames[frames.length - 1].includes("/code/myproject/.git"),
-    "the derived row is gone once nothing requires it",
+    !frames[frames.length - 1].includes('/code/myproject/.git'),
+    'the derived row is gone once nothing requires it',
   );
 });
 
-Deno.test("worktree flow: a worktree preselected from the fence shows its .git on the first frame", async () => {
+Deno.test('worktree flow: a worktree preselected from the fence shows its .git on the first frame', async () => {
   // Nothing is ticked during this run — the pick comes from the existing config, so the derived
   // row has to be there before any keypress, not conjured by one.
-  const frames = await sourceFrames([ENTER, ENTER, "y"], {
-    "/code/myproject.worktrees/feature1/.git":
-      "gitdir: ../../myproject/.git/worktrees/feature1\n",
+  const frames = await sourceFrames([ENTER, ENTER, 'y'], {
+    '/code/myproject.worktrees/feature1/.git':
+      'gitdir: ../../myproject/.git/worktrees/feature1\n',
   }, {
     ...baseOpts(),
     sourceRows: [{
-      source: "/code/myproject.worktrees/feature1",
-      target: "/workspaces/myproject.worktrees/feature1",
+      source: '/code/myproject.worktrees/feature1',
+      target: '/workspaces/myproject.worktrees/feature1',
       readonly: false,
     }],
   });
   assertStringIncludes(
     frames[0],
-    "◎ /code/myproject/.git  required by worktree feature1",
+    '◎ /code/myproject/.git  required by worktree feature1',
   );
 });
 
-Deno.test("worktree flow: a fence carrying both the worktree and its .git shows the .git once", async () => {
+Deno.test('worktree flow: a fence carrying both the worktree and its .git shows the .git once', async () => {
   // The previous run wrote the derived mount into `devc:source`, so reopening preselects it *and*
   // derives it. It has to collapse to the single inert row, not appear twice.
   const gitRow = {
-    source: "/code/myproject/.git",
-    target: "/workspaces/myproject/.git",
+    source: '/code/myproject/.git',
+    target: '/workspaces/myproject/.git',
     readonly: false,
   };
-  const frames = await sourceFrames([ENTER, ENTER, "y"], {
-    "/code/myproject.worktrees/feature1/.git":
-      "gitdir: ../../myproject/.git/worktrees/feature1\n",
+  const frames = await sourceFrames([ENTER, ENTER, 'y'], {
+    '/code/myproject.worktrees/feature1/.git':
+      'gitdir: ../../myproject/.git/worktrees/feature1\n',
   }, {
     ...baseOpts(),
     sourceRows: [
       {
-        source: "/code/myproject.worktrees/feature1",
-        target: "/workspaces/myproject.worktrees/feature1",
+        source: '/code/myproject.worktrees/feature1',
+        target: '/workspaces/myproject.worktrees/feature1',
         readonly: false,
       },
       gitRow,
     ],
   });
-  const lines = frames[0].split("\r\n");
+  const lines = frames[0].split('\r\n');
   assertEquals(
-    lines.filter((l) => l.includes("/code/myproject/.git")).length,
+    lines.filter((l) => l.includes('/code/myproject/.git')).length,
     1,
     `the primary .git is listed once, not twice:\n${frames[0]}`,
   );
-  assertStringIncludes(frames[0], "◎ /code/myproject/.git  required by worktree feature1");
+  assertStringIncludes(
+    frames[0],
+    '◎ /code/myproject/.git  required by worktree feature1',
+  );
   assert(
-    !frames[0].includes("◉ /code/myproject/.git"),
-    "no removable duplicate of the derived mount",
+    !frames[0].includes('◉ /code/myproject/.git'),
+    'no removable duplicate of the derived mount',
   );
 });
 
@@ -425,25 +430,25 @@ Deno.test("worktree flow: absorbing the fence's .git row rewrites the same fence
     ...baseOpts(),
     sourceRows: [
       {
-        source: "/code/myproject.worktrees/feature1",
-        target: "/workspaces/myproject.worktrees/feature1",
+        source: '/code/myproject.worktrees/feature1',
+        target: '/workspaces/myproject.worktrees/feature1',
         readonly: false,
       },
       {
-        source: "/code/myproject/.git",
-        target: "/workspaces/myproject/.git",
+        source: '/code/myproject/.git',
+        target: '/workspaces/myproject/.git',
         readonly: false,
       },
     ],
   }, {
-    input: streamOfKeys([ENTER, ENTER, "y"]),
+    input: streamOfKeys([ENTER, ENTER, 'y']),
     output: sink(),
     size: () => ({ columns: 80, rows: 24 }),
     raw: false,
     readDir: wReadDir,
     fsProbe: fsProbe({
-      "/code/myproject.worktrees/feature1/.git":
-        "gitdir: ../../myproject/.git/worktrees/feature1\n",
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature1\n',
     }),
     err: (m) => warnings.push(m),
     apply: (_dir, sel) => {
@@ -451,77 +456,80 @@ Deno.test("worktree flow: absorbing the fence's .git row rewrites the same fence
       return Promise.resolve({
         created: false,
         changed: false,
-        configPath: "x",
+        configPath: 'x',
         written: [],
       });
     },
   });
   assertEquals((captured as unknown as WizardSelection).source, [
     {
-      source: "/code/myproject.worktrees/feature1",
-      target: "/workspaces/myproject.worktrees/feature1",
+      source: '/code/myproject.worktrees/feature1',
+      target: '/workspaces/myproject.worktrees/feature1',
       readonly: false,
     },
     {
-      source: "/code/myproject/.git",
-      target: "/workspaces/myproject/.git",
+      source: '/code/myproject/.git',
+      target: '/workspaces/myproject/.git',
       readonly: false,
     },
   ]);
-  assertEquals(warnings, [], "no duplicate-target skip to report any more");
+  assertEquals(warnings, [], 'no duplicate-target skip to report any more');
 });
 
-Deno.test("worktree flow: an invalid worktree shows the ⚠ flag and no derived row", async () => {
+Deno.test('worktree flow: an invalid worktree shows the ⚠ flag and no derived row', async () => {
   const frames = await sourceFrames(
-    [DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    [DOWN, RIGHT, SPACE, ENTER, ENTER, 'y'],
     {
-      "/code/myproject.worktrees/feature1/.git":
-        "gitdir: /code/myproject/.git/worktrees/feature1\n", // absolute → unmountable primary
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: /code/myproject/.git/worktrees/feature1\n', // absolute → unmountable primary
     },
   );
   const last = frames[frames.length - 1];
-  assertStringIncludes(last, "⚠ primary not mounted (worktree uses absolute paths)");
+  assertStringIncludes(
+    last,
+    '⚠ primary not mounted (worktree uses absolute paths)',
+  );
   assert(
-    !last.includes("/code/myproject/.git"),
-    "an unmountable primary is flagged, never listed as a pick",
+    !last.includes('/code/myproject/.git'),
+    'an unmountable primary is flagged, never listed as a pick',
   );
 });
 
 // ── picking outside the configured roots ────────────────────────────────────────
 
-const LEFT = "\x1b[D";
+const LEFT = '\x1b[D';
 
-Deno.test("free navigation: ← walks out of the code root and folders there are pickable", async () => {
+Deno.test('free navigation: ← walks out of the code root and folders there are pickable', async () => {
   // The single root opens inside /code. ← to /, down to "srv", open it, tick "proj", done.
   const sel = await runWith(
-    [LEFT, DOWN, DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
+    [LEFT, DOWN, DOWN, RIGHT, SPACE, ENTER, ENTER, 'y'],
     {},
   );
   assertEquals(sel.source, [{
-    source: "/srv/proj",
+    source: '/srv/proj',
     // Outside every root, so the basename fallback — not a mirrored path.
-    target: "/workspaces/proj",
+    target: '/workspaces/proj',
     readonly: false,
   }]);
 });
 
-Deno.test("free navigation: a worktree outside every root still mounts its primary .git", async () => {
+Deno.test('free navigation: a worktree outside every root still mounts its primary .git', async () => {
   // ← to /, down to "srv", open, down to "proj.worktrees", open, tick "f1", done.
   const sel = await runWith(
-    [LEFT, DOWN, DOWN, RIGHT, DOWN, RIGHT, SPACE, ENTER, ENTER, "y"],
-    { "/srv/proj.worktrees/f1/.git": "gitdir: ../../proj/.git/worktrees/f1\n" },
+    [LEFT, DOWN, DOWN, RIGHT, DOWN, RIGHT, SPACE, ENTER, ENTER, 'y'],
+    { '/srv/proj.worktrees/f1/.git': 'gitdir: ../../proj/.git/worktrees/f1\n' },
   );
   // Both targets mirror from /srv, their common ancestor, so `../../proj/.git` still resolves:
   // /workspaces/proj.worktrees/f1/../../proj/.git → /workspaces/proj/.git.
   assertEquals(sel.source, [
     {
-      source: "/srv/proj.worktrees/f1",
-      target: "/workspaces/proj.worktrees/f1",
+      source: '/srv/proj.worktrees/f1',
+      target: '/workspaces/proj.worktrees/f1',
       readonly: false,
     },
     {
-      source: "/srv/proj/.git",
-      target: "/workspaces/proj/.git",
+      source: '/srv/proj/.git',
+      target: '/workspaces/proj/.git',
       readonly: false,
     },
   ]);
@@ -559,82 +567,88 @@ async function runRebuild(
   const rebuiltDirs: string[] = [];
   const deps: FlowDeps = {
     // src: tick "app", done · skills: none, done · confirm apply y · then extraKeys
-    input: streamOfKeys([SPACE, ENTER, ENTER, "y", ...extraKeys]),
+    input: streamOfKeys([SPACE, ENTER, ENTER, 'y', ...extraKeys]),
     output: capturingSink(chunks),
     size: () => ({ columns: 80, rows: 24 }),
     raw: false,
     readDir: fakeReadDir,
-    err: (m) => chunks.push(m + "\n"),
+    err: (m) => chunks.push(m + '\n'),
     apply: () =>
       Promise.resolve({
         created: false,
         changed,
-        configPath: "/proj/.devcontainer/devcontainer.json",
+        configPath: '/proj/.devcontainer/devcontainer.json',
         written: [],
       }),
     containerStatus: () => Promise.resolve(status),
     rebuild: (dir) => {
       rebuiltDirs.push(dir);
-      if (opts.failRebuild) return Promise.reject(new Error("build blew up"));
-      return Promise.resolve("abc123 running — workspace /workspaces/proj");
+      if (opts.failRebuild) return Promise.reject(new Error('build blew up'));
+      return Promise.resolve('abc123 running — workspace /workspaces/proj');
     },
   };
   const result = await runProjectFlow(baseOpts(), deps);
-  return { result, text: chunks.join(""), rebuiltDirs };
+  return { result, text: chunks.join(''), rebuiltDirs };
 }
 
-Deno.test("rebuild prompt: a changed config with an existing container offers a rebuild", async () => {
-  const { result, text, rebuiltDirs } = await runRebuild(true, "running", ["y"]);
+Deno.test('rebuild prompt: a changed config with an existing container offers a rebuild', async () => {
+  const { result, text, rebuiltDirs } = await runRebuild(true, 'running', [
+    'y',
+  ]);
   assertEquals(result.applied, true);
   assertEquals(result.changed, true);
   assertEquals(result.rebuilt, true);
-  assertStringIncludes(text, "must be rebuilt");
-  assertStringIncludes(text, "Rebuild now?");
-  assertEquals(rebuiltDirs, ["/proj"]);
-  assertStringIncludes(text, "abc123 running");
+  assertStringIncludes(text, 'must be rebuilt');
+  assertStringIncludes(text, 'Rebuild now?');
+  assertEquals(rebuiltDirs, ['/proj']);
+  assertStringIncludes(text, 'abc123 running');
 });
 
-Deno.test("rebuild prompt: declining leaves the container alone", async () => {
-  const { result, text, rebuiltDirs } = await runRebuild(true, "stopped", ["n"]);
+Deno.test('rebuild prompt: declining leaves the container alone', async () => {
+  const { result, text, rebuiltDirs } = await runRebuild(true, 'stopped', [
+    'n',
+  ]);
   assertEquals(result.changed, true);
   assertEquals(result.rebuilt, false);
   assertEquals(rebuiltDirs, []);
   assertStringIncludes(text, "Skipped — run `devc build` when you're ready.");
 });
 
-Deno.test("rebuild prompt: an unchanged config never prompts and never rebuilds", async () => {
+Deno.test('rebuild prompt: an unchanged config never prompts and never rebuilds', async () => {
   // No prompt keys supplied: if the flow asked anything, it would read past the stream's end.
-  const { result, text, rebuiltDirs } = await runRebuild(false, "running", []);
+  const { result, text, rebuiltDirs } = await runRebuild(false, 'running', []);
   assertEquals(result.applied, true);
   assertEquals(result.changed, false);
   assertEquals(result.rebuilt, false);
   assertEquals(rebuiltDirs, []);
-  assertStringIncludes(text, "No config changes — no rebuild needed.");
-  assert(!text.includes("Rebuild now?"), "must not offer a rebuild");
-  assertStringIncludes(text, "Unchanged /proj/.devcontainer/devcontainer.json");
+  assertStringIncludes(text, 'No config changes — no rebuild needed.');
+  assert(!text.includes('Rebuild now?'), 'must not offer a rebuild');
+  assertStringIncludes(text, 'Unchanged /proj/.devcontainer/devcontainer.json');
 });
 
-Deno.test("rebuild prompt: no container yet is worded as a first build", async () => {
-  const { result, text, rebuiltDirs } = await runRebuild(true, "missing", ["y"]);
-  assertStringIncludes(text, "No dev container exists for this project yet.");
-  assertStringIncludes(text, "Build it now?");
-  assertEquals(rebuiltDirs, ["/proj"]);
+Deno.test('rebuild prompt: no container yet is worded as a first build', async () => {
+  const { result, text, rebuiltDirs } = await runRebuild(true, 'missing', [
+    'y',
+  ]);
+  assertStringIncludes(text, 'No dev container exists for this project yet.');
+  assertStringIncludes(text, 'Build it now?');
+  assertEquals(rebuiltDirs, ['/proj']);
   assertEquals(result.rebuilt, true);
 });
 
-Deno.test("rebuild prompt: a failed rebuild is reported, not thrown", async () => {
-  const { result, text } = await runRebuild(true, "running", ["y"], {
+Deno.test('rebuild prompt: a failed rebuild is reported, not thrown', async () => {
+  const { result, text } = await runRebuild(true, 'running', ['y'], {
     failRebuild: true,
   });
   assertEquals(result.applied, true);
   assertEquals(result.rebuilt, false);
-  assertStringIncludes(text, "devc: build blew up");
+  assertStringIncludes(text, 'devc: build blew up');
 });
 
-Deno.test("rebuild prompt: without the deps the flow only points at `devc build`", async () => {
+Deno.test('rebuild prompt: without the deps the flow only points at `devc build`', async () => {
   const chunks: string[] = [];
   const deps: FlowDeps = {
-    input: streamOfKeys([SPACE, ENTER, ENTER, "y"]),
+    input: streamOfKeys([SPACE, ENTER, ENTER, 'y']),
     output: capturingSink(chunks),
     size: () => ({ columns: 80, rows: 24 }),
     raw: false,
@@ -643,20 +657,20 @@ Deno.test("rebuild prompt: without the deps the flow only points at `devc build`
       Promise.resolve({
         created: false,
         changed: true,
-        configPath: "/proj/.devcontainer/devcontainer.json",
+        configPath: '/proj/.devcontainer/devcontainer.json',
         written: [],
       }),
   };
   const result = await runProjectFlow(baseOpts(), deps);
   assertEquals(result.rebuilt, false);
-  assertStringIncludes(chunks.join(""), "run `devc build` to rebuild");
+  assertStringIncludes(chunks.join(''), 'run `devc build` to rebuild');
 });
 
-Deno.test("rebuild prompt: a failed status lookup falls back to the `devc build` hint", async () => {
+Deno.test('rebuild prompt: a failed status lookup falls back to the `devc build` hint', async () => {
   const chunks: string[] = [];
   let rebuildCalled = false;
   const deps: FlowDeps = {
-    input: streamOfKeys([SPACE, ENTER, ENTER, "y"]),
+    input: streamOfKeys([SPACE, ENTER, ENTER, 'y']),
     output: capturingSink(chunks),
     size: () => ({ columns: 80, rows: 24 }),
     raw: false,
@@ -665,18 +679,18 @@ Deno.test("rebuild prompt: a failed status lookup falls back to the `devc build`
       Promise.resolve({
         created: false,
         changed: true,
-        configPath: "/proj/.devcontainer/devcontainer.json",
+        configPath: '/proj/.devcontainer/devcontainer.json',
         written: [],
       }),
     // e.g. no docker on PATH.
-    containerStatus: () => Promise.reject(new Error("docker not found")),
+    containerStatus: () => Promise.reject(new Error('docker not found')),
     rebuild: () => {
       rebuildCalled = true;
-      return Promise.resolve("never");
+      return Promise.resolve('never');
     },
   };
   const result = await runProjectFlow(baseOpts(), deps);
   assertEquals(result.rebuilt, false);
   assertEquals(rebuildCalled, false);
-  assertStringIncludes(chunks.join(""), "run `devc build` to rebuild");
+  assertStringIncludes(chunks.join(''), 'run `devc build` to rebuild');
 });
