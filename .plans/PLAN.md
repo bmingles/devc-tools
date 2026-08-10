@@ -18,6 +18,15 @@
   `devc:skills` fence is untouched). Deletion and live host edits both work;
   existing host files are migrated on first run.
 
+- [devc-bridge-keepawake](devc-bridge-keepawake.md) — Activity-driven
+  caffeinate: a reserved `ping` builtin in the bridge server starts the
+  allowlisted `caffeinate` script on the first ping and stops it after a
+  configurable idle timeout (default 5 min — must exceed the longest ping gap
+  from long tool runs and permission prompts). Deliberately minimal: a
+  re-armed `setTimeout` in a new `host/keepawake.ts` is the whole reaper, the
+  existing state-dir marker still drives the tray ○/●, and `main.ts`, the tray
+  UI and the client are all unchanged.
+
 ### Completed
 
 - [devc-config-overlay](archived/devc-config-overlay.md) — Reintroduce a
@@ -170,3 +179,4 @@
 | devc picker derived mounts — implied primary `.git` shown in the picks list            | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md)   | complete    |
 | devc picker free navigation — roots as shortcuts + worktree mirror base                | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) | complete    |
 | devc config overlay — `devc.json` in both modes + user template layer                  | [devc-config-overlay](archived/devc-config-overlay.md)                 | complete    |
+| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                       | [devc-bridge-keepawake](devc-bridge-keepawake.md)                      | pending     |
