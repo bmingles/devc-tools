@@ -11,15 +11,6 @@
 
 ### Pending
 
-- [devc-attach-exit-code](devc-attach-exit-code.md) — Stop crashing on
-  detach: `attachToContainer` throws on any non-zero `docker exec` exit
-  (e.g. 130, an ordinary signal-driven shell exit), and `main.ts`'s `attach()`
-  has no catch around it, so it surfaces as a raw uncaught-promise stack
-  trace. Fix mirrors `execInContainer`/`exec`'s existing contract:
-  `attachToContainer` resolves to the exit code instead of throwing, and
-  `attach()` exits with that code (or prints `devc: …` + exit 125 on a real
-  infra failure), matching `exec`'s pattern exactly.
-
 - [devc-claude-seed-dir](devc-claude-seed-dir.md) — Replace the three brittle
   per-file `~/.claude/*` host binds with one read-only directory bind of
   `~/.config/devc/.claude`, symlinked into the `.claude` volume by
@@ -28,6 +19,22 @@
   existing host files are migrated on first run.
 
 ### Completed
+
+- [devc-attach-exit-code](archived/devc-attach-exit-code.md) — Stop crashing
+  on detach: `attachToContainer` now resolves to the attached shell/command's
+  own `docker exec` exit code (e.g. 130, an ordinary signal-driven shell exit)
+  instead of throwing on any non-zero code, mirroring `execInContainer`'s
+  existing contract; `main.ts`'s `attach()` wraps the call in try/catch,
+  exiting with that code on success or printing `devc: …` + exit 125 on a
+  real infra failure, matching `exec`'s pattern exactly. `devc/README.md`'s
+  `attach`/`claude` bullet documents the same contract the `exec` bullet
+  already did. `deno check`/`deno fmt --check`/`deno lint` are clean (30
+  pre-existing, unrelated `no-import-prefix` lint findings elsewhere in the
+  repo are unchanged by this work). The plan's live-Docker validation steps
+  (attaching to a real container and observing `exit`/`exit 130`/a non-zero
+  `devc claude` exit/an infra-failure `PATH` case/`--build`+`--no-clear`
+  regression) were **not run** — no Docker available in this environment —
+  and are left unchecked in the archived plan for a human to verify.
 
 - [devc-bridge-keepawake](archived/devc-bridge-keepawake.md) — Activity-driven
   caffeinate: a reserved `ping` builtin in the bridge server starts the
@@ -199,4 +206,4 @@
 | devc picker free navigation — roots as shortcuts + worktree mirror base                | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) | complete    |
 | devc config overlay — `devc.json` in both modes + user template layer                  | [devc-config-overlay](archived/devc-config-overlay.md)                 | complete    |
 | devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                       | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)             | complete    |
-| devc attach exit-code handling — stop crashing on non-zero `docker exec`               | [devc-attach-exit-code](devc-attach-exit-code.md)                      | pending     |
+| devc attach exit-code handling — stop crashing on non-zero `docker exec`               | [devc-attach-exit-code](archived/devc-attach-exit-code.md)             | complete    |
