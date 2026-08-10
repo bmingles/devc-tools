@@ -18,7 +18,9 @@ case "${1:-status}" in
     # Detach the child's stdio (</dev/null >/dev/null 2>&1) so it does not inherit
     # and hold open the pipes the bridge reads — otherwise the server's output()
     # never sees EOF and the client call hangs for the life of caffeinate.
-    caffeinate -dimsu </dev/null >/dev/null 2>&1 &
+    # -dims, deliberately without -u: -u wakes the display (a hook ping would light
+    # up a screen you let sleep) and, with no -t, its assertion defaults to 5s.
+    caffeinate -dims </dev/null >/dev/null 2>&1 &
     echo $! > "$PIDFILE"
     echo "started"
     ;;

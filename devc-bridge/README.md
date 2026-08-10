@@ -60,6 +60,30 @@ These are plain executable scripts in `~/.config/devc-bridge/commands/`
 one exception, a builtin handled by the server itself, not a script. See
 [Writing a command](#writing-a-command) to add your own.
 
+> **Seeding never clobbers.** A script that already exists in
+> `~/.config/devc-bridge/commands/` is left alone on every later `start`, so
+> changes to `host/commands/` do **not** reach an existing install — edit the
+> copy under `~/.config/devc-bridge/commands/`, or delete it and restart to
+> re-seed.
+
+### Why `caffeinate -dims`
+
+`-i` is what actually keeps a session alive: no idle system sleep means the CPU
+keeps running, Wi-Fi stays associated, and a VPN tunnel survives. `-d` is kept
+because a display that never sleeps generally never triggers the display-sleep
+screen lock, which some VPN clients drop on. `-s` is documented as valid only on
+AC power, so on battery `-i` carries the load; `-m` is near-inert on SSD-only
+Macs. Both are harmless.
+
+`-u` is deliberately **not** used. It declares user activity and *wakes the
+display if it's off* — the keepalive arms on a session's first hook ping, so
+`-u` would light up a screen you had let sleep. It is also redundant with `-d`,
+and with no `-t` its assertion defaults to 5 seconds.
+
+No flag combination survives closing the lid: clamshell sleep needs external
+power *and* an external display to avoid. Verify what is held with
+`pmset -g assertions | grep -i caffeinate`.
+
 ## Setup (macOS host)
 
 Build the `devc-bridge` binary once (requires Deno 2.9+), then it is
@@ -122,6 +146,17 @@ call and pings the bridge — "Claude is still working" — and the host starts
 ```json
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "devc-bridge ping PreToolUse >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "*",
@@ -164,6 +199,30 @@ vars on the **host**:
 | `DEVC_BRIDGE_KEEPAWAKE_COMMAND` | `caffeinate` | resolved through the allowlist |
 | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS` | `300000`     | non-numeric/≤0 → default        |
 
+**Set these on `devc-bridge start`, and restart to apply:**
+
+```sh
+DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=1200000 devc-bridge restart   # 20 min, for long builds
+DEVC_BRIDGE_KEEPAWAKE_IDLE_MS= devc-bridge restart          # empty = back to the default
+```
+
+`start` runs in your shell; the tray it launches does not — `open -g` hands off to
+LaunchServices, so the app starts under **launchd's** environment. Exporting the
+variable and leaving an already-running tray alone therefore does nothing. `start`
+bridges the gap by writing whichever of these vars are set in its own env to
+`~/.config/devc-bridge/settings.json`, which the tray reads at launch; env wins over
+the file, the file wins over the default. The value is read **once**, at launch, so
+a change needs a `restart` (plain `start` on a running tray saves the value and says
+so, but won't apply it). The same applies to `DEVC_BRIDGE_HOST` and
+`DEVC_BRIDGE_PORT`.
+
+**Choosing a value.** The timeout never governs typical commands — every tool call
+pings, so the timer resets constantly while a session is active. It only matters in
+two moments: a *single* tool call longer than the timeout (Claude Code caps `Bash` at
+10 minutes, so the default covers everything short of a long build), and how long the
+Mac stays awake after work stops. Raise it on days you run long builds; the cost is
+only idle awake time.
+
 Notes on the semantics:
 
 - **Adoption:** a manual `devc-bridge caffeinate start` with no pings is never
@@ -181,7 +240,20 @@ Notes on the semantics:
   tool runs, prompt think-time), not just "how fast to notice Claude
   finished." The default (5 minutes) is chosen with that in mind; the cost of
   raising it is a few extra minutes of the Mac staying awake, the cost of
-  lowering it too far is the Mac suspending mid-build.
+  lowering it too far is the Mac suspending mid-build. See "Choosing a value"
+  above for how to change it.
+- **Why `PreToolUse` too:** it puts a ping at the *start* of a tool call, so a
+  long build gets the full idle timeout measured from when it began rather than
+  from the end of the previous tool. `PostToolUse` alone very nearly does this
+  (tools run back to back), but `PreToolUse` makes it exact and costs one extra
+  process per tool call.
+- **Subagents are covered:** hooks also run inside subagents, so a long `Agent`
+  or `Workflow` call pings throughout from its own tool calls rather than going
+  silent for its whole duration.
+- **A stalled session is safe to let sleep.** Waiting on a permission prompt
+  fires no pings, so the Mac may suspend — but the session is already stopped,
+  and answering after a wake resumes it no differently. The case worth
+  protecting is Claude *actively working*, which the tool-call pings cover.
 - **Concurrent sessions** share one keepalive: last-ping-wins is a natural
   refcount — `caffeinate` stops only once *all* sessions go quiet.
 - **Crash robustness:** a container stop or killed session never sends
@@ -274,8 +346,8 @@ holds open) those pipes for its entire life, so `output()` never sees EOF until
 the child exits.
 
 ```bash
-caffeinate -dimsu </dev/null >/dev/null 2>&1 &   # detached — script returns now
-caffeinate -dimsu &                              # WRONG — client hangs until caffeinate dies
+caffeinate -dims </dev/null >/dev/null 2>&1 &   # detached — script returns now
+caffeinate -dims &                              # WRONG — client hangs until caffeinate dies
 ```
 
 Record its PID (e.g. in a `$DEVC_BRIDGE_STATE` marker) so a later `stop` can
@@ -305,7 +377,7 @@ own destructive flags (`--delete`, `-f`, `--exec`, …) to the container.
 ```bash
 # BEST — fixed verb enum; args select behavior, never supply flags
 case "${1:-status}" in
-  start) caffeinate -dimsu & ... ;;
+  start) caffeinate -dims & ... ;;
   stop|status) ... ;;
   *) echo "usage: caffeinate {start|stop|status}" >&2; exit 2 ;;
 esac

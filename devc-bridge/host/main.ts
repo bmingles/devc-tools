@@ -15,7 +15,13 @@
 //   • Inside that built .app it runs with no args → the tray (runTray in tray.ts).
 
 import { dirname, fromFileUrl, join } from '@std/path';
-import { type Config, ensureConfig, errMsg, loadConfig } from './config.ts';
+import {
+  type Config,
+  ensureConfig,
+  errMsg,
+  loadConfig,
+  persistEnvSettings,
+} from './config.ts';
 import { runTray } from './tray.ts';
 
 const USAGE = 'usage: devc-bridge {start|stop|status|restart|run}';
@@ -51,11 +57,39 @@ async function main(): Promise<void> {
 async function start(cfg: Config): Promise<void> {
   await ensureConfig(cfg);
 
+  // This process has the shell's env; the tray (launched via `open -g`, so started
+  // by launchd) does not. Hand the settings over through the config dir instead.
+  const changed = await persistEnvSettings(cfg);
+  if (changed.length > 0) {
+    console.error(`devc-bridge: saved settings: ${changed.join(', ')}`);
+  }
+
   const existing = await readPid(cfg);
   if (existing !== null && await pidAlive(existing)) {
     console.log(`already running (pid ${existing})`);
+    if (changed.length > 0) {
+      // Settings are read once, at tray launch — saving them is not applying them.
+      console.error(
+        'devc-bridge: run `devc-bridge restart` to apply the new settings',
+      );
+    }
     return;
   }
+  // No usable pidfile — but that is not proof no tray is running. Deleting the config
+  // dir takes the pidfile with it and orphans the tray, and `open -g` on a bundle that
+  // is already running just re-activates that instance instead of launching a second
+  // one: no new process, no log, and the wait below would time out blaming the launch.
+  // A listening port is the handle the pidfile no longer is.
+  if (await portInUse(cfg.hostname, cfg.port)) {
+    console.error(
+      `devc-bridge: ${cfg.hostname}:${cfg.port} is already in use, but no tray pidfile exists`,
+    );
+    console.error(
+      `devc-bridge: (an orphaned tray — deleted config dir? — or another program. Find it with: lsof -i :${cfg.port})`,
+    );
+    Deno.exit(1);
+  }
+
   // Drop any stale pidfile so the fresh one the tray writes is our success signal.
   await removePidfile(cfg);
 
@@ -167,6 +201,23 @@ async function readPid(cfg: Config): Promise<number | null> {
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Is anything accepting connections on this address? Used to catch a running tray
+ * that the pidfile no longer accounts for. A connect (rather than a trial bind)
+ * keeps this read-only — it can't transiently steal the port from the tray we are
+ * about to launch — and a lingering TIME_WAIT socket refuses connections, so a
+ * just-stopped tray doesn't register as still running.
+ */
+async function portInUse(hostname: string, port: number): Promise<boolean> {
+  try {
+    const conn = await Deno.connect({ hostname, port });
+    conn.close();
+    return true;
+  } catch {
+    return false; // refused/unreachable — nothing listening
   }
 }
 

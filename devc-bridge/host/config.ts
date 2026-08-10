@@ -35,7 +35,39 @@ export interface Config {
   port: number;
   /** Keepalive policy: which allowlisted script to drive, and the idle timeout. */
   keepawake: { command: string; idleMs: number };
+  /** Persisted runtime settings (see `Settings`). */
+  settingsFile: string;
 }
+
+/**
+ * Runtime settings that survive in a file rather than only in the environment.
+ *
+ * `devc-bridge start` runs in your shell, but the tray it launches goes through
+ * `open -g` → LaunchServices, which starts the app under launchd's environment,
+ * *not* the shell's. So `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=… devc-bridge start` would
+ * set the variable in the one process that doesn't use it and leave it unset in
+ * the one that does. `start` therefore captures whichever of these vars are set
+ * in its own env and writes them here for the tray to read at launch.
+ *
+ * Paths (base/state/commands/token) are deliberately not persisted — `base` is
+ * where this file itself lives, so storing it here would be circular.
+ */
+export interface Settings {
+  hostname?: string;
+  port?: number;
+  keepawakeCommand?: string;
+  keepawakeIdleMs?: number;
+}
+
+/** Env var → settings key, for the vars the tray needs but can't inherit. */
+const SETTING_ENV: Record<string, keyof Settings> = {
+  DEVC_BRIDGE_HOST: 'hostname',
+  DEVC_BRIDGE_PORT: 'port',
+  DEVC_BRIDGE_KEEPAWAKE_COMMAND: 'keepawakeCommand',
+  DEVC_BRIDGE_KEEPAWAKE_IDLE_MS: 'keepawakeIdleMs',
+};
+
+const NUMERIC_SETTINGS = new Set<keyof Settings>(['port', 'keepawakeIdleMs']);
 
 /** Default idle timeout: must exceed the longest plausible ping gap (long tool
  * runs, permission-prompt think time), not merely "how fast to notice Claude
@@ -52,11 +84,37 @@ export function parseIdleMs(
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/** Read the settings file. Missing or malformed → `{}` (never fatal: a bad file
+ * must not stop the tray from starting on defaults). */
+export function readSettings(path: string): Settings {
+  let raw: string;
+  try {
+    raw = Deno.readTextFileSync(path);
+  } catch {
+    return {}; // not written yet — the common case
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed !== null && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    console.error(`devc-bridge: ignoring malformed ${path}: ${errMsg(e)}`);
+    return {};
+  }
+}
+
+/** Positive finite number, or undefined — the shape every stored numeric must pass. */
+function storedNumber(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
+}
+
 export function loadConfig(): Config {
   const home = Deno.env.get('HOME') ?? '.';
   const base = Deno.env.get('DEVC_BRIDGE_BASE') ??
     join(home, '.config', 'devc-bridge');
   const run = join(base, 'run');
+  const settingsFile = join(base, 'settings.json');
+  // Precedence: this process's env → the file `start` wrote → built-in default.
+  const stored = readSettings(settingsFile);
   return {
     base,
     run,
@@ -65,13 +123,71 @@ export function loadConfig(): Config {
     token: Deno.env.get('DEVC_BRIDGE_TOKEN_FILE') ?? join(run, 'token'),
     pidfile: join(run, 'tray.pid'),
     logfile: join(base, 'devc-bridge.log'),
-    hostname: Deno.env.get('DEVC_BRIDGE_HOST') ?? '127.0.0.1',
-    port: Number(Deno.env.get('DEVC_BRIDGE_PORT') ?? '48227'),
+    settingsFile,
+    hostname: Deno.env.get('DEVC_BRIDGE_HOST') || stored.hostname ||
+      '127.0.0.1',
+    port: Number(
+      Deno.env.get('DEVC_BRIDGE_PORT') || storedNumber(stored.port) || 48227,
+    ),
     keepawake: {
-      command: Deno.env.get('DEVC_BRIDGE_KEEPAWAKE_COMMAND') || 'caffeinate',
-      idleMs: parseIdleMs(Deno.env.get('DEVC_BRIDGE_KEEPAWAKE_IDLE_MS')),
+      command: Deno.env.get('DEVC_BRIDGE_KEEPAWAKE_COMMAND') ||
+        stored.keepawakeCommand || 'caffeinate',
+      idleMs: parseIdleMs(
+        Deno.env.get('DEVC_BRIDGE_KEEPAWAKE_IDLE_MS'),
+        storedNumber(stored.keepawakeIdleMs) ?? DEFAULT_KEEPAWAKE_IDLE_MS,
+      ),
     },
   };
+}
+
+/**
+ * Merge the `DEVC_BRIDGE_*` runtime settings present in *this* process's env into
+ * the settings file, so the launchd-started tray picks them up. Called by `start`.
+ *
+ * An explicitly empty value (`DEVC_BRIDGE_KEEPAWAKE_IDLE_MS= devc-bridge restart`)
+ * removes the stored key and reverts that setting to its default — otherwise there
+ * would be no way to undo a value short of editing the file by hand.
+ *
+ * Returns a `key=value` description of what changed, for `start` to report.
+ */
+export async function persistEnvSettings(cfg: Config): Promise<string[]> {
+  const stored = readSettings(cfg.settingsFile);
+  const next: Record<string, unknown> = { ...stored };
+  const changed: string[] = [];
+
+  for (const [envVar, key] of Object.entries(SETTING_ENV)) {
+    const raw = Deno.env.get(envVar);
+    if (raw === undefined) continue; // not set — leave any stored value alone
+    if (raw === '') {
+      if (key in next) {
+        delete next[key];
+        changed.push(`${key}=(default)`);
+      }
+      continue;
+    }
+    let value: string | number = raw;
+    if (NUMERIC_SETTINGS.has(key)) {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) {
+        console.error(
+          `devc-bridge: ignoring ${envVar}=${raw} (not a positive number)`,
+        );
+        continue;
+      }
+      value = n;
+    }
+    if (next[key] === value) continue;
+    next[key] = value;
+    changed.push(`${key}=${value}`);
+  }
+
+  if (changed.length > 0) {
+    await Deno.writeTextFile(
+      cfg.settingsFile,
+      JSON.stringify(next, null, 2) + '\n',
+    );
+  }
+  return changed;
 }
 
 /** Create the runtime dirs and seed missing command scripts. Idempotent. */

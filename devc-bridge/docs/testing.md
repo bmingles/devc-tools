@@ -115,7 +115,14 @@ If the gate fails, check in this order:
 | B6 idle stop        | host      | stop pinging, wait ~5 min (default idle timeout)    | assertion and marker gone; tray returns to ○                                                                                  |
 | B7 quit while armed | host      | Quit the tray mid-keepalive                         | `pmset -g assertions` no longer shows caffeinate (no leak)                                                                    |
 | B8 status unchanged | container | `devc-bridge status` while armed                    | still reports `— active: caffeinate` (unchanged code path — confirms nothing regressed)                                       |
-| B9 real hook        | container | install the README's `PostToolUse`/`UserPromptSubmit` hook snippet in `settings.json`, run a short Claude session | assertion appears on the first tool call; clears ~5 min after the session goes quiet |
+| B9 real hook        | container | install the README's `PreToolUse`/`PostToolUse`/`UserPromptSubmit` hook snippet in `settings.json`, run a short Claude session | assertion appears on the first tool call; clears ~5 min after the session goes quiet |
+| B10 settings persist | host     | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=600000 devc-bridge restart` | prints `saved settings: keepawakeIdleMs=600000`; `~/.config/devc-bridge/settings.json` contains it |
+| B10 tray applies it | host      | `devc-bridge stop; devc-bridge start` (no env var set)     | idle stop now takes ~10 min, not 5 — proves the launchd-started tray read the file  |
+| B10 needs restart   | host      | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=900000 devc-bridge start` while running | `already running (pid N)` + `run devc-bridge restart to apply the new settings`      |
+| B10 clear           | host      | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS= devc-bridge restart`       | prints `keepawakeIdleMs=(default)`; key gone from `settings.json`; back to 5 min    |
+| B11 flags           | host      | `pmset -g assertions` while armed                          | `PreventUserIdleSystemSleep` held; **no** `UserIsActive` (confirms `-dims`, no `-u`) |
+| B12 orphaned tray   | host      | with the tray running: `rm -rf ~/.config/devc-bridge && devc-bridge start` | `48227 is already in use, but no tray pidfile exists` + the `lsof` hint, exit 1 — *not* the 30s "never reported ready" timeout |
+| B12 no false alarm  | host      | `devc-bridge stop` then `devc-bridge start`                | starts normally (a just-released port must not read as still in use)                |
 
 ### Notes / gotchas
 
