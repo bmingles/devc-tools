@@ -14,7 +14,7 @@ its container.
 
 ```text
 devc init    [PATH]                                   Scaffold the default `.devcontainer/` into the project
-devc config  [PATH]                                   Configure the project's dev container (TUI)
+devc config  [PATH]                                   Configure the project's source/skills mounts (TUI)
 devc up      [PATH] [--json]                          Create/start the container; print its status
 devc build   [PATH] [--no-cache] [--json]             Recreate the container from scratch
 devc attach  [PATH] [--build] [--no-clear]            Start (creating if needed) and attach a login shell
@@ -79,7 +79,9 @@ Notes:
 - An optional [`devc.json` overlay](#optional-overlay-devcjson) contributes
   extra `mounts`, `additionalFeatures` and `remoteEnv` on top of whichever base
   config won, in both modes. It is translated to `devcontainer up` CLI flags and
-  never written into the project's config.
+  never written into the project's config. This is also where `devc config`
+  writes the source/skills mounts it manages, so that flow never touches
+  `.devcontainer/` either.
 - **exec / attach** run via `docker exec` under `remoteUser` in
   `remoteWorkspaceFolder`. `remoteEnv` is not stored on the container — it is
   applied by the _client_ per connection (VS Code to its terminals,
@@ -118,6 +120,7 @@ Three optional keys, in a file that is itself optional:
 ```jsonc
 {
   // → --mount, appended to the base config's own mounts
+  // Only type/source/target[/external] — see "Mount specs" below.
   "mounts": [
     "type=bind,source=${localEnv:HOME}/notes,target=${containerWorkspaceFolder}/../notes"
   ],
@@ -172,14 +175,50 @@ Where it can live — **first hit wins per level, and the losers are not merged*
 - Mounts take effect at container-create time, so run `devc build` after editing
   one.
 - Only these three keys have a `devcontainer up` flag. A project needing
-  `containerEnv`, `forwardPorts`, `runArgs` and friends should run `devc config`
-  and edit its own config.
+  `containerEnv`, `forwardPorts`, `runArgs` and friends should run `devc init`
+  and edit its own `devcontainer.json`.
+- `devc config` writes the `mounts` key's two managed fences here — see
+  [which file it writes](#which-file-it-writes). The other keys are yours; the
+  wizard never touches them.
 - An overlay mount whose target collides with a base mount is not detected or
   deduped — Docker fails with `Duplicate mount point`, which says exactly what
   happened.
 - `devc init` is unaffected and still requires a **missing or empty**
   `.devcontainer/`: a lone `devc.json` in there counts as content. Move it
   aside, run `init`, move it back.
+
+### Mount specs: what an overlay mount can say
+
+Overlay mounts become `devcontainer up --mount` args, and that flag accepts a
+**strictly smaller** vocabulary than a `devcontainer.json` `mounts` entry does.
+The CLI validates each one against its own regex:
+
+```text
+type=<bind|volume>,source=<source>,target=<target>[,external=<true|false>]
+```
+
+That is the whole grammar. Field order is fixed, and neither path may contain a
+comma. Anything else — including **`readonly`** and **`consistency=cached`** —
+is rejected outright, so:
+
+- **There is no read-only overlay mount.** The CLI re-serializes each parsed
+  spec as `type=…,src=…,dst=…` before it reaches `docker run`, so even a
+  smuggled field would be dropped. Only _string_ mounts written directly in a
+  `devcontainer.json` `mounts` array are passed through verbatim — which is how
+  the infra `claude-seed` bind keeps its `readonly`. Everything `devc config`
+  writes is read-write, including skills folders.
+- Restoring read-only would mean granting the container `SYS_ADMIN` (so it could
+  `mount -o remount,bind,ro` its own mounts). Docker's default seccomp profile
+  fixes the `mount` allowance at container-create time from the configured
+  capabilities, so even `docker exec --privileged` cannot do it after the fact.
+  Trading a container-escape-class capability for read-only skill folders is a
+  bad deal, so devc does not.
+- `consistency=cached` is no loss: it was an osxfs-era hint that modern Docker
+  Desktop ignores under VirtioFS/gRPC-FUSE.
+
+devc validates every entry against the same regex when it loads the file, so a
+bad spec fails naming the file, the index and the offending field — rather than
+surfacing later as the CLI's context-free `Unmatched argument format`.
 
 ## Default overrides: `~/.config/devc/templates/`
 
@@ -188,7 +227,7 @@ replaces the same-named bundled one — everywhere the bundle is used:
 
 ```text
 ~/.config/devc/templates/Dockerfile           your build, for zero-config projects and
-~/.config/devc/templates/devcontainer.json    what `devc init` / `devc config` scaffold
+~/.config/devc/templates/devcontainer.json    what `devc init` scaffolds
 ~/.config/devc/templates/scripts/node-setup.sh
 ```
 
@@ -197,11 +236,10 @@ replaces the same-named bundled one — everywhere the bundle is used:
 - **Re-applied every run**, so a `devc` upgrade keeps shipping its new defaults
   for every file you have _not_ overridden. Delete a file from here and the
   bundled version is back on the next run.
-- **Reaches project mode too.** `devc init` and `devc config` scaffold from the
-  same layered set, so a `Dockerfile` customization does not vanish the moment
-  you run `devc config`. A template `devcontainer.json` becomes the base text
-  the wizard inserts its two mount fences into — it does not need a `mounts`
-  array; one is created.
+- **Reaches project mode too.** `devc init` scaffolds from the same layered set,
+  so a `Dockerfile` customization reaches a project's own `.devcontainer/` and
+  not just the zero-config path. (`devc config` scaffolds nothing — it only
+  writes the overlay — so nothing it does can disturb a template.)
 - A template `devcontainer.json` still gets the two zero-config path rewrites
   (`initializeCommand` → the cache dir, `postCreateCommand` → the image-baked
   script), so keeping the standard in-project references in it is fine.
@@ -360,8 +398,9 @@ bash tests/shell_dirs_test.sh default/scripts/bashrc-additions.sh  # devc:shell-
 
 ### `devc config`
 
-`devc config [PATH]` is a picker-driven flow for the project's `.devcontainer/`.
-You _select_ folders — no typing paths:
+`devc config [PATH]` is a picker-driven flow for the project's
+[`devc.json` overlay](#optional-overlay-devcjson). You _select_ folders — no
+typing paths:
 
 - **Source folders** and **skills folders** are each chosen with a multi-select,
   type-to-filter picker: `↑/↓` move, `→` open a folder, `←` (or backspace on an
@@ -387,8 +426,9 @@ You _select_ folders — no typing paths:
   folder from anywhere on the machine. The roots themselves aren't selectable;
   tick one from its parent folder.
 - A **review** summary then a single `Apply?` confirm writes the two managed
-  mount blocks (`devc:source`, `devc:skills`); everything else in the file is
-  left untouched.
+  mount blocks (`devc:source`, `devc:skills`); everything else in the file —
+  hand-written mounts, `additionalFeatures`, `remoteEnv`, comments — is left
+  untouched.
 - Afterwards, `devc config` compares what it wrote to what was already on disk
   and only then offers a rebuild, since mounts take effect at container-create
   time:
@@ -404,3 +444,32 @@ You _select_ folders — no typing paths:
 stored folded to `~/…`. On first run — or any time roots are missing —
 `devc config` collects them first with a free-navigation picker. Run
 **`devc config --global`** to reconfigure them at any time.
+
+#### Which file it writes
+
+Extra bind mounts are **machine-specific**: another checkout of the same repo
+will not have your sibling repos at the same host paths, so the mount cannot be
+committed and be correct for anyone else. That is why they go in the overlay and
+not in `devcontainer.json`.
+
+`devc config` **never writes `.devcontainer/`** — not the config, not the
+scaffold. Creating `.devcontainer/` is `devc init`'s job, so recording one mount
+on a zero-config project does not saddle it with a `Dockerfile` and lifecycle
+scripts to maintain. The target is picked like this:
+
+```text
+an existing overlay, in the usual first-hit order   → written in place
+  .devc/devc.jsonc · .devc/devc.json
+  .devcontainer/devc.jsonc · .devcontainer/devc.json
+otherwise, the project has a .devcontainer/         → .devcontainer/devc.jsonc
+otherwise                                           → .devc/devc.jsonc
+```
+
+An existing overlay always wins, and a second one is never created beside it —
+only the first hit is ever read, so the loser would silently do nothing.
+
+Upgrading from a `devc` that wrote fences into `devcontainer.json`: **delete the
+`devc:source` and `devc:skills` blocks there by hand**, then run `devc config`.
+There is no automatic migration. Left in place, those mounts are applied
+_as well as_ the overlay's — same target fails container creation with Docker's
+`Duplicate mount point`, a different target just mounts the folder twice.

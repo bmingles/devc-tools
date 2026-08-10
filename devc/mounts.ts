@@ -1,10 +1,10 @@
 // Pure helpers for the two managed mount fences (`devc:source`, `devc:skills`).
 //
-// A "row" is the wizard's model of one bind mount: a host path, a container path, and a
-// read-only flag. This module is the single place that knows how a row serializes to a
-// devcontainer bind-mount spec string and back, what the container-path defaults are, and
-// where `${localEnv:HOME}` folding happens. `jsonc_edit.ts` does the text surgery; this
-// module produces the JSON-string element text that goes inside a fence.
+// A "row" is the wizard's model of one bind mount: a host path and a container path. This
+// module is the single place that knows how a row serializes to a devcontainer bind-mount
+// spec string and back, what the container-path defaults are, and where `${localEnv:HOME}`
+// folding happens. `jsonc_edit.ts` does the text surgery; this module produces the
+// JSON-string element text that goes inside a fence.
 
 import { relativeUnderPosix } from './posix.ts';
 
@@ -22,8 +22,6 @@ export interface MountRow {
   source: string;
   /** Container path (the mount target). */
   target: string;
-  /** Whether the mount is read-only. */
-  readonly: boolean;
 }
 
 /** The last path segment of a `/`-separated path (trailing slashes ignored). */
@@ -81,14 +79,9 @@ export function defaultTarget(
   return `${containerRoot}/${basename(hostPath)}`;
 }
 
-/** Default read-only flag: off for source, on for skills. */
-export function defaultReadonly(kind: MountKind): boolean {
-  return kind === 'skills';
-}
-
 /**
- * Build a row for a freshly-picked host folder: fold `$HOME`, default target + read-only for
- * the step. `hostPath` is the raw path the picker/user supplied (absolute or `${localEnv:HOME}`).
+ * Build a row for a freshly-picked host folder: fold `$HOME`, default target for the step.
+ * `hostPath` is the raw path the picker/user supplied (absolute or `${localEnv:HOME}`).
  * `root` is the configured code root `hostPath` falls under (source only), used to keep the
  * container target's sub-path — the target is computed from the unfolded `hostPath`/`root`.
  */
@@ -100,15 +93,21 @@ export function rowForHostPath(
   return {
     source: foldHome(hostPath),
     target: defaultTarget(kind, hostPath, root),
-    readonly: defaultReadonly(kind),
   };
 }
 
-/** The bind-mount spec string for a row (no surrounding quotes). */
+/**
+ * The bind-mount spec string for a row (no surrounding quotes).
+ *
+ * These rows are emitted into the `devc.json` overlay, which reaches the container as
+ * `devcontainer up --mount` args — and that flag accepts *only*
+ * `type=<bind|volume>,source=…,target=…[,external=<true|false>]`, in that field order. So
+ * this is the whole vocabulary available: `consistency=cached` and `readonly` are rejected
+ * by the CLI's own arg validation, not silently dropped. See {@link
+ * import("./overlay.ts").MOUNT_SPEC_RE}.
+ */
 export function serializeMount(row: MountRow): string {
-  const base =
-    `type=bind,source=${row.source},target=${row.target},consistency=cached`;
-  return row.readonly ? base + ',readonly' : base;
+  return `type=bind,source=${row.source},target=${row.target}`;
 }
 
 /** A row serialized as a fence entry: the JSON-quoted spec string, ready for `writeBlocks`. */
@@ -119,6 +118,11 @@ export function rowToEntry(row: MountRow): string {
 /**
  * Parse a fence entry (a JSON string element, e.g. `"type=bind,source=...,target=..."`, or the
  * bare spec string) back into a row. Returns null when it is not a `type=bind` spec.
+ *
+ * Deliberately more permissive than {@link serializeMount} is: fields devc no longer emits
+ * (`consistency`, `readonly`, and anything else) are accepted and ignored rather than failing
+ * the parse, so a spec written by an older devc — or by hand — still round-trips, normalized
+ * to the current form on the next write.
  */
 export function parseEntry(entry: string): MountRow | null {
   let spec = entry.trim();
@@ -132,20 +136,16 @@ export function parseEntry(entry: string): MountRow | null {
     }
   }
   const fields = new Map<string, string>();
-  let readonly = false;
   for (const part of spec.split(',')) {
     const eq = part.indexOf('=');
-    if (eq === -1) {
-      if (part.trim() === 'readonly') readonly = true;
-      continue;
-    }
+    if (eq === -1) continue;
     fields.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim());
   }
   if (fields.get('type') !== 'bind') return null;
   const source = fields.get('source');
   const target = fields.get('target');
   if (source === undefined || target === undefined) return null;
-  return { source, target, readonly };
+  return { source, target };
 }
 
 /** Parse many entries, skipping any that are not bind specs. */

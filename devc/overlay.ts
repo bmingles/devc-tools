@@ -47,6 +47,26 @@ const PROJECT_CANDIDATES = [
 /** User-level overlay filenames, relative to the global config dir, in first-hit-wins order. */
 const USER_CANDIDATES = ['devc.jsonc', 'devc.json'] as const;
 
+/**
+ * The devcontainer CLI's own `--mount` arg validation, copied verbatim from
+ * `devContainersSpecCLI.ts`. It is the whole vocabulary a mount spec has here: field order is
+ * fixed, and `source`/`target` cannot contain a comma.
+ *
+ * Anything else — `consistency=cached`, `readonly`, a reordered spec — is rejected by the CLI
+ * with a context-free `Unmatched argument format: mount must match …` that names neither the
+ * file nor the entry. devc validates against the same regex at load so the error can.
+ *
+ * There is no way to express a read-only mount through this flag. The CLI re-serializes the
+ * parsed spec as `type=…,src=…,dst=…` before it reaches `docker run`, so even a smuggled field
+ * would be dropped; only *string* mounts inside a `devcontainer.json` `mounts` array are passed
+ * through verbatim (which is how the infra `claude-seed` mount stays `readonly`).
+ */
+export const MOUNT_SPEC_RE =
+  /^type=(bind|volume),source=([^,]+),target=([^,]+)(?:,external=(true|false))?$/;
+
+/** Fields devc used to emit, named individually because they are the likely reason for a failure. */
+const RETIRED_MOUNT_FIELDS = ['consistency', 'readonly'] as const;
+
 /** An overlay contributing nothing. */
 export function emptyOverlay(): DevcOverlay {
   return { mounts: [], additionalFeatures: {}, remoteEnv: {} };
@@ -65,7 +85,13 @@ async function firstExisting(paths: readonly string[]): Promise<string | null> {
       await Deno.stat(path);
       return path;
     } catch (err) {
-      if (!(err instanceof Deno.errors.NotFound)) throw err;
+      // `NotADirectory` is the same answer as `NotFound` here: a candidate whose parent is a
+      // regular file (a project with a `.devcontainer` *file*) has no overlay at that path.
+      // Anything else — a permissions failure, say — is a real problem and still throws.
+      if (
+        !(err instanceof Deno.errors.NotFound) &&
+        !(err instanceof Deno.errors.NotADirectory)
+      ) throw err;
     }
   }
   return null;
@@ -82,6 +108,45 @@ export function findProjectOverlayPath(
   return firstExisting(
     PROJECT_CANDIDATES.map((rel) => `${localFolder}/${rel}`),
   );
+}
+
+/** Where `devc config` will write, and whether that file has to be created first. */
+export interface OverlayTarget {
+  /** Absolute path of the overlay file to write. */
+  path: string;
+  /** True when nothing is there yet and the file must be seeded. */
+  creating: boolean;
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await Deno.stat(path)).isDirectory;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The overlay file `devc config` should write for `localFolder`.
+ *
+ * An existing overlay always wins, in {@link findProjectOverlayPath}'s order — devc never
+ * creates a second overlay beside one that is already there, since only the first hit is ever
+ * read and the loser would silently do nothing.
+ *
+ * With none present, the new file goes beside the config it overlays (`.devcontainer/`) when
+ * that directory exists, and into `.devc/` otherwise. The second case is what lets `devc config`
+ * work on a zero-config project: recording a mount must not drag in a whole `.devcontainer/`
+ * the user would then have to maintain.
+ */
+export async function resolveProjectOverlayTarget(
+  localFolder: string,
+): Promise<OverlayTarget> {
+  const existing = await findProjectOverlayPath(localFolder);
+  if (existing !== null) return { path: existing, creating: false };
+  const dir = (await isDirectory(`${localFolder}/.devcontainer`))
+    ? '.devcontainer'
+    : '.devc';
+  return { path: `${localFolder}/${dir}/devc.jsonc`, creating: true };
 }
 
 /**
@@ -114,6 +179,25 @@ function isTokenFree(text: string): boolean {
     .trim() === '';
 }
 
+/**
+ * Why `spec` was rejected, phrased for someone looking at their own file. The retired-field
+ * case is called out by name because it is the one a devc upgrade causes: those fields were
+ * emitted into `devcontainer.json` fences, where they were legal, and are not legal here.
+ */
+function mountSpecComplaint(spec: string): string {
+  const offenders = RETIRED_MOUNT_FIELDS.filter((f) =>
+    new RegExp(`(^|,)\\s*${f}\\b`).test(spec)
+  );
+  if (offenders.length > 0) {
+    return `${
+      offenders.map((f) => `"${f}"`).join(' and ')
+    } cannot be used here — \`devcontainer up --mount\` accepts only ` +
+      'type, source, target and external, so a read-only overlay mount is not possible';
+  }
+  return 'must be type=<bind|volume>,source=<source>,target=<target>[,external=<true|false>] ' +
+    '— in that field order, with no commas in the paths';
+}
+
 function readMounts(path: string, value: unknown): string[] {
   if (!Array.isArray(value)) {
     throw typeError(path, '"mounts" must be an array of mount-spec strings');
@@ -121,6 +205,14 @@ function readMounts(path: string, value: unknown): string[] {
   return value.map((entry, i) => {
     if (typeof entry !== 'string') {
       throw typeError(path, `"mounts"[${i}] must be a string`);
+    }
+    // Validated raw, before substitution: none of the `${…}` tokens can contain a comma, so
+    // the check is equivalent and the error can quote what the user actually wrote.
+    if (!MOUNT_SPEC_RE.test(entry)) {
+      throw typeError(
+        path,
+        `"mounts"[${i}] (${entry}): ${mountSpecComplaint(entry)}`,
+      );
     }
     return entry;
   });

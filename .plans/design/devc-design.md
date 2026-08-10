@@ -25,10 +25,11 @@ inside the binary/installation. All container-related CLI commands (`up`,
 `attach`, `exec`, etc.) use this bundled configuration by default to create or
 start the project container.
 
-When a user wants to customize the container for a particular project, they run
-`devc config`. This opens a TUI that edits a project-specific
-`.devcontainer/devcontainer.json` and `.devcontainer/Dockerfile`, which are then
-saved in the cwd project.
+When a user wants to add source or skills mounts for a particular project, they
+run `devc config`. This opens a TUI that edits that project's `devc.json`
+overlay. Scaffolding a project-specific `.devcontainer/devcontainer.json` and
+`.devcontainer/Dockerfile` is `devc init`'s job — `devc config` never writes
+there (see **Where the wizard writes** below).
 
 ### Container engine
 
@@ -57,7 +58,7 @@ does not talk to the Docker daemon's build/run APIs directly.
 
 A guiding principle: **the config `devc` produces is a standard, spec-compliant
 `.devcontainer/` that a developer can read, understand, and hand-edit without
-learning anything `devc`-specific.** `devc config` writes a plain
+learning anything `devc`-specific.** `devc init` writes a plain
 `devcontainer.json` + `Dockerfile`, and from that point on the project is a
 normal dev container that any devcontainer-aware tool (VS Code, the CLI, CI)
 understands. **Whatever lands in `.devcontainer/` runs without `devc` installed
@@ -81,16 +82,39 @@ broken, only un-augmented.
 
 **Managed mount blocks.** So that reconfiguring a project is surgical rather
 than destructive, the wizard marks the two mount groups it owns — extra source
-mounts and skills mounts — with comment fences inside the `mounts` array
-(`// devc:source … // /devc:source` and `// devc:skills … // /devc:skills`).
-These are ordinary JSONC comments: the devcontainer CLI ignores them and the
-file remains directly usable, so this is not a hidden abstraction — it is a
+mounts and skills mounts — with comment fences inside the overlay's `mounts`
+array (`// devc:source … // /devc:source` and
+`// devc:skills … // /devc:skills`). These are ordinary JSONC comments, so the
+file remains directly hand-editable — this is not a hidden abstraction, it is a
 bookmark. `devc config` only ever rewrites the contents of its two fences.
-Everything else — the infrastructure mounts written at first creation, the
-developer's own hand-edits, comments, formatting, and any keys `devc` knows
-nothing about — is preserved byte-for-byte and **never re-asserted**. In
-particular, infra mounts are written once when the file is first created; if the
-developer later edits or removes them, `devc` does not add them back.
+Everything else in the overlay — hand-written mounts, `additionalFeatures`,
+`remoteEnv`, comments, formatting, and any keys `devc` knows nothing about — is
+preserved byte-for-byte and **never re-asserted**.
+
+**Where the wizard writes.** The fences live in the project's `devc.json`
+overlay, not in `devcontainer.json`. Extra bind mounts are machine-specific —
+another checkout will not have the same host paths — so committing them cannot
+be correct for anyone but their author. Putting them in the devc-only file also
+makes the standalone invariant structural rather than conventional: `devc config`
+has no code path that writes `.devcontainer/` at all, so there is nothing to
+audit. The target is an existing overlay if there is one (in
+`findProjectOverlayPath` order), else `.devcontainer/devc.jsonc` when that
+directory exists, else `.devc/devc.jsonc`.
+
+The consequence is that the infra mounts, `Dockerfile`, and lifecycle scripts
+are written exactly once — by `devc init` — and `devc config` cannot disturb
+them. There is no migration from the era when the fences lived in
+`devcontainer.json`; those blocks are deleted by hand.
+
+**Mount spec vocabulary.** Overlay mounts reach the container as
+`devcontainer up --mount` args, and that flag accepts only
+`type=<bind|volume>,source=…,target=…[,external=<true|false>]`, in that field
+order. `readonly` and `consistency` are rejected by the CLI's own arg
+validation, so **there is no read-only wizard mount** — restoring one would mean
+granting the container `SYS_ADMIN`, since Docker's default seccomp profile fixes
+the `mount` allowance at container-create time. devc validates every overlay
+mount against the same regex at load, so a bad spec names the file and the
+entry.
 
 ### Configuration precedence
 
@@ -106,8 +130,8 @@ carries `build`/`image`.
    with any same-named file from `~/.config/devc/templates/` overriding it per
    file.
 
-Once a user applies a project-specific config via `devc config`, subsequent
-commands automatically use it (case 1).
+Once a project has its own config — scaffolded by `devc init` or hand-written —
+subsequent commands automatically use it (case 1).
 
 **Overlay** — an optional `devc.json` contributing `mounts`,
 `additionalFeatures` and `remoteEnv` on top of whichever base won, in project
@@ -196,12 +220,12 @@ baseline as a local Feature so it would compose additively with a project's own
 when `devc up` loads the bundled config out-of-tree via `--config`
 (`@devcontainers/cli` validates a local Feature against the workspace root, not
 the config's own directory), which forced a divergence between the zero-config
-and `devc config` paths. Removing the Feature collapses both onto **one
+and project paths. Removing the Feature collapses both onto **one
 `.devcontainer/` shape** — the same `devcontainer.json`, `Dockerfile`,
 `post-create.sh`, `initialize-command.sh`, and `scripts/` in both. Additive
 composition with a developer's own setup is preserved simply by their editing
-`post-create.sh` (the project copy is theirs; `devc config` only ever rewrites
-the two mount fences, never the scripts).
+`post-create.sh` (the project copy is theirs; `devc config` never writes
+`.devcontainer/` at all, so it cannot touch the scripts).
 
 `installsAfter: [node]` ordering is not lost either: a **top-level**
 `postCreateCommand` runs _after all features finish installing_, so
@@ -213,7 +237,7 @@ The **zero-config path** is where the mechanism hides its seams. There,
 (no `.devcontainer/`), so the two in-project script references cannot resolve.
 `materializeDefaultConfig` rewrites exactly two paths in the cached copy:
 `postCreateCommand` → the image-baked `/usr/local/share/devc/post-create.sh`
-(the Dockerfile `COPY`s the scripts in for this case; in `devc config` mode
+(the Dockerfile `COPY`s the scripts in for this case; in project mode
 those baked copies simply go unused), and `initializeCommand` → the host-side
 `initialize-command.sh` in the cache dir. These are the only transforms, and
 they exist so the _project_ config can stay clean and edit-friendly while the
@@ -378,17 +402,15 @@ When the user runs `devc config [PATH]`:
 1. Resolve the project directory (`PATH` or cwd).
 2. If `~/.config/devc/config.json` is missing, run the **Global config** step
    first and persist the code/skills root lists.
-3. Load the base container configuration into memory:
-   - If `PATH/.devcontainer/devcontainer.json` exists, load it (and a sibling
-     `Dockerfile` if present).
-   - Otherwise, start from the bundled default `devcontainer.json` +
-     `Dockerfile`.
+3. Resolve the overlay to write (`resolveProjectOverlayTarget`) and load its
+   current contents into memory, or start from an empty selection when there is
+   no overlay yet.
 4. Proceed to the **Project overview** step.
 
 ### Step 1: Project overview
 
-Two inline lines before the first picker: the config path being written, and
-whether this run is creating a new config or updating the existing one.
+Two inline lines before the first picker: the overlay path being written, and
+whether this run is creating a new overlay or updating the existing one.
 
 ### Step 2: Source code mounts
 
@@ -438,8 +460,10 @@ skills only after they are configured here.
 
 - Screen `WORKSPACE CONFIG` / `Skills` / `Add Skills`, opening on the configured
   **skills folder roots** — shortcuts, with the same free navigation as Step 2.
-- Container paths are derived, not edited: `~/.claude/skills/<basename>`,
-  mounted read-only. Duplicate container paths are skipped with a note.
+- Container paths are derived, not edited: `~/.claude/skills/<basename>`.
+  Duplicate container paths are skipped with a note. The mount is read-write:
+  `devcontainer up --mount` has no read-only form (see "Mount spec
+  vocabulary"), and the review says so before anything is written.
 - **Remembered selection.** When the wizard applies, the resulting skills list
   is persisted as the user's _most recent_ skills selection. A **new** project's
   Skills step is pre-seeded from that remembered list (entries whose host path
@@ -454,23 +478,26 @@ skills only after they are configured here.
 An inline summary printed before anything is written to disk: the serialized
 contents of the two managed fences (`devc:source`, `devc:skills`) — the only
 regions the wizard writes — with the implicitly mounted project folder listed
-above the source rows so an empty fence never reads as "no source mounts". Then
-a single `Apply? [Y/n]` confirm; declining writes nothing.
+above the source rows so an empty fence never reads as "no source mounts", and a
+note that overlay mounts are read-write. Then a single `Apply? [Y/n]` confirm;
+declining writes nothing.
 
 When the user accepts:
 
-1. Create `PATH/.devcontainer/` if it does not exist.
-2. **First creation** (no existing `PATH/.devcontainer/devcontainer.json`):
-   write the base `devcontainer.json` from the bundled default, with the two
-   managed fences inserted into the `mounts` array and populated from the
-   configured source/skills mounts. Write the base `Dockerfile` as-is.
-3. **Update in place** (file already exists): rewrite only the `devc:source` and
-   `devc:skills` fence contents; preserve everything else byte-for-byte (infra
-   mounts, hand-edits, comments, unknown keys). Do not rewrite the `Dockerfile`.
-4. Persist the applied skills list as the remembered selection (see Step 3).
-5. Report whether the config actually changed, and offer a rebuild when it did
+1. **First creation** (no overlay anywhere in the project): seed
+   `.devcontainer/devc.jsonc` — or `.devc/devc.jsonc` when the project has no
+   `.devcontainer/` — with a minimal object carrying an empty `mounts` array,
+   creating the parent directory, then splice both fences into it.
+2. **Update in place** (an overlay exists): rewrite only the `devc:source` and
+   `devc:skills` fence contents; preserve everything else byte-for-byte
+   (hand-written mounts, `additionalFeatures`, `remoteEnv`, comments, unknown
+   keys).
+3. Persist the applied skills list as the remembered selection (see Step 3).
+4. Report whether the overlay actually changed, and offer a rebuild when it did
    (see below).
-6. Return to the shell with a success message.
+5. Return to the shell with a success message.
+
+Nothing in this sequence reads or writes `.devcontainer/`.
 
 ### Rebuild prompt
 
@@ -504,11 +531,15 @@ changes are discarded.
 
 ### Reconfiguring a project
 
-Running `devc config` again on a project that already has a
-`.devcontainer/devcontainer.json` reads its `devc:source` / `devc:skills` fences
-to recover the current selection, lets the user edit it, and on Apply rewrites
-only those fences. Base infra mounts and any hand-edits outside the fences are
-preserved and never re-asserted (see "No hidden abstraction").
+Running `devc config` again on a project that already has an overlay reads its
+`devc:source` / `devc:skills` fences to recover the current selection, lets the
+user edit it, and on Apply rewrites only those fences. Everything else in the
+overlay is preserved and never re-asserted (see "No hidden abstraction").
+
+Fences left in a `devcontainer.json` by an older `devc` are **not** read and not
+migrated — delete them by hand, or their mounts are applied on top of the
+overlay's (a matching target fails create with Docker's `Duplicate mount point`;
+a differing one just mounts the folder twice).
 
 ## Top-level help
 
@@ -568,7 +599,7 @@ each writing nothing and exiting 1:
   `.devcontainer/devcontainer.json` or a root `.devcontainer.json`. Both count
   because creating the directory form beside an existing root form would leave
   two configs and make which one applies ambiguous. The message points at
-  `devc config`, which is the tool for a project that already is a dev
+  `devc config`, which adds mounts to a project that already is a dev
   container.
 - _Any_ other content in `.devcontainer/` — a file, a subdirectory, a dotfile —
   reported with what was found.

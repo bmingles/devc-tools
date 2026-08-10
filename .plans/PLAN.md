@@ -18,19 +18,28 @@
   `devc:skills` fence is untouched). Deletion and live host edits both work;
   existing host files are migrated on first run.
 
-- [devc-mounts-to-overlay](devc-mounts-to-overlay.md) — Move the wizard's two
-  managed mount fences (`devc:source`, `devc:skills`) out of the tracked
-  `devcontainer.json` and into the `devc.json` overlay, where machine-specific
-  bind mounts belong. `devc config` resolves an existing project overlay first
-  and otherwise creates `.devcontainer/devc.jsonc` (or `.devc/devc.jsonc` when
-  there is no `.devcontainer/`), and stops writing to `devcontainer.json` or
-  scaffolding `.devcontainer/` at all. Mount specs are re-serialized to the
-  exact form `devcontainer up --mount` accepts and validated at load, which
-  drops `readonly` and `consistency` — the CLI's `--mount` regex cannot express
-  either, and every workaround costs `SYS_ADMIN`; the plan records the full
-  investigation. No migration: old fences are deleted by hand, once.
-
 ### Completed
+
+- [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md) — The wizard's
+  two managed mount fences (`devc:source`, `devc:skills`) now live in the
+  project's `devc.json` overlay instead of the tracked `devcontainer.json`.
+  `devc config` writes an existing overlay in place, else creates
+  `.devcontainer/devc.jsonc` (or `.devc/devc.jsonc` when the project has no
+  `.devcontainer/`) — and no longer writes or scaffolds `.devcontainer/` at all,
+  so the standalone invariant is structural rather than conventional. Mount
+  specs are re-serialized to the exact form `devcontainer up --mount` accepts
+  and validated against the CLI's own regex at load, which drops `readonly` and
+  `consistency`: neither is expressible, and every workaround costs `SYS_ADMIN`
+  (Docker's default seccomp profile fixes the `mount` allowance at create time,
+  so even `docker exec --privileged` cannot restore it) — the archived plan
+  records the full investigation. Verified live: `devcontainer up` accepted the
+  emitted spec, `devc mounts` listed it `rw`, and a hand-written `readonly`
+  overlay mount fails the command naming the file, index and field. No
+  migration by design — **the old fences in this repo's
+  `.devcontainer/devcontainer.json` still need deleting by hand** (until then
+  `~/code/thirdparty/agent-tools` is mounted twice, at two different targets).
+  Two pre-existing test failures (`default_config_test.ts:654`,
+  `jsonc_edit_test.ts:111`) are unrelated and unchanged.
 
 - [devc-attach-exit-code](archived/devc-attach-exit-code.md) — Stop crashing
   on detach: `attachToContainer` now resolves to the attached shell/command's
@@ -192,31 +201,31 @@
 
 ## Development Phases
 
-| Phase                                                                                  | Plan                                                                   | Status      |
-| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------- |
-| Host command bridge (socket server + client + tray)                                    | [host-command-bridge](archived/host-command-bridge.md)                 | complete    |
-| Host `devc-bridge` lifecycle CLI + zero-setup seeding                                  | [host-lifecycle-cli](archived/host-lifecycle-cli.md)                   | complete    |
-| devc-tui core — scan, model, fenced-region file surgery                                | [devc-tui-core](archived/devc-tui-core.md)                             | complete    |
-| devc-tui interactive UI — checkbox project tree                                        | [devc-tui-ui](archived/devc-tui-ui.md)                                 | complete    |
-| devc-tui tree reshape — folder tree, collapsed by default                              | [devc-tui-folder-tree](archived/devc-tui-folder-tree.md)               | complete    |
-| devc-tui workspace folders — host paths, not container paths                           | [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md)   | complete    |
-| devc-tui home directory support — `$HOME` in config, `${localEnv:HOME}` in mounts      | [devc-tui-home-paths](archived/devc-tui-home-paths.md)                 | complete    |
-| devc lifecycle core — container commands + bundled default (ported)                    | [devc-lifecycle-core](archived/devc-lifecycle-core.md)                 | complete    |
-| devc baseline as a devcontainer Feature — composable postCreate                        | [devc-container-feature](archived/devc-container-feature.md)           | complete    |
-| devc global config + wizard TUI foundation                                             | [devc-global-config](archived/devc-global-config.md)                   | complete    |
-| devc config wizard — project `.devcontainer/` via managed fences                       | [devc-config-wizard](archived/devc-config-wizard.md)                   | complete    |
-| devc help output — clap-style `--help`/`--version` + per-command help                  | [devc-help-output](archived/devc-help-output.md)                       | complete    |
-| devc container baseline fix — out-of-tree Feature + drop in-container tmux             | [devc-container-feature-fix](archived/devc-container-feature-fix.md)   | complete    |
-| devc wizard modernize — inline sequential flow + multi-select folder picker            | [devc-wizard-modernize](archived/devc-wizard-modernize.md)             | complete    |
-| devc worktree-aware mounts — root-relative source targets + primary `.git` mount       | [devc-worktree-mounts](archived/devc-worktree-mounts.md)               | complete    |
-| devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate      | [devc-claude-seed-dir](devc-claude-seed-dir.md)                        | in progress |
-| devc `init` command — scaffold the bundled default `.devcontainer/` into a project     | [devc-init-command](archived/devc-init-command.md)                     | complete    |
-| devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook | [devc-drop-feature](archived/devc-drop-feature.md)                     | complete    |
-| devc `build` command + change-aware `config` rebuild prompt                            | [devc-build-command](archived/devc-build-command.md)                   | complete    |
-| devc wizard screens — picker chrome per `.plans/design/wizard/` mockups                | [devc-wizard-screens](archived/devc-wizard-screens.md)                 | complete    |
-| devc picker derived mounts — implied primary `.git` shown in the picks list            | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md)   | complete    |
-| devc picker free navigation — roots as shortcuts + worktree mirror base                | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) | complete    |
-| devc config overlay — `devc.json` in both modes + user template layer                  | [devc-config-overlay](archived/devc-config-overlay.md)                 | complete    |
-| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                       | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)             | complete    |
-| devc attach exit-code handling — stop crashing on non-zero `docker exec`               | [devc-attach-exit-code](archived/devc-attach-exit-code.md)             | complete    |
-| devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](devc-mounts-to-overlay.md)                    |             |
+| Phase                                                                                    | Plan                                                                   | Status      |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------- |
+| Host command bridge (socket server + client + tray)                                      | [host-command-bridge](archived/host-command-bridge.md)                 | complete    |
+| Host `devc-bridge` lifecycle CLI + zero-setup seeding                                    | [host-lifecycle-cli](archived/host-lifecycle-cli.md)                   | complete    |
+| devc-tui core — scan, model, fenced-region file surgery                                  | [devc-tui-core](archived/devc-tui-core.md)                             | complete    |
+| devc-tui interactive UI — checkbox project tree                                          | [devc-tui-ui](archived/devc-tui-ui.md)                                 | complete    |
+| devc-tui tree reshape — folder tree, collapsed by default                                | [devc-tui-folder-tree](archived/devc-tui-folder-tree.md)               | complete    |
+| devc-tui workspace folders — host paths, not container paths                             | [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md)   | complete    |
+| devc-tui home directory support — `$HOME` in config, `${localEnv:HOME}` in mounts        | [devc-tui-home-paths](archived/devc-tui-home-paths.md)                 | complete    |
+| devc lifecycle core — container commands + bundled default (ported)                      | [devc-lifecycle-core](archived/devc-lifecycle-core.md)                 | complete    |
+| devc baseline as a devcontainer Feature — composable postCreate                          | [devc-container-feature](archived/devc-container-feature.md)           | complete    |
+| devc global config + wizard TUI foundation                                               | [devc-global-config](archived/devc-global-config.md)                   | complete    |
+| devc config wizard — project `.devcontainer/` via managed fences                         | [devc-config-wizard](archived/devc-config-wizard.md)                   | complete    |
+| devc help output — clap-style `--help`/`--version` + per-command help                    | [devc-help-output](archived/devc-help-output.md)                       | complete    |
+| devc container baseline fix — out-of-tree Feature + drop in-container tmux               | [devc-container-feature-fix](archived/devc-container-feature-fix.md)   | complete    |
+| devc wizard modernize — inline sequential flow + multi-select folder picker              | [devc-wizard-modernize](archived/devc-wizard-modernize.md)             | complete    |
+| devc worktree-aware mounts — root-relative source targets + primary `.git` mount         | [devc-worktree-mounts](archived/devc-worktree-mounts.md)               | complete    |
+| devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate        | [devc-claude-seed-dir](devc-claude-seed-dir.md)                        | in progress |
+| devc `init` command — scaffold the bundled default `.devcontainer/` into a project       | [devc-init-command](archived/devc-init-command.md)                     | complete    |
+| devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook   | [devc-drop-feature](archived/devc-drop-feature.md)                     | complete    |
+| devc `build` command + change-aware `config` rebuild prompt                              | [devc-build-command](archived/devc-build-command.md)                   | complete    |
+| devc wizard screens — picker chrome per `.plans/design/wizard/` mockups                  | [devc-wizard-screens](archived/devc-wizard-screens.md)                 | complete    |
+| devc picker derived mounts — implied primary `.git` shown in the picks list              | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md)   | complete    |
+| devc picker free navigation — roots as shortcuts + worktree mirror base                  | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) | complete    |
+| devc config overlay — `devc.json` in both modes + user template layer                    | [devc-config-overlay](archived/devc-config-overlay.md)                 | complete    |
+| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                         | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)             | complete    |
+| devc attach exit-code handling — stop crashing on non-zero `docker exec`                 | [devc-attach-exit-code](archived/devc-attach-exit-code.md)             | complete    |
+| devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md)           | complete    |

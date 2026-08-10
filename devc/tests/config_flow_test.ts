@@ -36,7 +36,7 @@ function sink(): WritableStream<Uint8Array> {
 function baseOpts(): ProjectFlowOptions {
   return {
     projectDir: '/proj',
-    configPath: '/proj/.devcontainer/devcontainer.json',
+    overlayPath: '/proj/.devcontainer/devc.jsonc',
     creating: true,
     sourceRows: [],
     skillsRows: [],
@@ -67,8 +67,7 @@ Deno.test('project flow: pick one source + one skills folder, apply gets the row
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: '/proj/.devcontainer/devcontainer.json',
-        written: [],
+        overlayPath: '/proj/.devcontainer/devc.jsonc',
       });
     },
   };
@@ -81,12 +80,10 @@ Deno.test('project flow: pick one source + one skills folder, apply gets the row
   assertEquals(sel.source, [{
     source: '/code/app',
     target: '/workspaces/app',
-    readonly: false,
   }]);
   assertEquals(sel.skills, [{
     source: '/skills/writing',
     target: '/home/vscode/.claude/skills/writing',
-    readonly: true,
   }]);
 });
 
@@ -104,8 +101,7 @@ Deno.test('project flow: declining the confirm applies nothing', async () => {
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: 'x',
-        written: [],
+        overlayPath: 'x',
       });
     },
   };
@@ -127,8 +123,7 @@ Deno.test('project flow: Esc in the source picker cancels the whole flow', async
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: 'x',
-        written: [],
+        overlayPath: 'x',
       });
     },
   };
@@ -152,8 +147,7 @@ Deno.test('project flow: the project folder is pinned in the picker, not a pick'
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: '/code/app/.devcontainer/devcontainer.json',
-        written: [],
+        overlayPath: '/code/app/.devcontainer/devc.jsonc',
       });
     },
   };
@@ -203,8 +197,7 @@ async function runWith(
       return Promise.resolve({
         created: true,
         changed: true,
-        configPath: 'x',
-        written: [],
+        overlayPath: 'x',
       });
     },
   };
@@ -227,12 +220,10 @@ Deno.test('worktree flow: source keeps its sub-path and mounts the primary .git'
     {
       source: '/code/myproject.worktrees/feature1',
       target: '/workspaces/myproject.worktrees/feature1',
-      readonly: false,
     },
     {
       source: '/code/myproject/.git',
       target: '/workspaces/myproject/.git',
-      readonly: false,
     },
   ]);
 });
@@ -249,7 +240,6 @@ Deno.test('worktree flow: an absolute-path worktree mounts the folder but not th
     {
       source: '/code/myproject.worktrees/feature1',
       target: '/workspaces/myproject.worktrees/feature1',
-      readonly: false,
     },
   ]);
 });
@@ -313,8 +303,7 @@ async function sourceFrames(
       Promise.resolve({
         created: true,
         changed: false,
-        configPath: 'x',
-        written: [],
+        overlayPath: 'x',
       }),
   });
   return out.filter((f) => f.includes('Source Folders'));
@@ -374,7 +363,6 @@ Deno.test('worktree flow: a worktree preselected from the fence shows its .git o
     sourceRows: [{
       source: '/code/myproject.worktrees/feature1',
       target: '/workspaces/myproject.worktrees/feature1',
-      readonly: false,
     }],
   });
   assertStringIncludes(
@@ -389,7 +377,6 @@ Deno.test('worktree flow: a fence carrying both the worktree and its .git shows 
   const gitRow = {
     source: '/code/myproject/.git',
     target: '/workspaces/myproject/.git',
-    readonly: false,
   };
   const frames = await sourceFrames([ENTER, ENTER, 'y'], {
     '/code/myproject.worktrees/feature1/.git':
@@ -400,7 +387,6 @@ Deno.test('worktree flow: a fence carrying both the worktree and its .git shows 
       {
         source: '/code/myproject.worktrees/feature1',
         target: '/workspaces/myproject.worktrees/feature1',
-        readonly: false,
       },
       gitRow,
     ],
@@ -432,12 +418,10 @@ Deno.test("worktree flow: absorbing the fence's .git row rewrites the same fence
       {
         source: '/code/myproject.worktrees/feature1',
         target: '/workspaces/myproject.worktrees/feature1',
-        readonly: false,
       },
       {
         source: '/code/myproject/.git',
         target: '/workspaces/myproject/.git',
-        readonly: false,
       },
     ],
   }, {
@@ -456,8 +440,7 @@ Deno.test("worktree flow: absorbing the fence's .git row rewrites the same fence
       return Promise.resolve({
         created: false,
         changed: false,
-        configPath: 'x',
-        written: [],
+        overlayPath: 'x',
       });
     },
   });
@@ -465,12 +448,10 @@ Deno.test("worktree flow: absorbing the fence's .git row rewrites the same fence
     {
       source: '/code/myproject.worktrees/feature1',
       target: '/workspaces/myproject.worktrees/feature1',
-      readonly: false,
     },
     {
       source: '/code/myproject/.git',
       target: '/workspaces/myproject/.git',
-      readonly: false,
     },
   ]);
   assertEquals(warnings, [], 'no duplicate-target skip to report any more');
@@ -509,7 +490,6 @@ Deno.test('free navigation: ← walks out of the code root and folders there are
     source: '/srv/proj',
     // Outside every root, so the basename fallback — not a mirrored path.
     target: '/workspaces/proj',
-    readonly: false,
   }]);
 });
 
@@ -525,12 +505,10 @@ Deno.test('free navigation: a worktree outside every root still mounts its prima
     {
       source: '/srv/proj.worktrees/f1',
       target: '/workspaces/proj.worktrees/f1',
-      readonly: false,
     },
     {
       source: '/srv/proj/.git',
       target: '/workspaces/proj/.git',
-      readonly: false,
     },
   ]);
 });
@@ -577,8 +555,7 @@ async function runRebuild(
       Promise.resolve({
         created: false,
         changed,
-        configPath: '/proj/.devcontainer/devcontainer.json',
-        written: [],
+        overlayPath: '/proj/.devcontainer/devc.jsonc',
       }),
     containerStatus: () => Promise.resolve(status),
     rebuild: (dir) => {
@@ -623,7 +600,7 @@ Deno.test('rebuild prompt: an unchanged config never prompts and never rebuilds'
   assertEquals(rebuiltDirs, []);
   assertStringIncludes(text, 'No config changes — no rebuild needed.');
   assert(!text.includes('Rebuild now?'), 'must not offer a rebuild');
-  assertStringIncludes(text, 'Unchanged /proj/.devcontainer/devcontainer.json');
+  assertStringIncludes(text, 'Unchanged /proj/.devcontainer/devc.jsonc');
 });
 
 Deno.test('rebuild prompt: no container yet is worded as a first build', async () => {
@@ -657,8 +634,7 @@ Deno.test('rebuild prompt: without the deps the flow only points at `devc build`
       Promise.resolve({
         created: false,
         changed: true,
-        configPath: '/proj/.devcontainer/devcontainer.json',
-        written: [],
+        overlayPath: '/proj/.devcontainer/devc.jsonc',
       }),
   };
   const result = await runProjectFlow(baseOpts(), deps);
@@ -679,8 +655,7 @@ Deno.test('rebuild prompt: a failed status lookup falls back to the `devc build`
       Promise.resolve({
         created: false,
         changed: true,
-        configPath: '/proj/.devcontainer/devcontainer.json',
-        written: [],
+        overlayPath: '/proj/.devcontainer/devc.jsonc',
       }),
     // e.g. no docker on PATH.
     containerStatus: () => Promise.reject(new Error('docker not found')),

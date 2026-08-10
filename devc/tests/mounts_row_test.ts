@@ -2,7 +2,6 @@ import { assertEquals, assertThrows } from 'jsr:@std/assert@^1';
 import {
   assertNoDuplicateTarget,
   basename,
-  defaultReadonly,
   defaultTarget,
   DuplicateTargetError,
   foldHome,
@@ -14,38 +13,47 @@ import {
   SKILLS_CONTAINER_ROOT,
   SOURCE_CONTAINER_ROOT,
 } from '../mounts.ts';
+import { MOUNT_SPEC_RE } from '../overlay.ts';
 
-Deno.test('serializeMount: source (rw) and skills (ro) forms', () => {
+Deno.test('serializeMount: one form for both steps, no readonly/consistency', () => {
   assertEquals(
-    serializeMount({
-      source: '/host/p',
-      target: '/workspaces/p',
-      readonly: false,
-    }),
-    'type=bind,source=/host/p,target=/workspaces/p,consistency=cached',
+    serializeMount({ source: '/host/p', target: '/workspaces/p' }),
+    'type=bind,source=/host/p,target=/workspaces/p',
   );
   assertEquals(
     serializeMount({
       source: '/host/s',
       target: '/home/vscode/.claude/skills/s',
-      readonly: true,
     }),
-    'type=bind,source=/host/s,target=/home/vscode/.claude/skills/s,consistency=cached,readonly',
+    'type=bind,source=/host/s,target=/home/vscode/.claude/skills/s',
   );
+});
+
+// The whole point of the format change: what the wizard writes has to survive the
+// devcontainer CLI's own `--mount` arg validation, which rejects anything else outright.
+Deno.test('serializeMount output is accepted by the CLI mount regex', () => {
+  const rows: MountRow[] = [
+    { source: '/host/p', target: '/workspaces/p' },
+    {
+      source: '${localEnv:HOME}/code/team/proj',
+      target: '/workspaces/team/proj',
+    },
+    {
+      source: '${localEnv:HOME}/skills/agent',
+      target: '/home/vscode/.claude/skills/agent',
+    },
+    { source: '/abs/wt/.git', target: '${containerWorkspaceFolder}/../wt.git' },
+  ];
+  for (const row of rows) {
+    const spec = serializeMount(row);
+    assertEquals(MOUNT_SPEC_RE.test(spec), true, `rejected: ${spec}`);
+  }
 });
 
 Deno.test('serialize/parse round-trip through a fence entry', () => {
   const rows: MountRow[] = [
-    {
-      source: '${localEnv:HOME}/code/p',
-      target: '/workspaces/p',
-      readonly: false,
-    },
-    {
-      source: '/abs/skills/s',
-      target: '/home/vscode/.claude/skills/s',
-      readonly: true,
-    },
+    { source: '${localEnv:HOME}/code/p', target: '/workspaces/p' },
+    { source: '/abs/skills/s', target: '/home/vscode/.claude/skills/s' },
   ];
   for (const row of rows) {
     const entry = rowToEntry(row);
@@ -57,11 +65,26 @@ Deno.test('serialize/parse round-trip through a fence entry', () => {
 
 Deno.test('parseEntry: accepts a bare spec and rejects non-bind entries', () => {
   assertEquals(
-    parseEntry('type=bind,source=/a,target=/b,consistency=cached'),
-    { source: '/a', target: '/b', readonly: false },
+    parseEntry('type=bind,source=/a,target=/b'),
+    { source: '/a', target: '/b' },
   );
   assertEquals(parseEntry('"type=volume,source=vol,target=/x"'), null);
   assertEquals(parseEntry('"not a mount"'), null);
+});
+
+// Specs an older devc wrote into a `devcontainer.json` fence still parse — the retired fields
+// are ignored, so re-serializing normalizes them away instead of failing the read.
+Deno.test('parseEntry: ignores retired consistency/readonly fields', () => {
+  assertEquals(
+    parseEntry('type=bind,source=/a,target=/b,consistency=cached'),
+    { source: '/a', target: '/b' },
+  );
+  assertEquals(
+    parseEntry(
+      '"type=bind,source=/s,target=/home/vscode/.claude/skills/s,consistency=cached,readonly"',
+    ),
+    { source: '/s', target: '/home/vscode/.claude/skills/s' },
+  );
 });
 
 Deno.test('foldHome: paths under $HOME fold; others stay absolute', () => {
@@ -79,7 +102,7 @@ Deno.test('foldHome: paths under $HOME fold; others stay absolute', () => {
   assertEquals(foldHome('~/x', '/home/me'), '~/x');
 });
 
-Deno.test('basename + default targets and readonly for each step', () => {
+Deno.test('basename + default targets for each step', () => {
   assertEquals(basename('/home/me/code/my-repo/'), 'my-repo');
   assertEquals(
     defaultTarget('source', '/home/me/code/my-repo'),
@@ -89,8 +112,6 @@ Deno.test('basename + default targets and readonly for each step', () => {
     defaultTarget('skills', '/home/me/skills/agent'),
     `${SKILLS_CONTAINER_ROOT}/agent`,
   );
-  assertEquals(defaultReadonly('source'), false);
-  assertEquals(defaultReadonly('skills'), true);
 });
 
 Deno.test('defaultTarget: source keeps the sub-path under a matching root', () => {
@@ -135,7 +156,6 @@ Deno.test('rowForHostPath threads the root into a relative source target', () =>
   assertEquals(row, {
     source: '${localEnv:HOME}/code/team/proj',
     target: `${SOURCE_CONTAINER_ROOT}/team/proj`,
-    readonly: false,
   });
 });
 
@@ -145,42 +165,24 @@ Deno.test('rowForHostPath folds home and applies step defaults', () => {
   assertEquals(src, {
     source: '${localEnv:HOME}/code/p',
     target: `${SOURCE_CONTAINER_ROOT}/p`,
-    readonly: false,
   });
   const sk = rowForHostPath('skills', '/srv/skills/agent');
   assertEquals(sk, {
     source: '/srv/skills/agent',
     target: `${SKILLS_CONTAINER_ROOT}/agent`,
-    readonly: true,
   });
 });
 
 Deno.test('duplicate target within a step is rejected', () => {
-  const rows: MountRow[] = [{
-    source: '/a',
-    target: '/workspaces/p',
-    readonly: false,
-  }];
+  const rows: MountRow[] = [{ source: '/a', target: '/workspaces/p' }];
   assertThrows(
     () =>
-      assertNoDuplicateTarget(rows, {
-        source: '/b',
-        target: '/workspaces/p',
-        readonly: false,
-      }),
+      assertNoDuplicateTarget(rows, { source: '/b', target: '/workspaces/p' }),
     DuplicateTargetError,
     '/workspaces/p',
   );
   // A different target is fine.
-  assertNoDuplicateTarget(rows, {
-    source: '/b',
-    target: '/workspaces/q',
-    readonly: false,
-  });
+  assertNoDuplicateTarget(rows, { source: '/b', target: '/workspaces/q' });
   // Editing a row against itself (same index) is allowed.
-  assertNoDuplicateTarget(rows, {
-    source: '/a',
-    target: '/workspaces/p',
-    readonly: true,
-  }, 0);
+  assertNoDuplicateTarget(rows, { source: '/a', target: '/workspaces/p' }, 0);
 });

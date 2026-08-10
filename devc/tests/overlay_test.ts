@@ -11,8 +11,10 @@ import {
   loadMergedOverlay,
   loadOverlayFile,
   mergeOverlays,
+  MOUNT_SPEC_RE,
   overlayArgs,
   resolveOverlayRemoteEnv,
+  resolveProjectOverlayTarget,
 } from '../overlay.ts';
 import { loadResolvedRemoteEnv } from '../default_config.ts';
 import { fixture, withTemp } from './helpers.ts';
@@ -480,6 +482,124 @@ Deno.test('effective exec remoteEnv orders base config < user overlay < project 
       BEATEN_BY_PROJECT: 'project',
       FROM_USER: 'user',
       FROM_PROJECT: '/workspaces/p/p',
+    });
+  });
+});
+
+// ── mount spec validation ───────────────────────────────────────────────────────────────────
+
+// devc validates against the CLI's own regex so the failure names the file and the entry,
+// instead of `devcontainer up` reporting a context-free "Unmatched argument format".
+Deno.test('MOUNT_SPEC_RE matches the devcontainer CLI arg validation exactly', () => {
+  for (
+    const ok of [
+      'type=bind,source=/a,target=/b',
+      'type=volume,source=vol,target=/b',
+      'type=bind,source=${localEnv:HOME}/x,target=${containerWorkspaceFolder}/x',
+      'type=bind,source=/a,target=/b,external=true',
+    ]
+  ) assertEquals(MOUNT_SPEC_RE.test(ok), true, `should accept: ${ok}`);
+
+  for (
+    const bad of [
+      'type=bind,source=/a,target=/b,readonly',
+      'type=bind,source=/a,target=/b,consistency=cached',
+      'type=bind,source=/a,target=/b,consistency=cached,readonly',
+      'source=/a,target=/b,type=bind', // field order is fixed
+      'type=bind,source=/a,b,target=/c', // no commas in paths
+      'type=tmpfs,source=/a,target=/b',
+    ]
+  ) assertEquals(MOUNT_SPEC_RE.test(bad), false, `should reject: ${bad}`);
+});
+
+Deno.test('a readonly mount fails the load, naming the file and saying why', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/.devc/devc.jsonc`;
+    await write(
+      path,
+      JSON.stringify({
+        mounts: ['type=bind,source=/a,target=/b,consistency=cached,readonly'],
+      }),
+    );
+    const err = await assertRejects(() => loadOverlayFile(path), Error);
+    assertStringIncludes(err.message, path);
+    assertStringIncludes(err.message, '"mounts"[0]');
+    assertStringIncludes(err.message, '"consistency" and "readonly"');
+    assertStringIncludes(
+      err.message,
+      'read-only overlay mount is not possible',
+    );
+  });
+});
+
+Deno.test('a malformed mount spec fails with the expected format', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/.devc/devc.jsonc`;
+    await write(path, JSON.stringify({ mounts: ['source=/a,target=/b'] }));
+    const err = await assertRejects(() => loadOverlayFile(path), Error);
+    assertStringIncludes(err.message, 'type=<bind|volume>');
+    assertStringIncludes(err.message, 'in that field order');
+  });
+});
+
+// ── write-target resolution ─────────────────────────────────────────────────────────────────
+
+Deno.test('resolveProjectOverlayTarget: an existing overlay always wins', async () => {
+  for (
+    const rel of [
+      '.devc/devc.jsonc',
+      '.devc/devc.json',
+      '.devcontainer/devc.jsonc',
+      '.devcontainer/devc.json',
+    ]
+  ) {
+    await withTemp(async (dir) => {
+      // A `.devcontainer/` exists in every case, so the fallback would pick a *different*
+      // file — proving the existing overlay is what's being honored.
+      await Deno.mkdir(`${dir}/.devcontainer`, { recursive: true });
+      await write(`${dir}/${rel}`, '{}\n');
+      assertEquals(await resolveProjectOverlayTarget(dir), {
+        path: `${dir}/${rel}`,
+        creating: false,
+      });
+    });
+  }
+});
+
+Deno.test('resolveProjectOverlayTarget: first hit wins when several overlays exist', async () => {
+  await withTemp(async (dir) => {
+    await write(`${dir}/.devcontainer/devc.json`, '{}\n');
+    await write(`${dir}/.devc/devc.jsonc`, '{}\n');
+    const target = await resolveProjectOverlayTarget(dir);
+    assertEquals(target.path, `${dir}/.devc/devc.jsonc`);
+    // …and it agrees with what the loader will actually read.
+    assertEquals(await findProjectOverlayPath(dir), target.path);
+  });
+});
+
+Deno.test('resolveProjectOverlayTarget: creates beside the config, else in .devc/', async () => {
+  await withTemp(async (dir) => {
+    await Deno.mkdir(`${dir}/.devcontainer`, { recursive: true });
+    assertEquals(await resolveProjectOverlayTarget(dir), {
+      path: `${dir}/.devcontainer/devc.jsonc`,
+      creating: true,
+    });
+  });
+  await withTemp(async (dir) => {
+    assertEquals(await resolveProjectOverlayTarget(dir), {
+      path: `${dir}/.devc/devc.jsonc`,
+      creating: true,
+    });
+  });
+});
+
+// A file named `.devcontainer` (not a directory) must not be mistaken for one.
+Deno.test('resolveProjectOverlayTarget: a .devcontainer *file* falls back to .devc/', async () => {
+  await withTemp(async (dir) => {
+    await Deno.writeTextFile(`${dir}/.devcontainer`, 'not a dir');
+    assertEquals(await resolveProjectOverlayTarget(dir), {
+      path: `${dir}/.devc/devc.jsonc`,
+      creating: true,
     });
   });
 });

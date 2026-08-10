@@ -4,7 +4,8 @@
 // (see `tests/config_flow_test.ts`); the real entry points build deps over the actual TTY.
 //
 // Two flows live here:
-//   • project  — pick source folders, pick skills folders, review, apply to `.devcontainer/`.
+//   • project  — pick source folders, pick skills folders, review, apply to the `devc.json`
+//                overlay (never to `.devcontainer/` — see `wizard_apply.ts`).
 //   • global   — first-run: pick code roots then skills roots, stored folded to `~/…`.
 // Both are fully picker-driven: you *select* folders, never type paths.
 
@@ -18,11 +19,10 @@ import {
   makeGlobalConfig,
   saveGlobalConfig,
 } from '../config.ts';
-import { loadBundledDevcontainerJson } from '../default_config.ts';
+import { resolveProjectOverlayTarget } from '../overlay.ts';
 import {
   assertNoDuplicateTarget,
   basename,
-  defaultReadonly,
   defaultTarget,
   DuplicateTargetError,
   foldHome,
@@ -191,11 +191,7 @@ async function buildSourceRows(
     // Right after its worktree, so the fence reads in the order the picker showed it.
     if (m.primary !== undefined) {
       add(
-        {
-          source: foldHome(m.primary.gitDir),
-          target: m.primary.target,
-          readonly: false,
-        },
+        { source: foldHome(m.primary.gitDir), target: m.primary.target },
         () => {}, // already covered by an earlier row → mount it once, silently
       );
     }
@@ -219,12 +215,20 @@ function reviewLines(sel: WizardSelection, projectDir: string): string[] {
     `${foldHome(projectDir)} — this project (always mounted)`,
   );
   block('devc:skills', sel.skills);
+  // Stated at the point of decision, not only in the README: overlay mounts become
+  // `devcontainer up --mount` args, and that flag has no read-only form at all.
+  lines.push(
+    '  Note: overlay mounts are read-write — `devcontainer up --mount` cannot',
+    '  express read-only. See devc’s README.',
+  );
   return lines;
 }
 
 export interface ProjectFlowOptions {
   projectDir: string;
-  configPath: string;
+  /** Overlay file the apply will write (`resolveProjectOverlayTarget`). */
+  overlayPath: string;
+  /** True when that overlay does not exist yet and will be created. */
   creating: boolean;
   sourceRows: MountRow[];
   skillsRows: MountRow[];
@@ -254,9 +258,9 @@ export async function runProjectFlow(
   const fs = deps.fsProbe ?? realFsProbe;
 
   await writeLines(deps.output, [
-    `Configuring devcontainer at ${opts.configPath}`,
+    `Configuring devc mounts at ${opts.overlayPath}`,
     `  (${
-      opts.creating ? 'creating a new config' : 'updating the existing config'
+      opts.creating ? 'creating a new overlay' : 'updating the existing overlay'
     })`,
   ]);
 
@@ -357,18 +361,11 @@ export async function runProjectFlow(
   }
 
   const result = await apply(opts.projectDir, selection);
-  const msg = [
+  await writeLines(deps.output, [
     result.changed
-      ? `${result.created ? 'Created' : 'Updated'} ${result.configPath}`
-      : `Unchanged ${result.configPath}`,
-  ];
-  if (result.created) {
-    // List the bundled assets written alongside the config (skip the config itself).
-    for (const path of result.written) {
-      if (path !== result.configPath) msg.push(`  + ${path}`);
-    }
-  }
-  await writeLines(deps.output, msg);
+      ? `${result.created ? 'Created' : 'Updated'} ${result.overlayPath}`
+      : `Unchanged ${result.overlayPath}`,
+  ]);
 
   const rebuilt = await maybeRebuild(opts.projectDir, result.changed, deps);
   return { applied: true, changed: result.changed, rebuilt };
@@ -504,9 +501,13 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 /**
- * Seed the source/skills rows from the base config text's fences. If the base has no fences,
- * source starts empty and skills is pre-seeded from `recentSkillsRaw` (filtered to host paths
- * that still exist; raw stored values are expanded for the check).
+ * Seed the source/skills rows from the overlay text's fences. If it has no fences, source
+ * starts empty and skills is pre-seeded from `recentSkillsRaw` (filtered to host paths that
+ * still exist; raw stored values are expanded for the check).
+ *
+ * `baseText` is the overlay's current contents, or the empty string when there is no overlay
+ * yet — never a `devcontainer.json`. Fences left in a project's config by an older devc are
+ * not read and not migrated; they are deleted by hand.
  */
 export async function seedRows(
   baseText: string,
@@ -538,7 +539,6 @@ export async function seedRows(
       skillsRows.push({
         source: folded,
         target: defaultTarget('skills', folded),
-        readonly: defaultReadonly('skills'),
       });
     }
   }
@@ -568,9 +568,9 @@ const colorEnabled = (): boolean => {
 };
 
 /**
- * Open the full project flow for `devc config [PATH]`. Resolves the base per precedence
- * (existing `PATH/.devcontainer/devcontainer.json`, else the bundled default), seeds the
- * source/skills selections, and — when `includeGlobalStep` — runs the global-roots step first.
+ * Open the full project flow for `devc config [PATH]`. Resolves which overlay to write
+ * (`resolveProjectOverlayTarget`), seeds the source/skills selections from it, and — when
+ * `includeGlobalStep` — runs the global-roots step first.
  */
 export async function runProjectConfigWizard(
   projectDir: string,
@@ -599,24 +599,15 @@ export async function runProjectConfigWizard(
     cfg = await loadGlobalConfig();
   }
 
-  const configPath = `${projectDir}/.devcontainer/devcontainer.json`;
-
-  let baseText: string;
-  let creating: boolean;
-  try {
-    baseText = await Deno.readTextFile(configPath);
-    creating = false;
-  } catch {
-    baseText = await loadBundledDevcontainerJson();
-    creating = true;
-  }
+  const target = await resolveProjectOverlayTarget(projectDir);
+  const baseText = target.creating ? '' : await Deno.readTextFile(target.path);
 
   const { sourceRows, skillsRows } = await seedRows(baseText, cfg.recentSkills);
 
   await runProjectFlow({
     projectDir,
-    configPath,
-    creating,
+    overlayPath: target.path,
+    creating: target.creating,
     sourceRows,
     skillsRows,
     codeRoots: safeExpanded(() => cfg.codeRootsExpanded()),

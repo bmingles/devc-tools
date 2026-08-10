@@ -13,7 +13,7 @@ export const COMMANDS: { name: string; summary: string }[] = [
   },
   {
     name: 'config',
-    summary: 'Configure the dev container for the current project (TUI)',
+    summary: 'Configure the source/skills mounts for the current project (TUI)',
   },
   {
     name: 'attach',

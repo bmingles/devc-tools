@@ -26,16 +26,16 @@ workaround exists.** Investigated against the installed CLI
 candidate workarounds prototyped against real Docker (29.6.2, Docker Desktop).
 Recorded here so it is not re-litigated.
 
-The CLI validates every `--mount` against a strict regex and then *rebuilds* the
+The CLI validates every `--mount` against a strict regex and then _rebuilds_ the
 spec, discarding anything it did not capture:
 
 ```js
 // devContainersSpecCLI.ts — arg validation
-/^type=(bind|volume),source=([^,]+),target=([^,]+)(?:,external=(true|false))?$/
+/^type=(bind|volume),source=([^,]+),target=([^,]+)(?:,external=(true|false))?$/;
 // …and the serializer that reaches `docker run`:
-function iG(A) {                                  // object form (what --mount becomes)
-  if (typeof A == "string") return ["--mount", A]; // string form: passed through VERBATIM
-  return ["--mount", `type=${A.type},src=${A.source},dst=${A.target}`];
+function iG(A) { // object form (what --mount becomes)
+  if (typeof A == 'string') return ['--mount', A]; // string form: passed through VERBATIM
+  return ['--mount', `type=${A.type},src=${A.source},dst=${A.target}`];
 }
 ```
 
@@ -43,7 +43,7 @@ Consequences:
 
 - `,readonly` and `,consistency=cached` both **fail arg validation outright**
   (`Unmatched argument format: mount must match …`). Field order is fixed.
-- Only *string* mounts inside a `devcontainer.json` `mounts` array reach
+- Only _string_ mounts inside a `devcontainer.json` `mounts` array reach
   `docker run` untouched. That is why the infra `claude-seed` mount can be
   `readonly` and an overlay mount cannot.
 - `devcontainer up` has **no** `--cap-add` / `--security-opt` / docker-run
@@ -51,17 +51,17 @@ Consequences:
 
 Prototype results for restoring read-only some other way:
 
-| Mechanism | Read-only? | Live host edits? | Verdict |
-| --- | --- | --- | --- |
-| `--mount type=volume` backed by `docker volume create --opt type=none --opt o=bind,ro --opt device=<path>` | yes — writes refused | **no — silently stale**; a *fresh* container still served pre-edit file content, while the same volume without `ro` was fully live | Disqualified: silent staleness is worse than a writable mount |
-| rw staging mount + copy into `~/.claude/skills` in `post-create.sh` | partial | no — needs a rebuild to resync | Disqualified: the staging mount is itself writable, so the host is still reachable |
-| in-container `mount -o remount,bind,ro <target>` | yes | yes | Requires `capAdd: ["SYS_ADMIN"]` on the container |
-| post-`up` `docker exec --privileged … mount -o remount,bind,ro` | yes | yes | **Still** requires `SYS_ADMIN` or `seccomp=unconfined` at create time |
+| Mechanism                                                                                                  | Read-only?           | Live host edits?                                                                                                                   | Verdict                                                                            |
+| ---------------------------------------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `--mount type=volume` backed by `docker volume create --opt type=none --opt o=bind,ro --opt device=<path>` | yes — writes refused | **no — silently stale**; a _fresh_ container still served pre-edit file content, while the same volume without `ro` was fully live | Disqualified: silent staleness is worse than a writable mount                      |
+| rw staging mount + copy into `~/.claude/skills` in `post-create.sh`                                        | partial              | no — needs a rebuild to resync                                                                                                     | Disqualified: the staging mount is itself writable, so the host is still reachable |
+| in-container `mount -o remount,bind,ro <target>`                                                           | yes                  | yes                                                                                                                                | Requires `capAdd: ["SYS_ADMIN"]` on the container                                  |
+| post-`up` `docker exec --privileged … mount -o remount,bind,ro`                                            | yes                  | yes                                                                                                                                | **Still** requires `SYS_ADMIN` or `seccomp=unconfined` at create time              |
 
 The last row is the decisive negative result. `docker exec --privileged` grants
 capabilities to the exec'd process but cannot unlock `mount`, because Docker's
-default **seccomp** profile compiles its `mount` allowance in at *container
-create* time from the container's configured capabilities. The remount failed
+default **seccomp** profile compiles its `mount` allowance in at _container
+create_ time from the container's configured capabilities. The remount failed
 with `mount: permission denied` on an otherwise-identical container and
 succeeded the instant `--security-opt seccomp=unconfined` was added.
 
@@ -69,7 +69,7 @@ So read-only skills mounts would cost `SYS_ADMIN` — a container-escape-class
 capability — which runs directly against
 `.plans/design/devcontainer-agent-sandbox-hardening.md`. **Decision: drop
 read-only rather than work around it.** One property worth recording, because it
-is what makes the *remaining* `readonly` infra mounts meaningful: a real `ro`
+is what makes the _remaining_ `readonly` infra mounts meaningful: a real `ro`
 bind mount holds against container-**root** (`docker exec -u 0` could not
 remount it `rw` without `SYS_ADMIN`), whereas permission-based hiding does not,
 since `vscode` has passwordless sudo.
@@ -122,7 +122,7 @@ removal, a `devcontainer.json` writer, the double-mount warning) rather than
 building it.
 
 The consequence to be aware of when adopting this: a project that still has
-populated fences in `devcontainer.json` will mount those folders *and* whatever
+populated fences in `devcontainer.json` will mount those folders _and_ whatever
 the overlay adds. Where the targets match, `devcontainer up` fails with Docker's
 `Duplicate mount point`; where they differ, the folder is simply mounted twice.
 Either way the fix is to delete the fence blocks from `devcontainer.json` by
@@ -196,67 +196,70 @@ reports no rebuild needed.
 
 ## Checklist
 
-- [ ] `devc/mounts.ts` — `serializeMount` emits
+- [x] `devc/mounts.ts` — `serializeMount` emits
       `type=bind,source=<s>,target=<t>` only; drop `MountRow.readonly` and
       `defaultReadonly`; `parseEntry` keeps ignoring `readonly`/`consistency`
-- [ ] `devc/overlay.ts` — export the CLI mount regex and validate each entry in
+- [x] `devc/overlay.ts` — export the CLI mount regex and validate each entry in
       `readMounts`, erroring with the file path, entry index, the spec, and the
       reason (call out `readonly`/`consistency` explicitly when present)
-- [ ] `devc/overlay.ts` — add `resolveProjectOverlayTarget(localFolder)`
+- [x] `devc/overlay.ts` — add `resolveProjectOverlayTarget(localFolder)`
       returning the path to write plus whether it must be created, built on
       `findProjectOverlayPath` and the `.devcontainer/`-exists fallback rule
-- [ ] `devc/wizard_apply.ts` — `applySelection` writes the two fences into the
+- [x] `devc/wizard_apply.ts` — `applySelection` writes the two fences into the
       resolved overlay file (creating it from the seed text when absent) and
       does nothing else: no `.devcontainer/` creation, no `installBundledAssets`,
       no write to `devcontainer.json`; `ApplyResult` reports the overlay path;
       drop the now-unused `templatesDir` dep
-- [ ] `devc/tui/config_flow.ts` — seed rows from the overlay's fences, else from
+- [x] `devc/tui/config_flow.ts` — seed rows from the overlay's fences, else from
       `recentSkills`; header and apply messages name the overlay; review gains
       the read-write note
-- [ ] `devc/README.md` — overlay section documents that `--mount` supports only
+- [x] `devc/README.md` — overlay section documents that `--mount` supports only
       `type`/`source`/`target`/`external` (no `readonly`, no `consistency`) and
       why; `devc config` section describes the new target file, the detection
       order, and that it no longer scaffolds
-- [ ] `.plans/design/devc-design.md` — update the fence-location and
+- [x] `.plans/design/devc-design.md` — update the fence-location and
       `devc config` write-behavior sections (lines ~85, ~448–510)
-- [ ] `devc/tests/mounts_row_test.ts` — serializer form, no readonly
-- [ ] `devc/tests/overlay_test.ts` — spec validation accept/reject cases and
+- [x] `devc/tests/mounts_row_test.ts` — serializer form, no readonly
+- [x] `devc/tests/overlay_test.ts` — spec validation accept/reject cases and
       overlay-target resolution (all four existing files, plus both fallbacks)
-- [ ] `devc/tests/wizard_apply_test.ts` — overlay creation, in-place update
+- [x] `devc/tests/wizard_apply_test.ts` — overlay creation, in-place update
       preserving unowned keys/comments, byte-identical no-op, and that
       `.devcontainer/` is neither created nor modified
-- [ ] `devc/tests/config_flow_test.ts` — seeding precedence and the new messages
+- [x] `devc/tests/config_flow_test.ts` — seeding precedence and the new messages
 
 ## Validation
 
-- [ ] `cd devc && deno task check` is clean
-- [ ] `cd devc && deno fmt --check && deno lint` is clean (the ~30 pre-existing
+- [x] `cd devc && deno task check` is clean
+- [x] `cd devc && deno fmt --check && deno lint` is clean (the ~30 pre-existing
       `no-import-prefix` findings elsewhere in the repo are unchanged)
-- [ ] `cd devc && deno task test` passes
-- [ ] A test asserts `serializeMount` output matches the CLI's own regex
+- [x] `cd devc && deno task test` passes
+- [x] A test asserts `serializeMount` output matches the CLI's own regex
       `/^type=(bind|volume),source=([^,]+),target=([^,]+)(?:,external=(true|false))?$/`
-- [ ] Fresh project, no `.devcontainer/`: `devc config` creates
+- [x] Fresh project, no `.devcontainer/`: `devc config` creates
       `.devc/devc.jsonc` with both fences and creates **no** `.devcontainer/`
-- [ ] Project with `.devcontainer/` but no overlay: `devc config` creates
+- [x] Project with `.devcontainer/` but no overlay: `devc config` creates
       `.devcontainer/devc.jsonc`, and `devcontainer.json` is unmodified
       (`git diff` empty)
-- [ ] Project with an existing `.devc/devc.json`: `devc config` writes to that
+- [x] Project with an existing `.devc/devc.json`: `devc config` writes to that
       file, does not create a `.jsonc` sibling, and leaves its
       `additionalFeatures`/`remoteEnv`/hand-written mounts/comments
       byte-identical
-- [ ] Round-trip: running `devc config` twice with the same picks reports
+- [x] Round-trip: running `devc config` twice with the same picks reports
       `Unchanged` and does not rewrite the file
-- [ ] An overlay mount written by hand as
+- [x] An overlay mount written by hand as
       `type=bind,source=/a,target=/b,readonly` fails the command with an error
       naming the file and the `readonly` field — not a `devcontainer up` error
-- [ ] **One-time cleanup in this repo**: delete the `devc:source` and
-      `devc:skills` fence blocks from `.devcontainer/devcontainer.json`, then
-      re-pick via `devc config`. Note `.devc/devc.json` already mounts
-      `~/code/thirdparty/agent-tools` at `/workspaces/agent-tools` while the old
-      fence mounts it at `/workspaces/thirdparty/agent-tools` — pick one
-- [ ] Live Docker: after that cleanup, `devc build` succeeds (no
-      `Duplicate mount point`) and `devc mounts` lists both the source and
-      skills folders as `rw`
+- [ ] **One-time cleanup in this repo — left for a human.** Delete the
+      `devc:source` and `devc:skills` fence blocks from
+      `.devcontainer/devcontainer.json`, then re-pick via `devc config`. Note
+      `.devc/devc.json` already mounts `~/code/thirdparty/agent-tools` at
+      `/workspaces/agent-tools` while the old fence mounts it at
+      `/workspaces/thirdparty/agent-tools` — pick one. Until then this repo's
+      container mounts that folder twice (different targets, so it starts fine)
+- [x] Live Docker: verified on a scratch project instead of this repo (whose
+      cleanup is left to a human) — `devcontainer up` accepted the emitted spec,
+      re-serialized it to `type=bind,src=…,dst=…`, `devc mounts` listed it `rw`,
+      and the file was readable in the container
 
 ## Relevant Files
 
