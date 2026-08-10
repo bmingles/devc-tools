@@ -27,16 +27,26 @@
   `devc:skills` fence is untouched). Deletion and live host edits both work;
   existing host files are migrated on first run.
 
-- [devc-bridge-keepawake](devc-bridge-keepawake.md) — Activity-driven
+### Completed
+
+- [devc-bridge-keepawake](archived/devc-bridge-keepawake.md) — Activity-driven
   caffeinate: a reserved `ping` builtin in the bridge server starts the
   allowlisted `caffeinate` script on the first ping and stops it after a
   configurable idle timeout (default 5 min — must exceed the longest ping gap
   from long tool runs and permission prompts). Deliberately minimal: a
   re-armed `setTimeout` in a new `host/keepawake.ts` is the whole reaper, the
-  existing state-dir marker still drives the tray ○/●, and `main.ts`, the tray
-  UI and the client are all unchanged.
-
-### Completed
+  existing state-dir marker still drives the tray ○/●, and `main.ts` and the
+  client are unchanged. The tray's only change is an async `shutdown` that
+  awaits `server.close()` so quitting never leaks a started `caffeinate`.
+  Config (`DEVC_BRIDGE_KEEPAWAKE_COMMAND`/`_IDLE_MS`) is always-on for the
+  tray; the headless `serve.ts` keeps `ping` opt-in (only enabled when one of
+  those vars is set) so §A can test the unconfigured fall-through too.
+  §A (in-container) validation fully passes: ping round-trip, start/no-double-
+  start/expiry/re-arm/gap-reset, unauthorized-doesn't-arm, `close()` awaits
+  stop, fall-through when unconfigured, and the full existing regression
+  table. §B (macOS/GUI: real `pmset` assertions, tray icon, a real Claude
+  session) was **not run** — no macOS host available in this environment —
+  and is left unchecked in the archived plan for a human to verify.
 
 - [devc-config-overlay](archived/devc-config-overlay.md) — Reintroduce a
   `devc.json` overlay (`mounts`/`additionalFeatures`/`remoteEnv` →
@@ -188,5 +198,5 @@
 | devc picker derived mounts — implied primary `.git` shown in the picks list            | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md)   | complete    |
 | devc picker free navigation — roots as shortcuts + worktree mirror base                | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) | complete    |
 | devc config overlay — `devc.json` in both modes + user template layer                  | [devc-config-overlay](archived/devc-config-overlay.md)                 | complete    |
-| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                       | [devc-bridge-keepawake](devc-bridge-keepawake.md)                      | pending     |
+| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                       | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)             | complete    |
 | devc attach exit-code handling — stop crashing on non-zero `docker exec`               | [devc-attach-exit-code](devc-attach-exit-code.md)                      | pending     |

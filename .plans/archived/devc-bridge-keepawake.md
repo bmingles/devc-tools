@@ -355,7 +355,7 @@ artifacts at all. Nothing to add.
       `close()` stops, fall-through when unconfigured) and §B rows (pmset
       assertion appears on ping and vanishes after idle; Quit while armed
       clears the assertion).
-- [ ] `.plans/PLAN.md`: move this plan's entry to `## Completed` and set its
+- [x] `.plans/PLAN.md`: move this plan's entry to `## Completed` and set its
       `## Development Phases` row to `complete`, then move this file to
       `.plans/archived/`. Update the entry text — it currently promises a tray
       countdown, "Stop caffeinate now", and a `status` suffix via
