@@ -18,6 +18,18 @@
   `devc:skills` fence is untouched). Deletion and live host edits both work;
   existing host files are migrated on first run.
 
+- [devc-mounts-to-overlay](devc-mounts-to-overlay.md) — Move the wizard's two
+  managed mount fences (`devc:source`, `devc:skills`) out of the tracked
+  `devcontainer.json` and into the `devc.json` overlay, where machine-specific
+  bind mounts belong. `devc config` resolves an existing project overlay first
+  and otherwise creates `.devcontainer/devc.jsonc` (or `.devc/devc.jsonc` when
+  there is no `.devcontainer/`), and stops writing to `devcontainer.json` or
+  scaffolding `.devcontainer/` at all. Mount specs are re-serialized to the
+  exact form `devcontainer up --mount` accepts and validated at load, which
+  drops `readonly` and `consistency` — the CLI's `--mount` regex cannot express
+  either, and every workaround costs `SYS_ADMIN`; the plan records the full
+  investigation. No migration: old fences are deleted by hand, once.
+
 ### Completed
 
 - [devc-attach-exit-code](archived/devc-attach-exit-code.md) — Stop crashing
@@ -207,3 +219,4 @@
 | devc config overlay — `devc.json` in both modes + user template layer                  | [devc-config-overlay](archived/devc-config-overlay.md)                 | complete    |
 | devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                       | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)             | complete    |
 | devc attach exit-code handling — stop crashing on non-zero `docker exec`               | [devc-attach-exit-code](archived/devc-attach-exit-code.md)             | complete    |
+| devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](devc-mounts-to-overlay.md)                    |             |
