@@ -55,6 +55,8 @@ Notes:
   without the Docker layer cache.
 - `attach --build` forces the same rebuild before attaching; `--no-clear` keeps
   the shell-init output on screen instead of clearing on the first prompt.
+  `attach`/`claude` exit with the attached shell/command's own exit code (e.g.
+  130 on a signal-driven detach); `devc`/`docker` infra failures exit 125.
 - `exec` runs the command after `--` directly (no shell) and exits with the
   command's own exit code; `devc`/`docker` infra failures exit 125. `--env` is
   repeatable and a value without `=` is an error (exit 125).

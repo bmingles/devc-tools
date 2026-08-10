@@ -808,10 +808,17 @@ async function applyAttachColors(
   };
 }
 
+/**
+ * Attaches an interactive `docker exec -it` login shell to the container (or,
+ * with `options.command`, runs that command inside a login shell instead).
+ * Resolves to the attached shell/command's exit code — mirrors
+ * `execInContainer`'s contract. Throws only on infra failure (e.g. `docker`
+ * isn't runnable at all), not on the shell/command's own non-zero exit.
+ */
 export async function attachToContainer(
   info: ContainerInfo,
   options: AttachOptions = {},
-): Promise<void> {
+): Promise<number> {
   const {
     sessionName = sessionNameForWorkspaceFolder(info.remoteWorkspaceFolder),
     noClear = false,
@@ -906,7 +913,7 @@ export async function attachToContainer(
       stderr: 'inherit',
     }).spawn().status;
 
-    if (code !== 0) throw new Error(`docker exec exited with code ${code}`);
+    return code;
   } finally {
     await resetColors();
   }

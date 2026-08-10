@@ -62,12 +62,17 @@ async function attach(rawArgs: string[], command?: string): Promise<void> {
     : target;
   const sessionName = sessionNameForWorkspaceFolder(projectRoot);
 
-  await attachToContainer(info, {
-    noClear,
-    sessionName,
-    command,
-  });
-  Deno.exit(0);
+  try {
+    const code = await attachToContainer(info, {
+      noClear,
+      sessionName,
+      command,
+    });
+    Deno.exit(code);
+  } catch (e) {
+    console.error(`devc: ${e instanceof Error ? e.message : e}`);
+    Deno.exit(125); // reserved: devc/docker infra failure (matches `exec`)
+  }
 }
 
 // Help / version / unknown-command dispatch. Runs before the first-run global-config hook and

@@ -121,20 +121,23 @@ No new files, no new runtime artifacts. Nothing to add.
 
 ## Checklist
 
-- [ ] `devc/container.ts`: `attachToContainer` returns `Promise<number>` (the
+- [x] `devc/container.ts`: `attachToContainer` returns `Promise<number>` (the
       attached shell/command's exit code) instead of throwing on non-zero;
       update its doc comment to state the contract explicitly (mirroring
       `execInContainer`'s).
-- [ ] `devc/main.ts`: `attach()` wraps the `attachToContainer` call in
+- [x] `devc/main.ts`: `attach()` wraps the `attachToContainer` call in
       try/catch — success path `Deno.exit(code)`; catch path prints
       `devc: ${message}` and `Deno.exit(125)`, matching the `exec` block's
       existing pattern exactly.
-- [ ] `devc/README.md`: the `exec` bullet (~line 59) already documents
+- [x] `devc/README.md`: the `exec` bullet (~line 59) already documents
       "exits with the command's own exit code; `devc`/`docker` infra
       failures exit 125" — add the same statement to the `attach`/`claude`
       description so the documented contract matches both commands.
-- [ ] `deno check devc/main.ts`, `deno fmt --check`, and `deno lint` are clean
-      (run from `devc/`).
+- [x] `deno check devc/main.ts`, `deno fmt --check`, and `deno lint` are clean
+      (run from `devc/`). (`deno lint` has 30 pre-existing `no-import-prefix`/
+      `no-unversioned-import` findings across the repo, unrelated to this
+      change and unchanged by it — confirmed via `git stash` before/after
+      comparison; none touch `container.ts`/`main.ts`.)
 
 ## Validation
 
