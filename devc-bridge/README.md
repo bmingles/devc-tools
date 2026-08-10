@@ -20,62 +20,39 @@ devc-bridge start   (background menu-bar app)
   └─ menu-bar icon: idle ○ / active ●
 ```
 
-### Why TCP and not a bind-mounted unix socket?
+## Commands
 
-A bind-mounted AF_UNIX socket **does not cross the Docker Desktop VM boundary**:
-the container sees the socket inode but `connect()` is refused, because a unix
-socket needs both endpoints in the same kernel and the mount only shares the
-inode. So the server listens on host loopback TCP, and the container reaches it
-via `host.docker.internal`. A **shared token** — written by the server into the
-bind-mounted run dir (regular files _do_ cross the mount) and read by the client
-— authorizes requests, so the loopback port isn't open to every process on the
-box. (On OrbStack, unix-over-mount reportedly works; we target Docker Desktop.)
+Two separate command surfaces share the `devc-bridge` name — one you run on
+the **host** to manage the background service, one you run **inside the
+container** to invoke an allowlisted host script.
 
-## How it works
+### Host — manage the background service
 
-- **Server** (`devc-bridge`, a single `deno desktop` binary built from
-  `host/main.ts`) listens on loopback TCP and watches a state directory.
-  `devc-bridge start` launches it **in the background**;
-  `stop`/`status`/`restart` manage it. It runs as a **menu-bar-only accessory
-  app** — no dock icon and no window. `host/tray.ts` holds the tray,
-  `host/core.ts` all the transport/dispatch logic (which also runs headless via
-  `host/serve.ts`), and `host/config.ts` resolves paths + seeds the command
-  scripts on first start.
-- **Client** (`client/devc-bridge.ts`, compiled to `devc-bridge`) runs in the
-  container, reads the token, sends one JSON request, prints the script's
-  output, and exits with its exit code.
-- **Commands** are executable files in `~/.config/devc-bridge/commands/` (seeded
-  from `host/commands/`). **The filename is the allowlist** — the container can
-  only invoke names that exist there, and it cannot read or edit the scripts
-  (they are not mounted).
+Run these on the host, outside any container:
 
-Protocol (newline-delimited JSON):
+| Command               | Does                                                              |
+| ---------------------- | -------------------------------------------------------------------- |
+| `devc-bridge start`    | Seed `~/.config/devc-bridge/` on first run, then launch the tray in the background |
+| `devc-bridge status`   | `running (pid N)` — idle \| active: … — or `stopped`                 |
+| `devc-bridge stop`     | Stop the background tray                                             |
+| `devc-bridge restart`  | `stop` + `start`                                                      |
 
-```
-→ {"token":"…","command":"caffeinate","args":["start"]}
-← {"ok":true,"exitCode":0,"stdout":"started\n","stderr":""}
-← {"ok":false,"error":"unknown command: foo"}
-← {"ok":false,"error":"unauthorized"}
-```
+### Container — invoke a host command
 
-Testing steps (in-container §A + host §B) live in
-[`docs/testing.md`](docs/testing.md).
+Run these inside the devcontainer, as `devc-bridge <command> [args...]`. Out
+of the box:
 
-## Security / trust boundary
+| Command                          | Does                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `caffeinate start\|stop\|status`   | Keep the host Mac awake / check status (macOS-only; runs the real `caffeinate(8)`)  |
+| `ping [label]`                    | Reserved builtin — records activity and drives `caffeinate`'s idle-timeout keepalive. See [Wiring into Claude Code hooks](#wiring-into-claude-code-hooks). |
+| `echo <args...>`                  | Round-trip smoke test — echoes args back                                           |
+| `toggle on\|off`                   | Demo command that flips a state marker (exercises the tray without needing macOS)  |
 
-⚠️ This is a **deliberate hole in container isolation**. Anything running in the
-container can invoke any script in `host/commands/`, which runs on the host with
-your user's privileges. Treat those scripts as the security surface: keep them
-few, simple, and reviewed. Injection is not a concern for _arguments_ — they are
-passed as `argv`, never interpolated into a shell — but a malicious or buggy
-script is still a malicious or buggy script running on your host.
-
-The bridge listens on host **loopback** TCP and requires a **token** (written to
-`~/.config/devc-bridge/run/token`, shared with the container via the bind
-mount). This keeps other containers that never mounted the run dir from invoking
-commands, but anything that can read that token file — i.e. anything with access
-to your home dir — can. It is a convenience boundary for a single-user machine,
-not a hardened multi-tenant control.
+These are plain executable scripts in `~/.config/devc-bridge/commands/`
+(seeded from `host/commands/` on first `start`, yours to edit) — `ping` is the
+one exception, a builtin handled by the server itself, not a script. See
+[Writing a command](#writing-a-command) to add your own.
 
 ## Setup (macOS host)
 
@@ -95,14 +72,8 @@ devc-bridge status                  # -> running (pid N)
 # 3. (Re)open the devcontainer. Its post-create step compiles `devc-bridge` onto PATH.
 ```
 
-Lifecycle:
-
-```sh
-devc-bridge start      # seed (first run) + launch the tray in the background
-devc-bridge status     # running (pid N) — idle | active: …   /  stopped
-devc-bridge stop       # stop the background tray
-devc-bridge restart
-```
+(See [Commands](#commands) above for the full `start`/`stop`/`status`/`restart`
+lifecycle CLI.)
 
 To skip the build entirely, source the repo's shell integration instead — it
 defines a `devc-bridge` function that runs `host/main.ts` from source via Deno:
@@ -124,22 +95,16 @@ Container wiring lives in the repo-root `.devc/` dir for this repo's
 devcontainer tool: `.devc/devc.json` adds the run-dir bind mount and sets
 `DEVC_BRIDGE_ADDR` / `DEVC_BRIDGE_TOKEN_FILE`, and `.devc/devc-postcreate.sh`
 builds/installs the container-side `devc-bridge` binary. If you use plain Dev
-Containers instead, put the equivalent `mounts`
-
-- `containerEnv` + `postCreateCommand` in `.devcontainer/devcontainer.json`.
+Containers instead, put the equivalent `mounts` + `containerEnv` +
+`postCreateCommand` in `.devcontainer/devcontainer.json`.
 
 Port and bind host are configurable via `DEVC_BRIDGE_PORT` (default `48227`) and
 `DEVC_BRIDGE_HOST` (default `127.0.0.1`); if `host.docker.internal` can't reach
 loopback in your setup, set `DEVC_BRIDGE_HOST=0.0.0.0` (the token still guards
 access).
 
-Then, from inside the container:
-
-```sh
-devc-bridge caffeinate start    # keep the Mac awake
-devc-bridge caffeinate status   # -> running
-devc-bridge caffeinate stop
-```
+Verify the container can reach the bridge: `devc-bridge caffeinate status`
+(see [Commands](#commands) for the rest of the container CLI).
 
 ## Wiring into Claude Code hooks
 
@@ -179,11 +144,11 @@ call and pings the bridge — "Claude is still working" — and the host starts
 The `|| true` + redirection are load-bearing: a down/unreachable bridge must
 never fail the hook or leak noise into Claude's transcript.
 
-`ping` is a **reserved builtin** (see "Writing a command" below) — the request
-`{"command":"ping","args":["<label>"]}` is intercepted by the server before
-script dispatch and returns `pong` immediately; the label is a free-form,
-diagnostic-only event name (e.g. the hook event). It never blocks on the
-`caffeinate` dispatch, so hook latency is unaffected.
+The `ping` builtin (see [Commands](#commands)) is intercepted server-side
+before script dispatch and returns `pong` immediately, without blocking on the
+`caffeinate` dispatch — so hook latency is unaffected. `args[0]`, when
+present, is a free-form diagnostic label (e.g. the hook event name); it never
+affects the keepalive's behavior.
 
 Keepalive policy — when to start/stop `caffeinate` — is controlled by two env
 vars on the **host**:
@@ -224,6 +189,63 @@ unnecessary (and if you have two sessions sharing the host, the first
 session's `SessionEnd` would otherwise kill caffeinate out from under the
 second).
 
+## How it works
+
+- **Server** (`devc-bridge`, a single `deno desktop` binary built from
+  `host/main.ts`) listens on loopback TCP and watches a state directory.
+  `devc-bridge start` launches it **in the background**;
+  `stop`/`status`/`restart` manage it. It runs as a **menu-bar-only accessory
+  app** — no dock icon and no window. `host/tray.ts` holds the tray,
+  `host/core.ts` all the transport/dispatch logic (which also runs headless via
+  `host/serve.ts`), and `host/config.ts` resolves paths + seeds the command
+  scripts on first start.
+- **Client** (`client/devc-bridge.ts`, compiled to `devc-bridge`) runs in the
+  container, reads the token, sends one JSON request, prints the script's
+  output, and exits with its exit code.
+- **Commands** are executable files in `~/.config/devc-bridge/commands/` (seeded
+  from `host/commands/`). **The filename is the allowlist** — the container can
+  only invoke names that exist there, and it cannot read or edit the scripts
+  (they are not mounted).
+
+Protocol (newline-delimited JSON):
+
+```
+→ {"token":"…","command":"caffeinate","args":["start"]}
+← {"ok":true,"exitCode":0,"stdout":"started\n","stderr":""}
+← {"ok":false,"error":"unknown command: foo"}
+← {"ok":false,"error":"unauthorized"}
+```
+
+### Why TCP and not a bind-mounted unix socket?
+
+A bind-mounted AF_UNIX socket **does not cross the Docker Desktop VM boundary**:
+the container sees the socket inode but `connect()` is refused, because a unix
+socket needs both endpoints in the same kernel and the mount only shares the
+inode. So the server listens on host loopback TCP, and the container reaches it
+via `host.docker.internal`. A **shared token** — written by the server into the
+bind-mounted run dir (regular files _do_ cross the mount) and read by the client
+— authorizes requests, so the loopback port isn't open to every process on the
+box. (On OrbStack, unix-over-mount reportedly works; we target Docker Desktop.)
+
+Testing steps (in-container §A + host §B) live in
+[`docs/testing.md`](docs/testing.md).
+
+## Security / trust boundary
+
+⚠️ This is a **deliberate hole in container isolation**. Anything running in the
+container can invoke any script in `host/commands/`, which runs on the host with
+your user's privileges. Treat those scripts as the security surface: keep them
+few, simple, and reviewed. Injection is not a concern for _arguments_ — they are
+passed as `argv`, never interpolated into a shell — but a malicious or buggy
+script is still a malicious or buggy script running on your host.
+
+The bridge listens on host **loopback** TCP and requires a **token** (written to
+`~/.config/devc-bridge/run/token`, shared with the container via the bind
+mount). This keeps other containers that never mounted the run dir from invoking
+commands, but anything that can read that token file — i.e. anything with access
+to your home dir — can. It is a convenience boundary for a single-user machine,
+not a hardened multi-tenant control.
+
 ## Writing a command
 
 Drop an executable script in `host/commands/`. Its filename becomes the command
@@ -232,9 +254,10 @@ file in `$DEVC_BRIDGE_STATE` while active and remove it when done — see
 `host/commands/caffeinate` and `host/commands/toggle` for the pattern.
 
 **`ping` is a reserved name.** When the server is configured with keepalive
-options (see "Wiring into Claude Code hooks"), the `ping` command is a builtin
-handled by the server itself and shadows any same-named script in
-`commands/` — don't put a `ping` script there expecting it to run.
+options (see [Wiring into Claude Code hooks](#wiring-into-claude-code-hooks)),
+the `ping` command is a builtin handled by the server itself and shadows any
+same-named script in `commands/` — don't put a `ping` script there expecting
+it to run.
 
 ### Backgrounding a long-running process
 
