@@ -20,6 +20,7 @@ export DEVC_BRIDGE_HOST=127.0.0.1 DEVC_BRIDGE_PORT=48227
 export DEVC_BRIDGE_COMMANDS="$PWD/host/commands"
 export DEVC_BRIDGE_STATE=/tmp/devc-bridge/state
 export DEVC_BRIDGE_TOKEN_FILE=/tmp/devc-bridge/token
+export DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=1500
 rm -rf /tmp/devc-bridge
 deno run --allow-read --allow-write --allow-run --allow-env --allow-net host/serve.ts &
 
@@ -40,6 +41,32 @@ client() { deno run --allow-read --allow-net --allow-env=DEVC_BRIDGE_ADDR,DEVC_B
 | A5 state watcher    | `client toggle on` then `client toggle off`                     | server log shows `active: []` → `["toggle"]` → `[]` |
 
 Cleanup: `pkill -f host/serve.ts; rm -rf /tmp/devc-bridge`.
+
+### §A — keepalive (`ping` builtin + idle-timeout `caffeinate`)
+
+The real `caffeinate` script is macOS-only, so these use a stub `commands/caffeinate`
+with `toggle`-style marker semantics (`start` → touch `$DEVC_BRIDGE_STATE/caffeinate`
++ append `start` to an invocation log; `stop` → remove the marker + append `stop`).
+Put the log **outside** `$DEVC_BRIDGE_STATE` (e.g.
+`$(dirname "$DEVC_BRIDGE_STATE")/caffeinate-invocations.log`) — a file inside
+`state/` is read by the active-marker scan and would break A5/regression checks.
+Point `DEVC_BRIDGE_COMMANDS` at a directory with that stub (plus `echo`/`toggle`)
+instead of `host/commands` for these rows; `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=1500` in
+the setup snippet above keeps the idle window short.
+
+| Check                    | Command                                                    | Expected                                                             |
+| ------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------------- |
+| K1 round-trip            | `client ping PostToolUse`                                   | `pong`, exit 0 — same response shape as `client echo`                 |
+| K2 starts                | `client ping A`                                              | marker `caffeinate` appears; invocation log shows exactly one `start` |
+| K3 no double-start       | two more `client ping` calls while active                   | still exactly one `start` in the log                                  |
+| K4 expiry stops          | wait ~1.5s after the last ping                               | marker gone; log gains one `stop`                                     |
+| K5 re-arm                | `client ping` again after expiry                             | marker returns; log gains a second `start`                            |
+| K6 ping gap reset        | ping, wait 1s, ping, wait 1s (each gap < idleMs)             | still active (no `stop` yet); silence afterward then stops            |
+| K7 unauthorized          | `client ping` with a wrong token                             | `unauthorized`, exit 1; marker does NOT appear                        |
+| K8 `close()` stops       | keepalive armed, `kill -TERM` the server pid                 | marker removed, log gains `stop` (proves the await, not just intent)  |
+| K9 fall-through          | serve **without** the two `DEVC_BRIDGE_KEEPAWAKE_*` env vars, then `client ping X` | `unknown command: ping`, exit 1                    |
+
+Cleanup: as above, plus remove the stub commands dir and its invocation log.
 
 ## §B — Host verification (macOS)
 
@@ -84,6 +111,11 @@ If the gate fails, check in this order:
 | B2 stop             | container | `devc-bridge caffeinate stop`                       | `stopped`, assertion gone                                                                                                     |
 | B3 tray             | host      | (watch menu bar)                                    | ○→● on start, ●→○ on stop; "Quit" exits                                                                                       |
 | B4 no window flash  | host      | `devc-bridge start`/`stop`/`status`                 | no webview window appears (menu-bar only, `--backend raw`)                                                                    |
+| B5 real caffeinate  | container | `devc-bridge ping PostToolUse`                      | `pmset -g assertions` (host) shows the caffeinate assertion; tray flips ○→●                                                   |
+| B6 idle stop        | host      | stop pinging, wait ~5 min (default idle timeout)    | assertion and marker gone; tray returns to ○                                                                                  |
+| B7 quit while armed | host      | Quit the tray mid-keepalive                         | `pmset -g assertions` no longer shows caffeinate (no leak)                                                                    |
+| B8 status unchanged | container | `devc-bridge status` while armed                    | still reports `— active: caffeinate` (unchanged code path — confirms nothing regressed)                                       |
+| B9 real hook        | container | install the README's `PostToolUse`/`UserPromptSubmit` hook snippet in `settings.json`, run a short Claude session | assertion appears on the first tool call; clears ~5 min after the session goes quiet |
 
 ### Notes / gotchas
 

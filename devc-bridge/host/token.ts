@@ -7,7 +7,7 @@
 // run dir* from invoking host commands over the loopback TCP port; it does not
 // defend against other processes/users with filesystem access to your home dir.
 
-import { dirname } from 'jsr:@std/path@^1';
+import { dirname } from '@std/path';
 
 /** Load the token at `path`, or generate + persist a new one if absent. */
 export async function ensureToken(path: string): Promise<string> {

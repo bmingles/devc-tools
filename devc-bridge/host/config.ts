@@ -12,7 +12,7 @@
 // host's to edit. Under `deno task dev` (uncompiled) the same URL resolves to the
 // repo's host/commands, so seeding still works without a build.
 
-import { join } from 'jsr:@std/path@^1';
+import { join } from '@std/path';
 
 export interface Config {
   /** Root of the config tree (default ~/.config/devc-bridge). */
@@ -33,6 +33,23 @@ export interface Config {
   hostname: string;
   /** TCP bind port. */
   port: number;
+  /** Keepalive policy: which allowlisted script to drive, and the idle timeout. */
+  keepawake: { command: string; idleMs: number };
+}
+
+/** Default idle timeout: must exceed the longest plausible ping gap (long tool
+ * runs, permission-prompt think time), not merely "how fast to notice Claude
+ * finished." See .plans/archived/devc-bridge-keepawake.md. */
+const DEFAULT_KEEPAWAKE_IDLE_MS = 300_000;
+
+/** Parse `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS`-style values: non-numeric/≤0 → default. */
+export function parseIdleMs(
+  raw: string | undefined,
+  fallback = DEFAULT_KEEPAWAKE_IDLE_MS,
+): number {
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 export function loadConfig(): Config {
@@ -50,6 +67,10 @@ export function loadConfig(): Config {
     logfile: join(base, 'devc-bridge.log'),
     hostname: Deno.env.get('DEVC_BRIDGE_HOST') ?? '127.0.0.1',
     port: Number(Deno.env.get('DEVC_BRIDGE_PORT') ?? '48227'),
+    keepawake: {
+      command: Deno.env.get('DEVC_BRIDGE_KEEPAWAKE_COMMAND') || 'caffeinate',
+      idleMs: parseIdleMs(Deno.env.get('DEVC_BRIDGE_KEEPAWAKE_IDLE_MS')),
+    },
   };
 }
 

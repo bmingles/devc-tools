@@ -13,6 +13,6 @@
     "proseWrap": "preserve"
   },
   "imports": {
-    "jsr:@std/path": "jsr:@std/path@^1"
+    "@std/path": "jsr:@std/path@^1"
   }
 }

@@ -55,6 +55,7 @@ async function runTrayInner(cfg: Config): Promise<void> {
     commandsDir: cfg.commands,
     stateDir: cfg.state,
     onActiveChange: (active) => paint(active),
+    keepawake: cfg.keepawake,
   });
 
   // Record our PID so `devc-bridge stop`/`status` can find us however we were launched
@@ -68,8 +69,8 @@ async function runTrayInner(cfg: Config): Promise<void> {
     );
   }
 
-  const shutdown = () => {
-    server.close();
+  const shutdown = async () => {
+    await server.close();
     try {
       Deno.removeSync(cfg.pidfile);
     } catch { /* already gone */ }

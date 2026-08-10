@@ -143,22 +143,32 @@ devc-bridge caffeinate stop
 
 ## Wiring into Claude Code hooks
 
-Have hooks call the client. Example `settings.json` (adjust events to taste):
+The bridge keeps the host awake **activity-driven**: a hook fires on every tool
+call and pings the bridge — "Claude is still working" — and the host starts
+`caffeinate` on the first ping and stops it after a period of silence. Example
+`settings.json`:
 
 ```json
 {
   "hooks": {
-    "SessionStart": [
+    "PostToolUse": [
       {
+        "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "devc-bridge caffeinate start" }
+          {
+            "type": "command",
+            "command": "devc-bridge ping PostToolUse >/dev/null 2>&1 || true"
+          }
         ]
       }
     ],
-    "SessionEnd": [
+    "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "devc-bridge caffeinate stop" }
+          {
+            "type": "command",
+            "command": "devc-bridge ping UserPromptSubmit >/dev/null 2>&1 || true"
+          }
         ]
       }
     ]
@@ -166,12 +176,65 @@ Have hooks call the client. Example `settings.json` (adjust events to taste):
 }
 ```
 
+The `|| true` + redirection are load-bearing: a down/unreachable bridge must
+never fail the hook or leak noise into Claude's transcript.
+
+`ping` is a **reserved builtin** (see "Writing a command" below) — the request
+`{"command":"ping","args":["<label>"]}` is intercepted by the server before
+script dispatch and returns `pong` immediately; the label is a free-form,
+diagnostic-only event name (e.g. the hook event). It never blocks on the
+`caffeinate` dispatch, so hook latency is unaffected.
+
+Keepalive policy — when to start/stop `caffeinate` — is controlled by two env
+vars on the **host**:
+
+| Env var                         | Default      | Notes                          |
+| -------------------------------- | ------------ | ------------------------------- |
+| `DEVC_BRIDGE_KEEPAWAKE_COMMAND` | `caffeinate` | resolved through the allowlist |
+| `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS` | `300000`     | non-numeric/≤0 → default        |
+
+Notes on the semantics:
+
+- **Adoption:** a manual `devc-bridge caffeinate start` with no pings is never
+  auto-stopped by the keepalive; the *first* ping arms the keepalive and hands
+  it the lifecycle from then on (`start` is idempotent).
+- **Manual stop wins until expiry:** if you run `devc-bridge caffeinate stop`
+  while the keepalive is armed, it doesn't fight you — it stays armed until the
+  timer expires, then issues a redundant (harmless) `stop`. A manual stop is an
+  instruction, and its effect lasting up to the idle timeout is the intended
+  reading of it.
+- **Timeout guidance:** a hook ping cannot cover the duration of a single tool
+  call — a long-running tool fires no pings between its start and its end, and
+  a permission prompt fires none at all while Claude waits on the human. The
+  idle timeout must exceed the longest plausible **gap between pings** (long
+  tool runs, prompt think-time), not just "how fast to notice Claude
+  finished." The default (5 minutes) is chosen with that in mind; the cost of
+  raising it is a few extra minutes of the Mac staying awake, the cost of
+  lowering it too far is the Mac suspending mid-build.
+- **Concurrent sessions** share one keepalive: last-ping-wins is a natural
+  refcount — `caffeinate` stops only once *all* sessions go quiet.
+- **Crash robustness:** a container stop or killed session never sends
+  `SessionEnd`; because the idle timeout is self-healing, nothing needs to
+  explicitly stop `caffeinate`.
+
+An explicit `SessionStart → devc-bridge caffeinate start` hook may still be
+layered on for instant-on awake at session start; a `SessionEnd → stop` hook
+should be **removed** — the idle timeout is the backstop that makes it
+unnecessary (and if you have two sessions sharing the host, the first
+session's `SessionEnd` would otherwise kill caffeinate out from under the
+second).
+
 ## Writing a command
 
 Drop an executable script in `host/commands/`. Its filename becomes the command
 name. For anything long-running that the tray should reflect, create a marker
 file in `$DEVC_BRIDGE_STATE` while active and remove it when done — see
 `host/commands/caffeinate` and `host/commands/toggle` for the pattern.
+
+**`ping` is a reserved name.** When the server is configured with keepalive
+options (see "Wiring into Claude Code hooks"), the `ping` command is a builtin
+handled by the server itself and shadows any same-named script in
+`commands/` — don't put a `ping` script there expecting it to run.
 
 ### Backgrounding a long-running process
 

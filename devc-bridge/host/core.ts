@@ -13,7 +13,8 @@
 // The desktop entrypoint (server.ts) imports startServer() and adds the tray by
 // subscribing to `onActiveChange`.
 
-import { dirname, resolve } from 'jsr:@std/path@^1';
+import { dirname, resolve } from '@std/path';
+import { Keepawake, type KeepawakeStatus } from './keepawake.ts';
 
 export interface ServerOptions {
   /** Address to bind. Default host is 127.0.0.1 (reachable via host.docker.internal). */
@@ -29,6 +30,12 @@ export interface ServerOptions {
   onActiveChange?: (active: string[]) => void;
   /** Optional logger; defaults to console.error. */
   log?: (msg: string) => void;
+  /**
+   * When present, the reserved `ping` command is intercepted (after auth, before
+   * script dispatch) and drives a `Keepawake` that starts/stops `command` based on
+   * ping activity. Absent → `ping` falls through to normal script dispatch.
+   */
+  keepawake?: { command: string; idleMs: number };
 }
 
 export interface Request {
@@ -45,7 +52,10 @@ export interface RunningServer {
   address: string;
   /** Current set of active markers (sorted). */
   active(): string[];
-  close(): void;
+  /** Keepalive status, or null when the server wasn't configured with keepawake opts. */
+  keepawake(): KeepawakeStatus | null;
+  /** Stops accepting connections and — if the keepalive is armed — awaits its stop. */
+  close(): Promise<void>;
 }
 
 // A command name must be a bare filename — no path separators, no traversal.
@@ -161,6 +171,16 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const listener = Deno.listen({ hostname: opts.hostname, port: opts.port });
   const address = `${opts.hostname}:${opts.port}`;
 
+  const keepawake = opts.keepawake
+    ? new Keepawake({
+      command: opts.keepawake.command,
+      idleMs: opts.keepawake.idleMs,
+      run: (command, args) =>
+        dispatch({ token: opts.token, command, args }, commandsDir, stateDir),
+      log,
+    })
+    : null;
+
   let currentActive = await scanActive(stateDir);
   opts.onActiveChange?.(currentActive);
 
@@ -192,6 +212,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
               const req = JSON.parse(line) as Request;
               if (req.token !== opts.token) {
                 resp = { ok: false, error: 'unauthorized' };
+              } else if (keepawake && req.command === 'ping') {
+                const args = Array.isArray(req.args) ? req.args : [];
+                const event = args.length > 0 ? String(args[0]) : undefined;
+                keepawake.ping(event);
+                resp = { ok: true, exitCode: 0, stdout: 'pong\n', stderr: '' };
               } else {
                 resp = await dispatch(req, commandsDir, stateDir);
               }
@@ -223,8 +248,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   return {
     address,
     active: () => currentActive,
-    close: () => {
+    keepawake: () => keepawake?.status() ?? null,
+    close: async () => {
       closed = true;
+      // Await first: quitting must never leak a started keepawake command.
+      if (keepawake) await keepawake.close();
       try {
         watcher.close();
       } catch { /* ignore */ }

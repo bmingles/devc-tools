@@ -329,28 +329,28 @@ artifacts at all. Nothing to add.
 
 ## Checklist
 
-- [ ] `host/keepawake.ts`: `Keepawake` per the contract — re-armed `setTimeout`
+- [x] `host/keepawake.ts`: `Keepawake` per the contract — re-armed `setTimeout`
       idle timer, fire-and-forget `ping()`, promise-tail serialization,
       `close()` stop-if-active. No sweep loop, no marker seam, no status file.
-- [ ] `host/core.ts`: `ServerOptions.keepawake`; construct + wire the keepalive
+- [x] `host/core.ts`: `ServerOptions.keepawake`; construct + wire the keepalive
       (`run` → existing `dispatch`); reserved-`ping` intercept after auth
       (unauthorized ping does not arm); `RunningServer.keepawake()`;
       `close()` → `Promise<void>` awaiting keepalive close.
-- [ ] `host/config.ts`: `Config.keepawake` from the two env vars with the
+- [x] `host/config.ts`: `Config.keepawake` from the two env vars with the
       default/validation behavior above.
-- [ ] `host/tray.ts`: make `shutdown` async and `await server.close()` — this
+- [x] `host/tray.ts`: make `shutdown` async and `await server.close()` — this
       covers the `SIGINT`/`SIGTERM` listeners and the `quit` menuclick handler
       that share it. Nothing else in the tray changes.
-- [ ] `host/serve.ts`: read the two env vars and pass keepalive opts (so §A can
+- [x] `host/serve.ts`: read the two env vars and pass keepalive opts (so §A can
       inject a tiny `idleMs`); `await server.close()` in **both** signal
       handlers.
-- [ ] `host/main.ts`: **no change** — verify none crept in.
-- [ ] `README.md`: replace the hooks example with the PostToolUse/
+- [x] `host/main.ts`: **no change** — verify none crept in.
+- [x] `README.md`: replace the hooks example with the PostToolUse/
       UserPromptSubmit ping snippet; document the reserved `ping` builtin, the
       two env vars, adoption semantics, manual-stop-wins-until-expiry, and
       timeout guidance (must exceed the longest ping gap — long tool runs,
       permission prompts; default 5 min).
-- [ ] `docs/testing.md`: new §A rows (ping round-trip, marker appears on ping,
+- [x] `docs/testing.md`: new §A rows (ping round-trip, marker appears on ping,
       no double-start, expiry stops, re-arm, unauthorized ping doesn't arm,
       `close()` stops, fall-through when unconfigured) and §B rows (pmset
       assertion appears on ping and vanishes after idle; Quit while armed
@@ -379,28 +379,28 @@ break the A5/regression checks.
 Extend the existing §A setup snippet (`docs/testing.md`'s "1. Start the
 headless server") with `export DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=1500`.
 
-- [ ] `deno check host/main.ts` passes; `deno fmt --check` and `deno lint` are
+- [x] `deno check host/main.ts` passes; `deno fmt --check` and `deno lint` are
       clean (run in `host/`).
-- [ ] Ping round-trip: `client ping PostToolUse` → `pong`, exit 0; response
+- [x] Ping round-trip: `client ping PostToolUse` → `pong`, exit 0; response
       shape identical to `client echo`'s.
-- [ ] Ping starts: marker `caffeinate` appears; invocation log shows exactly
+- [x] Ping starts: marker `caffeinate` appears; invocation log shows exactly
       one `start`.
-- [ ] No double-start: two more pings while active → still exactly one `start`
+- [x] No double-start: two more pings while active → still exactly one `start`
       in the log.
-- [ ] Expiry stops: ~1.5s after the last ping the marker is gone and the log
+- [x] Expiry stops: ~1.5s after the last ping the marker is gone and the log
       shows one `stop`.
-- [ ] Re-arm: ping again after expiry → marker returns, log shows a second
+- [x] Re-arm: ping again after expiry → marker returns, log shows a second
       `start`.
-- [ ] Ping gap reset: ping, wait 1s, ping, wait 1s → still active (no `stop`
+- [x] Ping gap reset: ping, wait 1s, ping, wait 1s → still active (no `stop`
       yet), then silence → stops. This is the core behavior — the timer resets
       rather than accumulating.
-- [ ] Unauthorized: wrong-token `ping` → `unauthorized`, marker does NOT
+- [x] Unauthorized: wrong-token `ping` → `unauthorized`, marker does NOT
       appear.
-- [ ] `close()` stops: with the keepalive armed, SIGTERM the server → marker
+- [x] `close()` stops: with the keepalive armed, SIGTERM the server → marker
       removed, log shows `stop` (proves the await, not just the intent).
-- [ ] No keepalive configured: serve without the env vars → `client ping`
+- [x] No keepalive configured: serve without the env vars → `client ping`
       falls through to `unknown command: ping`.
-- [ ] Regression: full existing §A table (A1–A5, AUTH) still passes unchanged.
+- [x] Regression: full existing §A table (A1–A5, AUTH) still passes unchanged.
 
 ### B. User-only (host, macOS + GUI)
 

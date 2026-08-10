@@ -14,7 +14,7 @@
 //     process. stop/status use the pidfile the tray writes.
 //   • Inside that built .app it runs with no args → the tray (runTray in tray.ts).
 
-import { dirname, fromFileUrl, join } from 'jsr:@std/path@^1';
+import { dirname, fromFileUrl, join } from '@std/path';
 import { type Config, ensureConfig, errMsg, loadConfig } from './config.ts';
 import { runTray } from './tray.ts';
 
