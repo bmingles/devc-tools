@@ -11,6 +11,15 @@
 
 ### Pending
 
+- [devc-attach-exit-code](devc-attach-exit-code.md) — Stop crashing on
+  detach: `attachToContainer` throws on any non-zero `docker exec` exit
+  (e.g. 130, an ordinary signal-driven shell exit), and `main.ts`'s `attach()`
+  has no catch around it, so it surfaces as a raw uncaught-promise stack
+  trace. Fix mirrors `execInContainer`/`exec`'s existing contract:
+  `attachToContainer` resolves to the exit code instead of throwing, and
+  `attach()` exits with that code (or prints `devc: …` + exit 125 on a real
+  infra failure), matching `exec`'s pattern exactly.
+
 - [devc-claude-seed-dir](devc-claude-seed-dir.md) — Replace the three brittle
   per-file `~/.claude/*` host binds with one read-only directory bind of
   `~/.config/devc/.claude`, symlinked into the `.claude` volume by
@@ -180,3 +189,4 @@
 | devc picker free navigation — roots as shortcuts + worktree mirror base                | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md) | complete    |
 | devc config overlay — `devc.json` in both modes + user template layer                  | [devc-config-overlay](archived/devc-config-overlay.md)                 | complete    |
 | devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                       | [devc-bridge-keepawake](devc-bridge-keepawake.md)                      | pending     |
+| devc attach exit-code handling — stop crashing on non-zero `docker exec`               | [devc-attach-exit-code](devc-attach-exit-code.md)                      | pending     |
