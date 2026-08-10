@@ -30,9 +30,9 @@ crash:
    whatever the login shell chooses on an explicit `exit N`, or the exit code
    of whatever `command` (`devc claude`) returned. This is exactly the
    distinction `execInContainer` (`devc/container.ts:139`) already draws for
-   `devc exec` — its doc comment says *"Resolves to the command's exit code.
+   `devc exec` — its doc comment says _"Resolves to the command's exit code.
    Throws only on infra failure (container won't start / docker not
-   runnable)"* — and `main.ts`'s `exec` handler (`devc/main.ts:245-254`)
+   runnable)"_ — and `main.ts`'s `exec` handler (`devc/main.ts:245-254`)
    `Deno.exit(code)`s with whatever came back. `attachToContainer` is the odd
    one out: it should follow the same contract, not throw.
 
@@ -74,7 +74,7 @@ runnable) still throws, unchanged.
 export async function attachToContainer(
   info: ContainerInfo,
   options: AttachOptions = {},
-): Promise<number>
+): Promise<number>;
 ```
 
 ### `devc/main.ts` — `attach()`
@@ -162,8 +162,8 @@ validated manually against a live container, not with a new automated test.
 
 ## Relevant Files
 
-| File                | Change                                                                                   |
+| File                | Change                                                                                    |
 | ------------------- | ----------------------------------------------------------------------------------------- |
 | `devc/container.ts` | `attachToContainer` returns the exit code instead of throwing on non-zero.                |
-| `devc/main.ts`      | `attach()` gains try/catch around `attachToContainer`, matching `exec`'s pattern.          |
-| `devc/README.md`    | `attach`/`claude` bullet documents the same exit-code contract `exec`'s bullet documents.  |
+| `devc/main.ts`      | `attach()` gains try/catch around `attachToContainer`, matching `exec`'s pattern.         |
+| `devc/README.md`    | `attach`/`claude` bullet documents the same exit-code contract `exec`'s bullet documents. |

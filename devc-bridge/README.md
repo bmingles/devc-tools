@@ -30,24 +30,24 @@ container** to invoke an allowlisted host script.
 
 Run these on the host, outside any container:
 
-| Command               | Does                                                              |
-| ---------------------- | -------------------------------------------------------------------- |
-| `devc-bridge start`    | Seed `~/.config/devc-bridge/` on first run, then launch the tray in the background |
-| `devc-bridge status`   | `running (pid N)` — idle \| active: … — or `stopped`                 |
-| `devc-bridge stop`     | Stop the background tray                                             |
-| `devc-bridge restart`  | `stop` + `start`                                                      |
+| Command               | Does                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `devc-bridge start`   | Seed `~/.config/devc-bridge/` on first run, then launch the tray in the background |
+| `devc-bridge status`  | `running (pid N)` — idle \| active: … — or `stopped`                               |
+| `devc-bridge stop`    | Stop the background tray                                                           |
+| `devc-bridge restart` | `stop` + `start`                                                                   |
 
 ### Container — invoke a host command
 
 Run these inside the devcontainer, as `devc-bridge <command> [args...]`. Out
 of the box:
 
-| Command                          | Does                                                                          |
-| ---------------------------------- | ---------------------------------------------------------------------------------- |
-| `ping [label]`                    | **The normal way to keep the host awake.** Reserved builtin — records activity and starts/stops `caffeinate` for you on an idle timeout. Wire it into hooks per [Wiring into Claude Code hooks](#wiring-into-claude-code-hooks) and forget it exists. |
-| `caffeinate start\|stop\|status`   | The keepalive's own on/off switch, exposed directly (macOS-only; runs the real `caffeinate(8)`). Manual/advanced use only — see below. |
-| `echo <args...>`                  | Round-trip smoke test — echoes args back                                           |
-| `toggle on\|off`                   | Demo command that flips a state marker (exercises the tray without needing macOS)  |
+| Command                          | Does                                                                                                                                                                                                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ping [label]`                   | **The normal way to keep the host awake.** Reserved builtin — records activity and starts/stops `caffeinate` for you on an idle timeout. Wire it into hooks per [Wiring into Claude Code hooks](#wiring-into-claude-code-hooks) and forget it exists. |
+| `caffeinate start\|stop\|status` | The keepalive's own on/off switch, exposed directly (macOS-only; runs the real `caffeinate(8)`). Manual/advanced use only — see below.                                                                                                                |
+| `echo <args...>`                 | Round-trip smoke test — echoes args back                                                                                                                                                                                                              |
+| `toggle on\|off`                 | Demo command that flips a state marker (exercises the tray without needing macOS)                                                                                                                                                                     |
 
 **In normal use you never call `caffeinate` yourself** — `ping` drives it
 automatically once it's wired into hooks. Reach for `caffeinate start`/`stop`/
@@ -75,13 +75,13 @@ screen lock, which some VPN clients drop on. `-s` is documented as valid only on
 AC power, so on battery `-i` carries the load; `-m` is near-inert on SSD-only
 Macs. Both are harmless.
 
-`-u` is deliberately **not** used. It declares user activity and *wakes the
-display if it's off* — the keepalive arms on a session's first hook ping, so
+`-u` is deliberately **not** used. It declares user activity and _wakes the
+display if it's off_ — the keepalive arms on a session's first hook ping, so
 `-u` would light up a screen you had let sleep. It is also redundant with `-d`,
 and with no `-t` its assertion defaults to 5 seconds.
 
 No flag combination survives closing the lid: clamshell sleep needs external
-power *and* an external display to avoid. Verify what is held with
+power _and_ an external display to avoid. Verify what is held with
 `pmset -g assertions | grep -i caffeinate`.
 
 ## Setup (macOS host)
@@ -195,9 +195,9 @@ Keepalive policy — when to start/stop `caffeinate` — is controlled by two en
 vars on the **host**:
 
 | Env var                         | Default      | Notes                          |
-| -------------------------------- | ------------ | ------------------------------- |
+| ------------------------------- | ------------ | ------------------------------ |
 | `DEVC_BRIDGE_KEEPAWAKE_COMMAND` | `caffeinate` | resolved through the allowlist |
-| `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS` | `300000`     | non-numeric/≤0 → default        |
+| `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS` | `300000`     | non-numeric/≤0 → default       |
 
 **Set these on `devc-bridge start`, and restart to apply:**
 
@@ -218,7 +218,7 @@ so, but won't apply it). The same applies to `DEVC_BRIDGE_HOST` and
 
 **Choosing a value.** The timeout never governs typical commands — every tool call
 pings, so the timer resets constantly while a session is active. It only matters in
-two moments: a *single* tool call longer than the timeout (Claude Code caps `Bash` at
+two moments: a _single_ tool call longer than the timeout (Claude Code caps `Bash` at
 10 minutes, so the default covers everything short of a long build), and how long the
 Mac stays awake after work stops. Raise it on days you run long builds; the cost is
 only idle awake time.
@@ -226,7 +226,7 @@ only idle awake time.
 Notes on the semantics:
 
 - **Adoption:** a manual `devc-bridge caffeinate start` with no pings is never
-  auto-stopped by the keepalive; the *first* ping arms the keepalive and hands
+  auto-stopped by the keepalive; the _first_ ping arms the keepalive and hands
   it the lifecycle from then on (`start` is idempotent).
 - **Manual stop wins until expiry:** if you run `devc-bridge caffeinate stop`
   while the keepalive is armed, it doesn't fight you — it stays armed until the
@@ -242,7 +242,7 @@ Notes on the semantics:
   raising it is a few extra minutes of the Mac staying awake, the cost of
   lowering it too far is the Mac suspending mid-build. See "Choosing a value"
   above for how to change it.
-- **Why `PreToolUse` too:** it puts a ping at the *start* of a tool call, so a
+- **Why `PreToolUse` too:** it puts a ping at the _start_ of a tool call, so a
   long build gets the full idle timeout measured from when it began rather than
   from the end of the previous tool. `PostToolUse` alone very nearly does this
   (tools run back to back), but `PreToolUse` makes it exact and costs one extra
@@ -253,9 +253,9 @@ Notes on the semantics:
 - **A stalled session is safe to let sleep.** Waiting on a permission prompt
   fires no pings, so the Mac may suspend — but the session is already stopped,
   and answering after a wake resumes it no differently. The case worth
-  protecting is Claude *actively working*, which the tool-call pings cover.
+  protecting is Claude _actively working_, which the tool-call pings cover.
 - **Concurrent sessions** share one keepalive: last-ping-wins is a natural
-  refcount — `caffeinate` stops only once *all* sessions go quiet.
+  refcount — `caffeinate` stops only once _all_ sessions go quiet.
 - **Crash robustness:** a container stop or killed session never sends
   `SessionEnd`; because the idle timeout is self-healing, nothing needs to
   explicitly stop `caffeinate`.

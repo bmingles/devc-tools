@@ -215,14 +215,20 @@ That is the tray's **only** required change.
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "devc-bridge ping PostToolUse >/dev/null 2>&1 || true" }
+          {
+            "type": "command",
+            "command": "devc-bridge ping PostToolUse >/dev/null 2>&1 || true"
+          }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "devc-bridge ping UserPromptSubmit >/dev/null 2>&1 || true" }
+          {
+            "type": "command",
+            "command": "devc-bridge ping UserPromptSubmit >/dev/null 2>&1 || true"
+          }
         ]
       }
     ]
@@ -418,15 +424,15 @@ headless server") with `export DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=1500`.
 
 ## Relevant Files
 
-| File                       | Change                                                                       |
-| -------------------------- | ---------------------------------------------------------------------------- |
-| `host/keepawake.ts`        | **New** — ping/idle state machine (~40 lines; contract above).               |
+| File                       | Change                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| `host/keepawake.ts`        | **New** — ping/idle state machine (~40 lines; contract above).                |
 | `host/core.ts`             | Keepalive wiring, `ping` intercept, `RunningServer.keepawake()`, async close. |
-| `host/config.ts`           | `Config.keepawake` from two env vars.                                        |
-| `host/serve.ts`            | Env-driven keepalive opts for §A; await close in both signal handlers.       |
-| `host/tray.ts`             | `shutdown` becomes async + awaits close. Nothing else.                       |
-| `README.md`                | Ping hook snippet, reserved name, env vars, adoption + timeout guidance.     |
-| `docs/testing.md`          | New §A/§B rows.                                                              |
-| `host/main.ts`             | **No change.**                                                               |
-| `client/devc-bridge.ts`    | **No change** (response shape is unchanged).                                 |
-| `host/commands/caffeinate` | **No change** (keepalive drives it as-is).                                   |
+| `host/config.ts`           | `Config.keepawake` from two env vars.                                         |
+| `host/serve.ts`            | Env-driven keepalive opts for §A; await close in both signal handlers.        |
+| `host/tray.ts`             | `shutdown` becomes async + awaits close. Nothing else.                        |
+| `README.md`                | Ping hook snippet, reserved name, env vars, adoption + timeout guidance.      |
+| `docs/testing.md`          | New §A/§B rows.                                                               |
+| `host/main.ts`             | **No change.**                                                                |
+| `client/devc-bridge.ts`    | **No change** (response shape is unchanged).                                  |
+| `host/commands/caffeinate` | **No change** (keepalive drives it as-is).                                    |
