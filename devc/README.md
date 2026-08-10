@@ -176,7 +176,10 @@ Where it can live — **first hit wins per level, and the losers are not merged*
   one.
 - Only these three keys have a `devcontainer up` flag. A project needing
   `containerEnv`, `forwardPorts`, `runArgs` and friends should run `devc init`
-  and edit its own `devcontainer.json`.
+  and edit its own `devcontainer.json`. There is no flag for a lifecycle command
+  either — to run something at create time, use the
+  [project post-create hook](#project-post-create-hook-devc-post-createsh), which
+  works without a `.devcontainer/` at all.
 - `devc config` writes the `mounts` key's two managed fences here — see
   [which file it writes](#which-file-it-writes). The other keys are yours; the
   wizard never touches them.
@@ -219,6 +222,53 @@ is rejected outright, so:
 devc validates every entry against the same regex when it loads the file, so a
 bad spec fails naming the file, the index and the offending field — rather than
 surfacing later as the CLI's context-free `Unmatched argument format`.
+
+## Project post-create hook: `devc-post-create.sh`
+
+The overlay covers **declarative** extension — mounts, features, env. This is the
+**imperative** half: a script devc runs at container-create time, after its own
+baseline setup. Together they let a zero-config project extend its container
+without owning a `.devcontainer/` at all.
+
+Drop an executable script at either location — first hit wins, same order and
+same both-are-first-class rule as the overlay itself:
+
+```
+.devc/devc-post-create.sh
+.devcontainer/devc-post-create.sh
+```
+
+`post-create.sh` runs it as its **last** step, so devc's baseline (the `.claude`
+volume + seed links, `nvm install`, git identity) is already in place. It works
+identically in both modes: zero-config finds it through `$PROJECT_PATH`, with no
+project `.devcontainer/` involved.
+
+```bash
+#!/bin/bash
+set -e
+# cwd is the project root, so relative paths work
+cd tools/mycli && cargo install --path .
+```
+
+The contract:
+
+- **cwd is the project root** (`$PROJECT_PATH`), so relative paths resolve
+  against the repo. Each `post-create.sh` step is a separate process, so the hook
+  establishes this itself rather than inheriting it.
+- **It must be executable.** A hook that exists but is not executable — or is a
+  dangling symlink — **fails the create** naming the path, rather than being
+  skipped. A hook that never runs is the failure mode this is designed to
+  prevent, so it is never silent.
+- **No fall-through.** Existence selects the hook; if `.devc/`'s copy exists but
+  cannot run, devc does not quietly fall back to `.devcontainer/`'s.
+- **A nonzero exit fails the create.** The hook is invoked directly under
+  `set -e`.
+- **devc never writes or reads it.** `post-create.sh` is devc's and gets
+  regenerated; the hook is yours. Like the overlay, it is equally at home
+  committed (the repo depends on devc) or gitignored (one developer's local
+  setup).
+- Changes take effect on the next container **create**, so run `devc build` after
+  editing one.
 
 ## Default overrides: `~/.config/devc/templates/`
 

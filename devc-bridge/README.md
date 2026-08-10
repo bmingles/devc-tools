@@ -122,11 +122,18 @@ ones you want re-seeded). During development you can also run the tray in the
 foreground with `deno task dev`.
 
 Container wiring lives in the repo-root `.devc/` dir for this repo's
-devcontainer tool: `.devc/devc.json` adds the run-dir bind mount and sets
-`DEVC_BRIDGE_ADDR` / `DEVC_BRIDGE_TOKEN_FILE`, and `.devc/devc-postcreate.sh`
-builds/installs the container-side `devc-bridge` binary. If you use plain Dev
-Containers instead, put the equivalent `mounts` + `containerEnv` +
-`postCreateCommand` in `.devcontainer/devcontainer.json`.
+devcontainer tool: `.devc/devc.json` adds the run-dir bind mount, and
+`.devc/devc-post-create.sh` builds/installs the container-side `devc-bridge`
+binary. No env vars are needed — `DEVC_BRIDGE_ADDR` and
+`DEVC_BRIDGE_TOKEN_FILE` default to exactly the address and mount target used
+here (see [Commands](#commands)); set them only to override. If you use plain
+Dev Containers instead, put the equivalent `mounts` + `postCreateCommand` in
+`.devcontainer/devcontainer.json`.
+
+> **`.devc/` is gitignored in this repo**, so a fresh clone has no bridge wiring
+> — create both files yourself. That is deliberate: reaching out of the container
+> to the host is a per-developer choice, not something a checkout opts everyone
+> into.
 
 Port and bind host are configurable via `DEVC_BRIDGE_PORT` (default `48227`) and
 `DEVC_BRIDGE_HOST` (default `127.0.0.1`); if `host.docker.internal` can't reach
@@ -422,15 +429,15 @@ everything runs as your host user, so keep the scripts few and simple.
 
 Paths are relative to `devc-bridge/` unless noted.
 
-| Path                    | Role                                                                                              |
-| ----------------------- | ------------------------------------------------------------------------------------------------- |
-| `host/main.ts`          | `devc-bridge` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`)                 |
-| `host/config.ts`        | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start)                       |
-| `host/tray.ts`          | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI)                        |
-| `host/core.ts`          | Headless TCP server + dispatch + state watcher                                                    |
-| `host/serve.ts`         | Headless entrypoint (no tray) — used for testing                                                  |
-| `host/token.ts`         | Generate/persist the shared token                                                                 |
-| `host/commands/`        | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands` |
-| `client/devc-bridge.ts` | Container client CLI                                                                              |
-| `../.devc/`             | Devcontainer tool config (repo root): run-dir bind-mount + env + client install                   |
-| `icons/`                | Source PNGs for the app icon + the tray icons (embedded in `tray.ts`)                             |
+| Path                    | Role                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `host/main.ts`          | `devc-bridge` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`)                           |
+| `host/config.ts`        | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start)                                 |
+| `host/tray.ts`          | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI)                                  |
+| `host/core.ts`          | Headless TCP server + dispatch + state watcher                                                              |
+| `host/serve.ts`         | Headless entrypoint (no tray) — used for testing                                                            |
+| `host/token.ts`         | Generate/persist the shared token                                                                           |
+| `host/commands/`        | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands`           |
+| `client/devc-bridge.ts` | Container client CLI                                                                                        |
+| `../.devc/`             | Devcontainer tool config (repo root, gitignored): run-dir bind-mount + `devc-post-create.sh` client install |
+| `icons/`                | Source PNGs for the app icon + the tray icons (embedded in `tray.ts`)                                       |

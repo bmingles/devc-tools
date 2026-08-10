@@ -281,6 +281,8 @@ Deno.test('materializeDefaultConfig copies the embedded tree flat to cacheDir an
         'initialize-command.sh',
         'scripts/agents-setup.sh',
         'scripts/node-setup.sh',
+        'scripts/git-setup.sh',
+        'scripts/project-hook.sh',
         'scripts/bashrc-additions.sh',
       ]
     ) {
@@ -360,6 +362,8 @@ Deno.test('materializeDefaultConfig writes the embedded tree to real disk (defau
       'initialize-command.sh',
       'scripts/agents-setup.sh',
       'scripts/node-setup.sh',
+      'scripts/git-setup.sh',
+      'scripts/project-hook.sh',
       'scripts/bashrc-additions.sh',
     ]
   ) {
