@@ -44,10 +44,16 @@ of the box:
 
 | Command                          | Does                                                                          |
 | ---------------------------------- | ---------------------------------------------------------------------------------- |
-| `caffeinate start\|stop\|status`   | Keep the host Mac awake / check status (macOS-only; runs the real `caffeinate(8)`)  |
-| `ping [label]`                    | Reserved builtin — records activity and drives `caffeinate`'s idle-timeout keepalive. See [Wiring into Claude Code hooks](#wiring-into-claude-code-hooks). |
+| `ping [label]`                    | **The normal way to keep the host awake.** Reserved builtin — records activity and starts/stops `caffeinate` for you on an idle timeout. Wire it into hooks per [Wiring into Claude Code hooks](#wiring-into-claude-code-hooks) and forget it exists. |
+| `caffeinate start\|stop\|status`   | The keepalive's own on/off switch, exposed directly (macOS-only; runs the real `caffeinate(8)`). Manual/advanced use only — see below. |
 | `echo <args...>`                  | Round-trip smoke test — echoes args back                                           |
 | `toggle on\|off`                   | Demo command that flips a state marker (exercises the tray without needing macOS)  |
+
+**In normal use you never call `caffeinate` yourself** — `ping` drives it
+automatically once it's wired into hooks. Reach for `caffeinate start`/`stop`/
+`status` directly only to force the Mac awake outside of any hook activity, or
+to debug/inspect state by hand. See [Wiring into Claude Code hooks](#wiring-into-claude-code-hooks)
+for how the two interact (adoption, manual-stop-wins, etc.).
 
 These are plain executable scripts in `~/.config/devc-bridge/commands/`
 (seeded from `host/commands/` on first `start`, yours to edit) — `ping` is the
@@ -103,8 +109,8 @@ Port and bind host are configurable via `DEVC_BRIDGE_PORT` (default `48227`) and
 loopback in your setup, set `DEVC_BRIDGE_HOST=0.0.0.0` (the token still guards
 access).
 
-Verify the container can reach the bridge: `devc-bridge caffeinate status`
-(see [Commands](#commands) for the rest of the container CLI).
+Verify the container can reach the bridge: `devc-bridge ping test` should
+print `pong` (see [Commands](#commands) for the rest of the container CLI).
 
 ## Wiring into Claude Code hooks
 
