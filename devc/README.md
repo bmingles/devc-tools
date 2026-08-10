@@ -246,14 +246,23 @@ replaces the same-named bundled one — everywhere the bundle is used:
 - The two lifecycle entry scripts and `scripts/*.sh` get their exec bit restored
   on scaffold; a _new_ top-level `*.sh` a template adds does not, which is
   cosmetic since both hooks are invoked as `bash "<path>"`.
+- **`devc.json` does not belong here** — it is skipped, with a warning on
+  stderr. The two are adjacent paths meaning opposite things: `templates/` holds
+  files _copied into_ a project's `.devcontainer/`, which run without `devc`
+  installed, while the [overlay](#optional-overlay-devcjson) is a devc-only
+  layer applied as flags at launch. A `devc.json` left here would be copied to
+  `<project>/.devcontainer/devc.json` and read back as that _project's own_
+  overlay — the highest-precedence slot — putting your machine's bind mounts
+  into every repo you scaffold. For mounts that apply to every project, the file
+  goes one level up, at `~/.config/devc/devc.jsonc`.
 
 ## Claude config: `~/.config/devc/.claude`
 
 Anything you want the in-container agent to see goes in
-`~/.config/devc/.claude`. The directory is bind-mounted read-only at
-`/usr/local/share/devc/claude-seed`, and on every container create
-`scripts/agents-setup.sh` (run by `post-create.sh`) symlinks each entry into the
-container's `~/.claude`:
+`~/.config/devc/.claude` — **you put it there, and nothing else gets in.** The
+directory is bind-mounted read-only at `/usr/local/share/devc/claude-seed`, and
+on every container create `scripts/agents-setup.sh` (run by `post-create.sh`)
+symlinks each entry into the container's `~/.claude`:
 
 ```text
 ~/.config/devc/.claude/CLAUDE.md      →  /home/vscode/.claude/CLAUDE.md
@@ -268,17 +277,31 @@ container's `~/.claude`:
   recreate. File modes carry over, so `statusline.sh` keeps its exec bit.
 - **Deletions are honored.** Remove a file here and its link disappears on the
   next container create.
-- **Missing is fine.** `devc` creates the directory if absent; an empty one is
-  valid. Files that aren't there simply aren't linked.
+- **Missing is fine.** `devc` creates the directory if absent, and says so the
+  once. An empty one is valid — files that aren't there simply aren't linked.
+- **Nothing is copied in for you**, and in particular your host `~/.claude` is
+  never read. Whether your personal `CLAUDE.md`, `settings.json` or
+  `statusline.sh` should reach every container is a decision only you can make,
+  so making it means copying (or symlinking) the file in yourself:
+
+  ```sh
+  cp ~/.claude/CLAUDE.md ~/.config/devc/.claude/
+  ```
+
+  Copy, and the container gets a snapshot you can diverge from the host's. Symlink
+  (`ln -s`), and the two stay identical — the seed mount is live, so either way
+  edits land without a rebuild.
 - The container's own `~/.claude` stays a per-workspace volume, so `projects/`,
   `todos/`, and credentials persist per project and are never touched by this.
 
-Migrating from an older `devc`: the first time the directory is created, `devc`
-copies `~/.claude/CLAUDE.md`, `~/.claude/settings.devc.json` (→
-`settings.json`), and `~/.claude/statusline.sh` into it, leaving the originals
-in place. Projects whose `.devcontainer/devcontainer.json` was written by an
-earlier `devc` still carry three per-file binds — `devc` writes infra mounts
-once at creation and never re-asserts them, so replace them by hand with:
+Migrating from an older `devc`: nothing is migrated automatically. Copy in
+whichever of `~/.claude/CLAUDE.md`, `~/.claude/settings.devc.json` (→
+`settings.json`) and `~/.claude/statusline.sh` you actually want — the `.devc`
+suffix existed only to avoid colliding with the real `~/.claude/settings.json`,
+and a dedicated directory removes the collision. Projects whose
+`.devcontainer/devcontainer.json` was written by an earlier `devc` also still
+carry three per-file binds — `devc` writes infra mounts once at creation and
+never re-asserts them, so replace them by hand with:
 
 ```jsonc
 "initializeCommand": "mkdir -p \"$HOME/.config/devc/.claude\"",

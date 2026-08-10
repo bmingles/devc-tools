@@ -133,8 +133,8 @@ only deletes the Feature reference and sets `postCreateCommand`, so
 pinning that.
 
 `ensureClaudeSeedDir` (below) stays regardless — the hook guarantees existence,
-while the function owns the not-a-directory guard, the one-time migration, and
-the readable error. The two are complementary, not redundant.
+while the function owns the not-a-directory guard and the readable error. The two
+are complementary, not redundant.
 
 ### `post-create.sh` behavior
 
@@ -227,8 +227,7 @@ Signature — parameters exist purely as test seams, mirroring
 ```ts
 export async function ensureClaudeSeedDir(
   seedDir?: string, // defaults to `${CONFIG_DIR}/.claude`
-  migrateFrom?: string, // defaults to `${homeDir()}/.claude`
-): Promise<{ created: boolean; migrated: string[] }>;
+): Promise<{ created: boolean }>;
 ```
 
 Behavior:
@@ -238,22 +237,20 @@ Behavior:
    when the path is a regular file or a _dangling symlink_. So after the mkdir,
    `Deno.stat` the path and throw an error naming it if it is not a directory;
    otherwise the failure surfaces later as an opaque Docker mount error.
-2. **Migration, only when step 1 actually created the dir** (so files the user
-   deliberately deleted are not resurrected). For each source that exists under
-   `migrateFrom`, copy to `seedDir`:
+2. **The directory is created empty and stays that way.** Nothing is ever
+   copied out of the host's real `~/.claude` — not on first creation, not ever.
+   Republishing a machine's personal `CLAUDE.md`/`settings.json`/`statusline.sh`
+   into every container is a decision only the user can make, and they make it
+   by putting the file in the seed dir themselves (`cp` for a snapshot they can
+   diverge, `ln -s` to track the host copy). The `settings.devc.json` →
+   `settings.json` rename is documentation for someone doing that by hand, not
+   behavior.
 
-   | From                 | To              |
-   | -------------------- | --------------- |
-   | `CLAUDE.md`          | `CLAUDE.md`     |
-   | `settings.devc.json` | `settings.json` |
-   | `statusline.sh`      | `statusline.sh` |
-
-   Use `Deno.copyFile`, which copies permissions on Unix — `statusline.sh` keeps
-   its exec bit. Host files are left in place (copy, not move). Return the
-   copied basenames in `migrated`.
-3. `startContainer` prints one line when `migrated` is non-empty, naming the
-   seed dir (via `displayPath` from `config.ts`) and the files copied, so the
-   one-time move is visible.
+   Return `created` so the caller can report the one-time creation. Whether
+   `created` was true must **not** gate any copying — there is none.
+3. `startContainer` prints one line when `created` is true, naming the seed dir
+   (via `displayPath` from `config.ts`) and what belongs in it, so an empty
+   directory the user has never heard of is still discoverable.
 
 ## Out of scope
 
@@ -275,15 +272,15 @@ once at creation and never re-asserts them (see the module comment in
       `~/.claude.json` symlink block.
 - [x] `devc/default_config.ts`: export `ensureClaudeSeedDir` (and a
       `CLAUDE_SEED_HOST_DIR` constant for `${CONFIG_DIR}/.claude`), including
-      the not-a-directory guard and the create-only migration.
+      the not-a-directory guard. No copying from the host `~/.claude`.
 - [x] `devc/container.ts`: call `ensureClaudeSeedDir` in `startContainer` before
-      spawning `devcontainer`, and print the migration line when files were
-      copied.
+      spawning `devcontainer`, and print one line when `created` is true saying
+      what belongs in the (empty) directory.
 - [x] `devc/tests/default_config_test.ts`: tests for `ensureClaudeSeedDir` —
-      creates the dir; idempotent on a second call (`created: false`); migrates
-      the three files with the `settings.devc.json` → `settings.json` rename;
-      `statusline.sh` stays executable; no migration when the dir already
-      existed; throws a path-naming error when the target is a regular file.
+      creates the dir; idempotent on a second call (`created: false`); the
+      created dir is **empty** even when the host `~/.claude` holds
+      `CLAUDE.md`/`settings.json`/`settings.devc.json`/`statusline.sh`; throws a
+      path-naming error when the target is a regular file or dangling symlink.
 - [x] `devc/tests/wizard_apply_test.ts`: update the infra-mount assertion at
       line 63 (`/home/vscode/.claude/CLAUDE.md`) to assert the seed mount target
       instead.
@@ -326,11 +323,12 @@ Run from `/workspaces/devc-tools/devc` unless noted.
       next run; a non-seed symlink in `CLAUDE_DIR` survives the prune; a
       pre-existing plain file at the destination is replaced by the link.
 - [ ] End-to-end, zero-config: with `~/.config/devc/.claude` absent and
-      `~/.claude/{CLAUDE.md,settings.devc.json,statusline.sh}` present,
-      `devc up` in a folder with no `.devcontainer/` succeeds, prints the
-      migration line, and afterwards `devc exec . -- ls -l /home/vscode/.claude`
-      shows `CLAUDE.md`, `settings.json`, and `statusline.sh` as symlinks into
-      `/usr/local/share/devc/claude-seed`.
+      `~/.claude/{CLAUDE.md,settings.devc.json,statusline.sh}` present, `devc up`
+      in a folder with no `.devcontainer/` succeeds, prints the created-it line,
+      and leaves the seed dir **empty** — nothing was taken from `~/.claude`.
+      Then `cp ~/.claude/CLAUDE.md ~/.config/devc/.claude/`, `devc build`, and
+      `devc exec . -- ls -l /home/vscode/.claude` shows `CLAUDE.md` as a symlink
+      into `/usr/local/share/devc/claude-seed`.
 - [ ] End-to-end, missing files: with `~/.config/devc/.claude` empty, `devc up`
       succeeds (this is the case that fails today).
 - [ ] **No-`devc` path:** delete `~/.config/devc/.claude` entirely, then bring a
@@ -355,17 +353,17 @@ Run from `/workspaces/devc-tools/devc` unless noted.
 
 ## Relevant Files
 
-| File                                        | Change                                                                |
-| ------------------------------------------- | --------------------------------------------------------------------- |
-| `devc/default/devcontainer.json`            | Three per-file `~/.claude` binds → one seed directory bind.           |
-| `devc/default/features/devc/post-create.sh` | New prune + link block.                                               |
-| `devc/default_config.ts`                    | `CLAUDE_SEED_HOST_DIR`, `ensureClaudeSeedDir` with migration.         |
-| `devc/container.ts`                         | Call `ensureClaudeSeedDir` in `startContainer`; print migration line. |
-| `devc/tests/default_config_test.ts`         | New `ensureClaudeSeedDir` tests.                                      |
-| `devc/tests/wizard_apply_test.ts`           | Update infra-mount assertion (line 63).                               |
-| `devc/README.md`                            | Document the config dir + manual migration for existing projects.     |
-| `.plans/design/devc-design.md`              | Update the bundled-default / Feature runtime-setup section.           |
-| `.plans/PLAN.md`                            | Status + phase row.                                                   |
+| File                                        | Change                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------- |
+| `devc/default/devcontainer.json`            | Three per-file `~/.claude` binds → one seed directory bind.         |
+| `devc/default/features/devc/post-create.sh` | New prune + link block.                                             |
+| `devc/default_config.ts`                    | `CLAUDE_SEED_HOST_DIR`, `ensureClaudeSeedDir` (no host copying).    |
+| `devc/container.ts`                         | Call `ensureClaudeSeedDir` in `startContainer`; print created line. |
+| `devc/tests/default_config_test.ts`         | New `ensureClaudeSeedDir` tests.                                    |
+| `devc/tests/wizard_apply_test.ts`           | Update infra-mount assertion (line 63).                             |
+| `devc/README.md`                            | Document the config dir; migration is manual, by design.            |
+| `.plans/design/devc-design.md`              | Update the bundled-default / Feature runtime-setup section.         |
+| `.plans/PLAN.md`                            | Status + phase row.                                                 |
 
 No changes needed in the root `README.md` (no `~/.claude` references),
 `mounts.ts`, or the wizard TUI — the seed mount is infra, not a managed fence,

@@ -13,8 +13,8 @@ export const CONFIG_DIR = `${homeDir()}/.config/devc`;
 /**
  * User-level template directory, `~/.config/devc/templates`. A **sparse** overlay on the bundled
  * `default/` tree: any file placed here overrides the same-named bundled file, per file, in both
- * the zero-config cache ({@link materializeDefaultConfig}) and what `devc init` / `devc config`
- * write into a project ({@link loadBundledDevcontainerJson}, {@link copyBundledAssets}).
+ * the zero-config cache ({@link materializeDefaultConfig}) and what `devc init` writes into a
+ * project ({@link copyBundledAssets}).
  *
  * Never seeded. It stays absent until the user creates it and holds only the files they want to
  * change, so a `devc` upgrade keeps shipping its new defaults for everything else — the reason
@@ -22,6 +22,25 @@ export const CONFIG_DIR = `${homeDir()}/.config/devc`;
  * restores the bundled version on the next run.
  */
 export const TEMPLATES_DIR = `${CONFIG_DIR}/templates`;
+
+/**
+ * Overlay filenames that must never ride the template layer into a devcontainer.
+ *
+ * `templates/` and the `devc.json` overlay are adjacent paths with opposite meanings, and the
+ * mistake is an easy one: `templates/` holds files that are *copied into* a project's
+ * `.devcontainer/` and run without `devc` installed, while the overlay is a devc-only layer read
+ * from `CONFIG_DIR` and applied as `devcontainer up` flags at launch. A `devc.json` left in
+ * `templates/` would be copied to `<project>/.devcontainer/devc.json` by
+ * {@link copyBundledAssets} and read back as that project's *own* overlay — the highest-precedence
+ * slot — putting one machine's bind mounts into every scaffolded repo.
+ *
+ * So it is skipped, and {@link overlayDirFrom} says so on stderr: silently dropping the file would
+ * leave exactly the "why isn't my overlay working" that put it there.
+ */
+const TEMPLATE_OVERLAY_FILENAMES: readonly string[] = [
+  'devc.json',
+  'devc.jsonc',
+];
 
 /**
  * Host directory holding the user's `~/.claude` config for containers. Bind-mounted read-only
@@ -34,43 +53,30 @@ export const CLAUDE_SEED_HOST_DIR = `${CONFIG_DIR}/.claude`;
 /** Container path the seed directory is bind-mounted at (mirrors the bundled default). */
 export const CLAUDE_SEED_TARGET = '/usr/local/share/devc/claude-seed';
 
-/**
- * Files copied out of `~/.claude` into the seed directory the first time it is created, so an
- * existing setup keeps working after the switch from three per-file bind mounts. The rename
- * drops the `.devc` suffix, which only existed to avoid colliding with the real
- * `~/.claude/settings.json`; a dedicated directory removes the collision.
- */
-const CLAUDE_SEED_MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
-  ['CLAUDE.md', 'CLAUDE.md'],
-  // ['settings.devc.json', 'settings.json'],
-  // ['statusline.sh', 'statusline.sh'],
-];
-
 /** Outcome of `ensureClaudeSeedDir`. */
 export interface ClaudeSeedResult {
   /** True when this call created the directory (false when it already existed). */
   created: boolean;
-  /** Seed-side names copied from `~/.claude` (empty unless this call created the directory). */
-  migrated: string[];
 }
 
 /**
- * Create the host seed directory if absent, and on first creation only, copy the three files
- * the old per-file bind mounts referenced out of `migrateFrom`.
+ * Create the host seed directory if absent, and report whether this call is what created it.
+ *
+ * The directory starts and stays **empty** — what reaches the container is whatever the user
+ * puts here, and nothing else. Nothing is ever copied out of the host's real `~/.claude`: those
+ * are that machine's personal settings, and silently republishing them into every container is
+ * the user's call to make, not devc's. Earlier versions did copy three files in on first
+ * creation, as a migration off the per-file bind mounts; that is gone, and a setup still on the
+ * old shape moves its files across by hand (see the README).
  *
  * The bundled default's `initializeCommand` also creates this directory, so a project config
- * works without `devc` installed. This function still runs on every `up` because it owns the
- * things a shell one-liner cannot: the not-a-directory guard and the one-time migration.
+ * works without `devc` installed. This function still runs on every `up` because it owns the one
+ * thing a shell one-liner cannot: the not-a-directory guard.
  *
- * Migration is gated on *this call* having created the directory, so files the user later
- * deletes from the seed are not resurrected on the next `up`. Host originals are left in
- * place. `Deno.copyFile` copies permissions on Unix, so `statusline.sh` keeps its exec bit.
- *
- * `seedDir` / `migrateFrom` default to the real paths and only need overriding in tests.
+ * `seedDir` defaults to the real path and only needs overriding in tests.
  */
 export async function ensureClaudeSeedDir(
   seedDir: string = CLAUDE_SEED_HOST_DIR,
-  migrateFrom: string = `${homeDir()}/.claude`,
 ): Promise<ClaudeSeedResult> {
   // Whether we created it has to be decided before the mkdir: recursive mkdir succeeds
   // silently on an existing directory, so it cannot report the difference. lstat (not stat) so
@@ -93,18 +99,7 @@ export async function ensureClaudeSeedDir(
       `${seedDir} exists but is not a directory (expected the devc ~/.claude config folder)`,
     );
   }
-  if (!created) return { created, migrated: [] };
-
-  const migrated: string[] = [];
-  for (const [from, to] of CLAUDE_SEED_MIGRATIONS) {
-    try {
-      await Deno.copyFile(`${migrateFrom}/${from}`, `${seedDir}/${to}`);
-      migrated.push(to);
-    } catch (err) {
-      if (!(err instanceof Deno.errors.NotFound)) throw err;
-    }
-  }
-  return { created, migrated };
+  return { created };
 }
 
 /**
@@ -156,7 +151,11 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
  * into subdirectories. Files already in `destDir` that the source does not have are left alone —
  * this is an overlay, not a mirror. A missing `sourceDir` is a silent no-op.
  *
- * `skipTopLevel` names entries to leave out, at the top level only.
+ * This is the *only* mechanism the template layer has, so every caller passes
+ * {@link TEMPLATES_DIR} as `sourceDir` and the {@link TEMPLATE_OVERLAY_FILENAMES} guard lives
+ * here rather than at the call sites. It applies at the top level only: a nested
+ * `scripts/devc.json` is an ordinary data file with no overlay meaning. `topLevel` is internal to
+ * the recursion and should not be passed.
  *
  * `Deno.copyFile` rather than read+write: unlike {@link copyDir}'s embedded-asset path, this
  * copies from a real filesystem where the user's own modes are worth preserving.
@@ -164,7 +163,7 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
 async function overlayDirFrom(
   sourceDir: string,
   destDir: string,
-  skipTopLevel: ReadonlySet<string> = new Set(),
+  topLevel = true,
 ): Promise<void> {
   const entries: Deno.DirEntry[] = [];
   try {
@@ -177,11 +176,22 @@ async function overlayDirFrom(
 
   await Deno.mkdir(destDir, { recursive: true });
   for (const entry of entries) {
-    if (skipTopLevel.has(entry.name)) continue;
+    if (
+      topLevel && !entry.isDirectory &&
+      TEMPLATE_OVERLAY_FILENAMES.includes(entry.name)
+    ) {
+      console.error(
+        `devc: ignoring ${sourceDir}/${entry.name} — the devc.json overlay is read from ` +
+          `${CONFIG_DIR}/devc.jsonc, not from the templates directory (which holds files copied ` +
+          `into a project's .devcontainer/). Move it up one level to apply it to every project.`,
+      );
+      continue;
+    }
     if (entry.isDirectory) {
       await overlayDirFrom(
         `${sourceDir}/${entry.name}`,
         `${destDir}/${entry.name}`,
+        false,
       );
     } else {
       await Deno.copyFile(
@@ -256,73 +266,37 @@ export async function materializeDefaultConfig(
 }
 
 /**
- * Read the `default/devcontainer.json` text — the base a first-creation `devc config` inserts its
- * two fences into. A `devcontainer.json` in `templatesDir` wins over the embedded one, so a user
- * customization reaches project-mode configs as well as the zero-config cache; without that,
- * running `devc config` on a project would silently discard it.
+ * Copy the whole embedded `default/` tree into `destDir` (a project's `.devcontainer/`) — the
+ * `devcontainer.json`, the `Dockerfile`, the `post-create.sh` and `initialize-command.sh`
+ * lifecycle entry scripts, and the `scripts/` sub-dependency subtree — then overlay
+ * `templatesDir` on top, per file, so a user's own `Dockerfile`, `scripts/*.sh` or
+ * `devcontainer.json` reaches project mode too.
  *
- * Every *other* bundled file (Dockerfile, `post-create.sh`, `initialize-command.sh`, `scripts/`)
- * is written by {@link copyBundledAssets}.
- */
-export async function loadBundledDevcontainerJson(
-  templatesDir: string = TEMPLATES_DIR,
-): Promise<string> {
-  try {
-    return await Deno.readTextFile(`${templatesDir}/devcontainer.json`);
-  } catch (err) {
-    if (!(err instanceof Deno.errors.NotFound)) throw err;
-  }
-  return await Deno.readTextFile(new URL('devcontainer.json', DEFAULT_DIR_URL));
-}
-
-/**
- * Copy every embedded `default/` asset *except* `devcontainer.json` into `destDir`
- * (a project's `.devcontainer/`): the `Dockerfile`, the `post-create.sh` and
- * `initialize-command.sh` lifecycle entry scripts, and the `scripts/` sub-dependency
- * subtree. `devcontainer.json` is skipped because the wizard writes it itself (fenced) — via
- * {@link loadBundledDevcontainerJson}, which applies the template layer to it separately.
- *
- * Any same-named file in `templatesDir` is then overlaid on top, per file, so a user's own
- * `Dockerfile` or `scripts/*.sh` reaches project mode too.
+ * Every bundled file goes through the same two steps, `devcontainer.json` included. It used to be
+ * excluded here and written separately by the caller, back when `devc config` spliced its managed
+ * mount fences into the text on first creation; those fences now live in the `devc.json` overlay,
+ * so nothing needs the config as an editable string on the way in and the exception bought only a
+ * second code path to keep in sync.
  */
 export async function copyBundledAssets(
   destDir: string,
   templatesDir: string = TEMPLATES_DIR,
 ): Promise<void> {
-  await Deno.mkdir(destDir, { recursive: true });
-  for await (const entry of Deno.readDir(DEFAULT_DIR_URL)) {
-    if (entry.name === 'devcontainer.json') continue;
-    if (entry.isDirectory) {
-      await copyDir(
-        new URL(`${entry.name}/`, DEFAULT_DIR_URL),
-        `${destDir}/${entry.name}`,
-      );
-    } else {
-      const bytes = await Deno.readFile(new URL(entry.name, DEFAULT_DIR_URL));
-      await Deno.writeFile(`${destDir}/${entry.name}`, bytes);
-    }
-  }
-  await overlayDirFrom(
-    templatesDir,
-    destDir,
-    new Set(['devcontainer.json']),
-  );
+  await copyDir(DEFAULT_DIR_URL, destDir);
+  await overlayDirFrom(templatesDir, destDir);
 }
 
 /**
- * Copy every bundled asset except `devcontainer.json` into `destDir` (a project's
- * `.devcontainer/`) via {@link copyBundledAssets}, then restore the exec bit on the two
- * lifecycle entry scripts and their `scripts/*.sh` delegates. Returns the top-level paths
- * written, in a stable order, for callers that report them.
+ * Copy the bundled assets into `destDir` (a project's `.devcontainer/`) via
+ * {@link copyBundledAssets}, then restore the exec bit on the two lifecycle entry scripts and
+ * their `scripts/*.sh` delegates. Returns the top-level paths written, in a stable order
+ * (`devcontainer.json` first), for callers that report them.
  *
  * `copyBundledAssets` writes files 0644, so the chmod is what lets a dev run the scripts by hand
  * (`post-create.sh` invokes its steps via `bash`, so this is cleanliness rather than
  * correctness). The list is deliberately fixed rather than derived: a new top-level `*.sh` that a
  * user template adds does not get the exec bit, which is cosmetic since both lifecycle hooks are
  * invoked as `bash "<path>"`.
- *
- * Shared by `devc config`'s first-creation path and `devc init`, which must produce a
- * byte-identical `.devcontainer/` apart from the mount fences.
  */
 export async function installBundledAssets(
   destDir: string,
@@ -343,6 +317,7 @@ export async function installBundledAssets(
   for (const path of executable) await Deno.chmod(path, 0o755);
 
   return [
+    `${destDir}/devcontainer.json`,
     `${destDir}/Dockerfile`,
     `${destDir}/post-create.sh`,
     `${destDir}/initialize-command.sh`,

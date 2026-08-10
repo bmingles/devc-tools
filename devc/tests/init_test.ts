@@ -1,6 +1,15 @@
 import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
 import { initProject } from '../init.ts';
-import { loadBundledDevcontainerJson } from '../default_config.ts';
+
+/** The embedded baseline, read straight off disk — no template layer, no helper in between. */
+const bundledDevcontainerJson = () =>
+  Deno.readTextFile(new URL('../default/devcontainer.json', import.meta.url));
+
+/**
+ * A templates dir that cannot exist, so these assertions hold regardless of whether the machine
+ * running the tests happens to have a `~/.config/devc/templates/devcontainer.json`.
+ */
+const NO_TEMPLATES = '/nonexistent/devc-templates';
 
 async function withTempDir(fn: (tmp: string) => Promise<void>) {
   const tmp = await Deno.makeTempDir();
@@ -36,10 +45,10 @@ Deno.test('initProject writes the whole bundled .devcontainer/', async () => {
 
 Deno.test('initProject writes devcontainer.json byte-identical to the bundled default', async () => {
   await withTempDir(async (tmp) => {
-    const { configPath } = await initProject(tmp);
+    const { configPath } = await initProject(tmp, NO_TEMPLATES);
     assertEquals(
       await Deno.readTextFile(configPath),
-      await loadBundledDevcontainerJson(),
+      await bundledDevcontainerJson(),
     );
   });
 });
@@ -179,10 +188,10 @@ Deno.test('initProject names the offending directory and its contents in the err
 Deno.test('initProject succeeds into an existing but empty .devcontainer/', async () => {
   await withTempDir(async (tmp) => {
     await Deno.mkdir(`${tmp}/.devcontainer`);
-    const { configPath } = await initProject(tmp);
+    const { configPath } = await initProject(tmp, NO_TEMPLATES);
     assertEquals(
       await Deno.readTextFile(configPath),
-      await loadBundledDevcontainerJson(),
+      await bundledDevcontainerJson(),
     );
   });
 });

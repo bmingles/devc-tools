@@ -4,7 +4,6 @@ import {
   ensureClaudeSeedDir,
   findOwnDevcontainerConfig,
   installBundledAssets,
-  loadBundledDevcontainerJson,
   loadResolvedRemoteEnv,
   materializeDefaultConfig,
   substituteVars,
@@ -569,33 +568,10 @@ Deno.test('a file in a previous cache but in neither bundled nor templates is pr
   });
 });
 
-Deno.test('loadBundledDevcontainerJson prefers a templates devcontainer.json', async () => {
-  await withTempDir(async (tmp) => {
-    const templates = `${tmp}/templates`;
-    await mkdir(templates);
-    await Deno.writeTextFile(
-      `${templates}/devcontainer.json`,
-      '{"name":"mine"}',
-    );
-    assertEquals(
-      await loadBundledDevcontainerJson(templates),
-      '{"name":"mine"}',
-    );
-  });
-});
-
-Deno.test('loadBundledDevcontainerJson falls back to the embedded config when the template is absent', async () => {
-  assertEquals(
-    await loadBundledDevcontainerJson(NO_TEMPLATES),
-    await Deno.readTextFile(
-      new URL('../default/devcontainer.json', import.meta.url),
-    ),
-  );
-});
-
-// `copyBundledAssets` skips `devcontainer.json` in both layers — the wizard writes that itself
-// (fenced), via `loadBundledDevcontainerJson`, which applies the template separately.
-Deno.test('installBundledAssets overlays templates but never writes devcontainer.json', async () => {
+// `devcontainer.json` rides the same per-file overlay as everything else, and is reported first
+// in the written list. No special case: the exception that used to exist here was for the
+// wizard's mount fences, which now live in the `devc.json` overlay instead.
+Deno.test('installBundledAssets overlays templates, devcontainer.json included', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await mkdir(templates);
@@ -607,8 +583,9 @@ Deno.test('installBundledAssets overlays templates but never writes devcontainer
     await Deno.writeTextFile(`${templates}/extra.txt`, 'brought along\n');
 
     const dest = `${tmp}/.devcontainer`;
-    await installBundledAssets(dest, templates);
+    const written = await installBundledAssets(dest, templates);
 
+    assertEquals(written[0], `${dest}/devcontainer.json`);
     assertEquals(
       await Deno.readTextFile(`${dest}/Dockerfile`),
       'FROM scratch\n',
@@ -618,10 +595,8 @@ Deno.test('installBundledAssets overlays templates but never writes devcontainer
       'brought along\n',
     );
     assertEquals(
-      await Deno.stat(`${dest}/devcontainer.json`).then(() => true).catch(() =>
-        false
-      ),
-      false,
+      await Deno.readTextFile(`${dest}/devcontainer.json`),
+      '{"name":"mine"}',
     );
     // The two lifecycle entry scripts still get the exec bit.
     assertEquals(
@@ -631,12 +606,100 @@ Deno.test('installBundledAssets overlays templates but never writes devcontainer
   });
 });
 
+Deno.test('installBundledAssets writes the bundled devcontainer.json when no template overrides it', async () => {
+  await withTempDir(async (tmp) => {
+    const dest = `${tmp}/.devcontainer`;
+    await installBundledAssets(dest, NO_TEMPLATES);
+    assertEquals(
+      await Deno.readTextFile(`${dest}/devcontainer.json`),
+      await Deno.readTextFile(
+        new URL('../default/devcontainer.json', import.meta.url),
+      ),
+    );
+  });
+});
+
+// The guard for the adjacent-paths mistake: `templates/devc.json` would otherwise be copied to
+// `<project>/.devcontainer/devc.json` and read back as that project's own overlay — the
+// highest-precedence slot — putting one machine's mounts into every scaffolded repo. It is
+// skipped, loudly (the warning is what keeps this from reproducing "my overlay does nothing").
+Deno.test('installBundledAssets never copies a devc.json overlay out of templates', async () => {
+  await withTempDir(async (tmp) => {
+    const templates = `${tmp}/templates`;
+    await mkdir(templates);
+    for (const name of ['devc.json', 'devc.jsonc']) {
+      await Deno.writeTextFile(`${templates}/${name}`, '{"mounts":[]}');
+    }
+
+    const dest = `${tmp}/.devcontainer`;
+    const warnings: string[] = [];
+    const realError = console.error;
+    console.error = (...args) => void warnings.push(args.join(' '));
+    try {
+      await installBundledAssets(dest, templates);
+    } finally {
+      console.error = realError;
+    }
+
+    for (const name of ['devc.json', 'devc.jsonc']) {
+      assertEquals(
+        await Deno.stat(`${dest}/${name}`).then(() => true).catch(() => false),
+        false,
+        `expected ${name} not to be copied`,
+      );
+      // Skipping silently would leave exactly the "my overlay does nothing" this guards against,
+      // so the warning has to name the offending file and where the overlay really goes.
+      const warning = warnings.find((w) => w.includes(`${templates}/${name}`));
+      assertEquals(
+        typeof warning,
+        'string',
+        `expected a warning naming ${name}`,
+      );
+      assertEquals(warning!.includes('devc.jsonc'), true);
+    }
+  });
+});
+
+// Top-level only: nested files by that name are ordinary data with no overlay meaning.
+Deno.test('the templates overlay still copies a nested devc.json', async () => {
+  await withTempDir(async (tmp) => {
+    const templates = `${tmp}/templates`;
+    await mkdir(`${templates}/scripts`);
+    await Deno.writeTextFile(`${templates}/scripts/devc.json`, '{"a":1}');
+
+    const dest = `${tmp}/.devcontainer`;
+    await installBundledAssets(dest, templates);
+
+    assertEquals(
+      await Deno.readTextFile(`${dest}/scripts/devc.json`),
+      '{"a":1}',
+    );
+  });
+});
+
+Deno.test('materializeDefaultConfig also refuses a templates devc.json', async () => {
+  await withTempDir(async (tmp) => {
+    const templates = `${tmp}/templates`;
+    await mkdir(templates);
+    await Deno.writeTextFile(`${templates}/devc.json`, '{"mounts":[]}');
+
+    const cacheDir = `${tmp}/cache`;
+    await materializeDefaultConfig(cacheDir, templates);
+
+    assertEquals(
+      await Deno.stat(`${cacheDir}/devc.json`).then(() => true).catch(() =>
+        false
+      ),
+      false,
+    );
+  });
+});
+
 Deno.test('ensureClaudeSeedDir creates the directory and reports it', async () => {
   await withTempDir(async (tmp) => {
     const seed = `${tmp}/seed`;
-    const result = await ensureClaudeSeedDir(seed, `${tmp}/claude`);
+    const result = await ensureClaudeSeedDir(seed);
     assertEquals(result.created, true);
-    assertEquals(result.migrated, []);
     assertEquals((await Deno.stat(seed)).isDirectory, true);
   });
 });
@@ -644,76 +707,33 @@ Deno.test('ensureClaudeSeedDir creates the directory and reports it', async () =
 Deno.test('ensureClaudeSeedDir is idempotent on an existing directory', async () => {
   await withTempDir(async (tmp) => {
     const seed = `${tmp}/seed`;
-    await ensureClaudeSeedDir(seed, `${tmp}/claude`);
-    const second = await ensureClaudeSeedDir(seed, `${tmp}/claude`);
-    assertEquals(second.created, false);
-    assertEquals(second.migrated, []);
+    await ensureClaudeSeedDir(seed);
+    assertEquals((await ensureClaudeSeedDir(seed)).created, false);
   });
 });
 
-Deno.test('ensureClaudeSeedDir migrates the three ~/.claude files on first creation', async () => {
+// Pinned deliberately, and the inverse of what an earlier `devc` did: the seed directory is
+// created *empty* and nothing is ever copied out of the host's real `~/.claude`. Publishing a
+// machine's personal CLAUDE.md/settings into every container is the user's decision to make by
+// putting the file here, so a regression that "helpfully" seeds it must fail.
+Deno.test('ensureClaudeSeedDir creates an empty directory, copying nothing from ~/.claude', async () => {
   await withTempDir(async (tmp) => {
-    const claude = `${tmp}/claude`;
-    await mkdir(claude);
-    await Deno.writeTextFile(`${claude}/CLAUDE.md`, '# instructions\n');
-    await Deno.writeTextFile(`${claude}/settings.devc.json`, '{"a":1}\n');
-    await Deno.writeTextFile(`${claude}/statusline.sh`, '#!/bin/sh\necho hi\n');
-    await Deno.chmod(`${claude}/statusline.sh`, 0o755);
-    // Not in the migration list — a directory must not come along.
-    await mkdir(`${claude}/skills`);
+    const home = `${tmp}/home/.claude`;
+    await mkdir(home);
+    for (
+      const name of [
+        'CLAUDE.md',
+        'settings.json',
+        'settings.devc.json',
+        'statusline.sh',
+      ]
+    ) {
+      await Deno.writeTextFile(`${home}/${name}`, 'personal\n');
+    }
 
     const seed = `${tmp}/seed`;
-    const result = await ensureClaudeSeedDir(seed, claude);
-
-    assertEquals(result.created, true);
-    assertEquals(result.migrated, [
-      'CLAUDE.md',
-      'settings.json',
-      'statusline.sh',
-    ]);
-    // settings.devc.json is renamed; the .devc suffix is no longer needed.
-    assertEquals(await Deno.readTextFile(`${seed}/settings.json`), '{"a":1}\n');
-    assertEquals(
-      await Deno.readTextFile(`${seed}/CLAUDE.md`),
-      '# instructions\n',
-    );
-    assertEquals(
-      await Deno.stat(`${seed}/settings.devc.json`).then(() => true).catch(
-        () => false,
-      ),
-      false,
-    );
-    assertEquals(
-      await Deno.stat(`${seed}/skills`).then(() => true).catch(() => false),
-      false,
-    );
-    // copyFile carries permissions on Unix, so the statusline stays executable.
-    assertEquals(
-      (await Deno.stat(`${seed}/statusline.sh`)).mode! & 0o111,
-      0o111,
-    );
-    // The host originals are copied, not moved.
-    assertEquals((await Deno.stat(`${claude}/CLAUDE.md`)).isFile, true);
-  });
-});
-
-Deno.test('ensureClaudeSeedDir skips migration when the seed directory already exists', async () => {
-  await withTempDir(async (tmp) => {
-    const claude = `${tmp}/claude`;
-    await mkdir(claude);
-    await Deno.writeTextFile(`${claude}/CLAUDE.md`, '# instructions\n');
-    const seed = `${tmp}/seed`;
-    await mkdir(seed);
-
-    const result = await ensureClaudeSeedDir(seed, claude);
-
-    assertEquals(result.created, false);
-    assertEquals(result.migrated, []);
-    // A file the user deleted from the seed is not resurrected.
-    assertEquals(
-      await Deno.stat(`${seed}/CLAUDE.md`).then(() => true).catch(() => false),
-      false,
-    );
+    assertEquals((await ensureClaudeSeedDir(seed)).created, true);
+    assertEquals([...Deno.readDirSync(seed)], []);
   });
 });
 
@@ -722,7 +742,7 @@ Deno.test('ensureClaudeSeedDir rejects a seed path that is not a directory', asy
     const seed = `${tmp}/seed`;
     await Deno.writeTextFile(seed, 'oops\n');
     await assertRejects(
-      () => ensureClaudeSeedDir(seed, `${tmp}/claude`),
+      () => ensureClaudeSeedDir(seed),
       Error,
       'is not a directory',
     );
@@ -736,7 +756,7 @@ Deno.test('ensureClaudeSeedDir rejects a dangling symlink at the seed path', asy
     // not-a-directory guard is what turns this into a readable error.
     await Deno.symlink(`${tmp}/nonexistent`, seed);
     await assertRejects(
-      () => ensureClaudeSeedDir(seed, `${tmp}/claude`),
+      () => ensureClaudeSeedDir(seed),
       Error,
       'is not a directory',
     );

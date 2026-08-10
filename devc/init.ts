@@ -5,7 +5,6 @@
 import {
   findOwnDevcontainerConfig,
   installBundledAssets,
-  loadBundledDevcontainerJson,
 } from './default_config.ts';
 
 export interface InitResult {
@@ -36,9 +35,9 @@ function summarize(names: string[], limit = 4): string {
 }
 
 /**
- * Write the bundled default `.devcontainer/` into `projectDir`: `devcontainer.json` verbatim
- * (comments preserved, no `devc:source`/`devc:skills` fences) plus every other bundled asset via
- * {@link installBundledAssets}.
+ * Write the bundled default `.devcontainer/` into `projectDir` via {@link installBundledAssets}:
+ * `devcontainer.json` verbatim (comments preserved, no `devc:source`/`devc:skills` fences) plus
+ * every other bundled asset.
  *
  * The user template layer applies: any file in `templatesDir` overrides the same-named bundled
  * one. It defaults to the real `~/.config/devc/templates` and only needs overriding in tests.
@@ -88,18 +87,8 @@ export async function initProject(
     );
   }
 
-  const configPath = `${devcontainerDir}/devcontainer.json`;
-  await Deno.mkdir(devcontainerDir, { recursive: true });
-  await Deno.writeTextFile(
-    configPath,
-    await loadBundledDevcontainerJson(templatesDir),
-  );
-
   return {
-    configPath,
-    written: [
-      configPath,
-      ...(await installBundledAssets(devcontainerDir, templatesDir)),
-    ],
+    configPath: `${devcontainerDir}/devcontainer.json`,
+    written: await installBundledAssets(devcontainerDir, templatesDir),
   };
 }

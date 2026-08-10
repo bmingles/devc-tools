@@ -546,12 +546,15 @@ export async function startContainer(
 
   // The ~/.claude seed mount's source must exist before `devcontainer up` runs: a bind mount
   // with a missing source is a hard error, not an auto-created directory.
+  // Announced on creation only: the directory is empty and stays that way until the user puts
+  // something in it, so without this the one place their own CLAUDE.md/settings.json can reach
+  // the container is a path they have to already know about.
   const seed = await ensureClaudeSeedDir();
-  if (seed.migrated.length > 0) {
+  if (seed.created) {
     console.log(
-      `devc: moved ${seed.migrated.join(', ')} into ${
+      `devc: created ${
         displayPath(CLAUDE_SEED_HOST_DIR)
-      }`,
+      } — files you drop in here (CLAUDE.md, settings.json, statusline.sh, …) are linked into the container's ~/.claude`,
     );
   }
 

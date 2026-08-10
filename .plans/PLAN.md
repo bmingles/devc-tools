@@ -15,8 +15,10 @@
   per-file `~/.claude/*` host binds with one read-only directory bind of
   `~/.config/devc/.claude`, symlinked into the `.claude` volume by
   `post-create.sh` (top-level files only; directories ignored so the
-  `devc:skills` fence is untouched). Deletion and live host edits both work;
-  existing host files are migrated on first run.
+  `devc:skills` fence is untouched). Deletion and live host edits both work. The
+  seed dir is created **empty** and nothing is ever copied out of the host's real
+  `~/.claude` — publishing a machine's personal `CLAUDE.md`/`settings.json` into
+  every container is the user's decision, made by putting the file there.
 
 ### Completed
 

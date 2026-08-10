@@ -299,8 +299,11 @@ workspace is the user's project (no `.devcontainer/`),
 `materializeDefaultConfig` rewrites that one host path to the cache copy. This
 is the _only_ transform applied to the materialized config. `devc` also calls
 `ensureClaudeSeedDir` on every `up`, which owns what a shell one-liner cannot:
-the not-a-directory guard and the one-time migration off the old per-file layout
-— so in the `devc`-driven path the hook is belt-and-suspenders.
+the not-a-directory guard and the created-it-just-now notice — so in the
+`devc`-driven path the hook is belt-and-suspenders. The directory is created
+empty and nothing is ever copied into it from the host's real `~/.claude`:
+whether a machine's personal `CLAUDE.md`/`settings.json` should reach every
+container is the user's decision, expressed by putting the file there.
 
 ## Global user configuration
 
