@@ -27,20 +27,22 @@ follow-on that fills it for a typical user. This is that plan, widened to cover
 Four things were verified against the real toolchain (Deno 2.9.5) before
 writing this, because each one invalidates an obvious approach:
 
-1. **A compiled `devc-bridge` host binary cannot `start`.** `start`
-   (`host/main.ts:99-121`) shells out to `deno desktop … main.ts` with
-   `cwd: dirname(fromFileUrl(Deno.mainModule))`. In a compiled binary
+1. **A compiled `devc-bridge` host binary could not `start`** — _fixed ahead of
+   this plan_ by [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md).
+   `start` used to shell out to `deno desktop … main.ts` with
+   `cwd: dirname(fromFileUrl(Deno.mainModule))`, and in a compiled binary
    `Deno.mainModule` is a _virtual_ path — `file:///tmp/deno-compile-<name>/main.ts`
-   — that does not exist on disk. Confirmed by compiling and running it:
+   — that no child process can reach:
 
    ```
    devc-bridge: building tray app…
    NotFound: Failed to spawn '/usr/local/bin/deno': No such cwd '/tmp/deno-compile-dbtest'
    ```
 
-   It also assumes a `deno` on the user's PATH, which a released binary must
-   not. **Publishing the host binary is blocked until `start` stops building.**
-   `stop`/`status`/`run` are unaffected — the compiled binary runs those fine.
+   `start` now re-runs the program it was invoked as with the `run` subcommand,
+   detached — no build, no bundle, no `deno` on PATH — so **the host binary is
+   publishable and findings 3 and 4 below no longer bind.** Verified from a
+   compiled binary on a PATH with no `deno`.
 2. **`deno desktop` cross-compiles**, `--target` accepting the same six triples
    as `deno compile` (`x86_64`/`aarch64` × `apple-darwin`/`unknown-linux-gnu`/
    `pc-windows-msvc`). `deno desktop --output DevcBridge.app --target
@@ -51,14 +53,15 @@ writing this, because each one invalidates an obvious approach:
 3. **`deno desktop --icon` cannot cross-build from Linux.** It shells out to
    macOS's `iconutil` to turn the generated `.iconset` into an `.icns`; on Linux
    that is `error: No such file or directory (os error 2)` and **exit 1**. The
-   same build without `--icon` exits 0 and produces a complete bundle. So
-   finding 2's "one Linux job builds everything" holds for the eight plain
-   binaries but **not** for the two icon-bearing `.app`s.
+   same build without `--icon` exits 0 and produces a complete bundle. _Moot for
+   this plan_ — nothing it ships is icon-bearing — but it is half the reason the
+   tray is not shipped at all, so keep it for whoever revisits that.
 4. **The tray app's executable is `laufey_webview`, not the bridge.** The
    bundle is a generic webview host (`CFBundleExecutable=laufey_webview`,
-   `NSPrincipalClass=LaufeyApplication`) with the program in a sibling dylib. So
-   the `.app` is **not** usable as the `start`/`stop`/`status` CLI, and macOS
-   needs **two** artifacts: a plain compiled CLI binary and the bundle.
+   `NSPrincipalClass=LaufeyApplication`) with the program in a sibling dylib —
+   so a bundle could never have been the `start`/`stop`/`status` CLI anyway.
+   _Also moot:_ macOS now needs exactly **one** bridge artifact, the plain CLI
+   binary, which is the same shape as every other asset here.
 
 ## Decisions
 
@@ -66,10 +69,10 @@ writing this, because each one invalidates an obvious approach:
    `x86_64-unknown-linux-gnu`, and so on — the exact strings `--target` takes.
    Inventing a second vocabulary (`darwin-arm64`, `macos`, `amd64`) would mean
    two mappings to keep in step: one in the workflow, one in the installer.
-2. **Every asset is a `.tar.gz`, even single binaries.** The tray is a
-   _directory_ bundle, and its executable bits matter; tar carries mode and
-   structure, `zip` does not portably. One archive format keeps the installer's
-   extract path single.
+2. **Every asset is a `.tar.gz`, even single binaries.** Executable bits matter
+   and tar carries mode; `zip` does not portably. One archive format keeps the
+   installer's extract path single, and it still fits if a directory-shaped
+   artifact (a tray bundle) is ever added.
 3. **`checksums.txt` is a release asset and the installer verifies against it.**
    A `curl | sh` that pipes an unverified binary onto PATH is the thing this
    plan exists to make routine, so it should not be the thing it does casually.
@@ -80,13 +83,14 @@ writing this, because each one invalidates an obvious approach:
    writes `checksums.txt` and publishes.
 
    Cross-compiling would work for most of this (finding 2) and is how the
-   x86_64 darwin binary in the Risks section was proven. Native wins anyway
-   because it answers three things at once: `--icon` needs macOS's `iconutil`
-   (finding 3), ad-hoc signing needs a Mac, and — the one that actually decides
-   it — **a native runner can run the binary it just built**, so "does this
-   execute on Apple Silicon" stops being an open question answered by a
-   stranger's bug report and becomes a CI assertion. All four runner types are
-   free on public repos, so the usual reason to cross-compile does not apply.
+   x86_64 darwin binary in the Risks section was proven. Native wins anyway:
+   ad-hoc signing needs a Mac, and — the one that actually decides it — **a
+   native runner can run the binary it just built**, so "does this execute on
+   Apple Silicon" stops being an open question answered by a stranger's bug
+   report and becomes a CI assertion. (The third reason, `--icon` needing
+   macOS's `iconutil`, went away with the `.app`s; the two that remain are
+   enough.) All four runner types are free on public repos, so the usual reason
+   to cross-compile does not apply.
 
    Ad-hoc `codesign -s -` the darwin assets rather than relying on Deno's
    behavior: the Risks section shows it signs arm64 and not x86_64, which is
@@ -96,23 +100,16 @@ writing this, because each one invalidates an obvious approach:
    assets from x86_64 — already proven, and the client has been built that way
    since [devc-bridge-client-mount](archived/devc-bridge-client-mount.md). That is a
    contained fallback for one job, not a reason to design around.
-5. **`start` builds the tray only when running from source.** This is the
-   change that unblocks finding 1, and it must preserve the dev property that
-   `start` always reflects the current working tree:
-   - **From source** — build the app, then launch it. Exactly today's behavior.
-   - **Compiled** — require an already-installed
-     `~/.config/devc-bridge/DevcBridge.app` and `open -g` it; if it is missing,
-     fail naming the installer.
-
-   Detect the two by asking whether the resolved host dir actually contains
-   `main.ts` — the same probe that finding 1 shows failing. Deliberately not a
-   build-with-fallback: a compiled binary that silently shelled out to a `deno`
-   it found on PATH would build a tray from **whatever source tree that Deno
-   resolves**, which is worse than failing.
-6. **The installed tray path is the one `start` already uses.**
-   `join(cfg.base, 'DevcBridge.app')` — `~/.config/devc-bridge/DevcBridge.app`.
-   The installer writes where the code already looks; no new path enters the
-   config.
+5. **Withdrawn** — this was "`start` builds the tray only when running from
+   source", the prerequisite that unblocked finding 1.
+   [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md) answered it
+   better by deleting the build outright: `start` spawns the same program
+   detached, from source and compiled alike, so there is no from-source/compiled
+   branch left for this plan to add. (Numbering kept — later decisions are
+   referenced by number.)
+6. **Withdrawn** with decision 5: with no `.app` shipped there is no installed
+   tray path to agree on. If the tray is ever packaged, that plan picks its own
+   destination.
 7. **Default install dir is `$HOME/.local/bin`, and the installer never uses
    `sudo`.** A pipe-to-shell that escalates is a bad habit to teach.
    `DEVC_INSTALL_DIR` overrides; if the chosen dir is not on `PATH`, say so with
@@ -138,12 +135,13 @@ writing this, because each one invalidates an obvious approach:
     selection is **not** "the platform I am running on" in the usual sense, and
     it is the easiest thing in this plan to get backwards.
 11. **Windows is out of scope (confirmed), and `devc-bridge` is macOS-only.** `devc` drives
-    `tmux`/`tty` and POSIX paths; the bridge's every shipped command is macOS
-    (`caffeinate`), `start` launches via `open -g`/LaunchServices, and the tray
-    is a menu-bar app. A Linux host could run the bridge headless — the tray
-    already degrades that way (`tray.ts:106`) — but nothing it could usefully
-    run is shipped, so it is a follow-on, not a v1 gap. Document both, do not
-    half-build them.
+    `tmux`/`tty` and POSIX paths, and the bridge's every shipped command is
+    macOS (`caffeinate`). The bridge itself is no longer macOS-bound —
+    [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md) took
+    `open -g`/LaunchServices out of `start`, and the whole daemon runs headless
+    on Linux (its test suite starts and stops one there) — but nothing it could
+    usefully _run_ on Linux is shipped, so a Linux host asset is a follow-on,
+    not a v1 gap. Document both, do not half-build them.
 12. **`install.sh` ships as a release asset, not from `main`.** GitHub serves a
     permanent redirect at
     `releases/latest/download/<asset>` (and `releases/download/vX.Y.Z/<asset>`
@@ -163,41 +161,27 @@ writing this, because each one invalidates an obvious approach:
 
 ## The release matrix
 
-Ten archives — eight plain binaries and two bundles — plus `checksums.txt`
-and `install.sh`, from tag `vX.Y.Z`:
+Eight archives, every one a plain binary — plus `checksums.txt` and
+`install.sh`, from tag `vX.Y.Z`:
 
-| Asset                                          | Contains           | Built with                               |
-| ---------------------------------------------- | ------------------ | ---------------------------------------- |
-| `devc-<target>.tar.gz` × 4                     | `devc`             | `deno compile --include default`         |
-| `devc-bridge-host-<darwin-target>.tar.gz` × 2  | `devc-bridge`      | `deno compile --include commands`        |
-| `DevcBridge-<darwin-target>.app.tar.gz` × 2    | `DevcBridge.app/`  | `deno desktop --include commands --icon` |
-| `devc-bridge-client-<linux-target>.tar.gz` × 2 | `devc-bridge`      | `deno compile` (client flags)            |
-| `checksums.txt`                                | sha256 of each     | `sha256sum`                              |
-| `install.sh`                                   | the stamped script | version substituted at release time      |
+| Asset                                          | Contains           | Built with                          |
+| ---------------------------------------------- | ------------------ | ----------------------------------- |
+| `devc-<target>.tar.gz` × 4                     | `devc`             | `deno compile --include default`    |
+| `devc-bridge-host-<darwin-target>.tar.gz` × 2  | `devc-bridge`      | `deno compile --include commands`   |
+| `devc-bridge-client-<linux-target>.tar.gz` × 2 | `devc-bridge`      | `deno compile` (client flags)       |
+| `checksums.txt`                                | sha256 of each     | `sha256sum`                         |
+| `install.sh`                                   | the stamped script | version substituted at release time |
 
 `<target>` ∈ the four triples; `<darwin-target>` and `<linux-target>` are their
 two-element subsets. `devc` ships all four because a Linux host runs
 devcontainers too.
 
-**Three distinct binaries are named `devc-bridge`** — the host CLI, the
-container client, and (conceptually) the tray. They differ in target OS,
-permissions and destination, and the installer writes all three on macOS. Asset
-names disambiguate with `-host-` and `-client-`; keep that in any new code that
-touches them.
+**Two distinct binaries are named `devc-bridge`** — the host CLI and the
+container client. They differ in target OS, permissions and destination, and the
+installer writes both on macOS. Asset names disambiguate with `-host-` and
+`-client-`; keep that in any new code that touches them.
 
 ## Implementation
-
-### `devc-bridge/host/main.ts` — `start` (prerequisite, decision 5)
-
-Split the current build-then-launch into: resolve the app path → if running from
-source, build it → launch it → wait for the pidfile. The launch, the port-in-use
-check, the pidfile wait and the log tail are unchanged. A compiled binary with
-no installed app must exit non-zero naming both the expected path and the
-install command; it must not attempt a build.
-
-This is testable without a GUI: the from-source/compiled decision is a pure
-function of "does `<hostDir>/main.ts` exist", so it can be unit-tested by
-pointing it at a temp dir.
 
 ### `devc-bridge/host/version.ts` (new) + `main.ts`
 
@@ -230,12 +214,15 @@ Two gates run before any of it, on the cheapest runner:
 - **Version guard:** on a tag, assert `v${VERSION from devc/help.ts}` equals the
   tag, and the same for both bridge `VERSION`s. Mismatch fails before anything
   is built (decision 8).
-- **Test gate:** `deno fmt --check`, `deno check`, `deno task test`. A release
-  must not be publishable from a red tree. **The pre-existing failure is already
-  fixed** — `tests/fixtures/mounts_fence_between.jsonc` was missing its
+- **Test gate:** `deno fmt --check` (repo-wide), then `deno task check` and
+  `deno task test` in **both** `devc/` and `devc-bridge/host/` — the bridge grew
+  a suite of its own with the tray decoupling, and a gate that only ran devc's
+  would not cover the binary this workflow ships. A release must not be
+  publishable from a red tree. **The pre-existing failure is already fixed** —
+  `tests/fixtures/mounts_fence_between.jsonc` was missing its
   `// <<< devc:projects` end marker, so `findFence` threw
   `UnterminatedFenceError` exactly as it should; the fixture, not the code, was
-  wrong. The suite is green (268/268), so this gate can go in as-is.
+  wrong. Both suites are green, so this gate can go in as-is.
 
 All jobs pin `denoland/setup-deno` to the Deno version this repo builds with.
 
@@ -267,7 +254,6 @@ Behavior:
   | -------------------------- | -------------------------------------------- |
   | `devc`                     | `$DEVC_INSTALL_DIR` (default `~/.local/bin`) |
   | `devc-bridge` host (macOS) | `$DEVC_INSTALL_DIR`                          |
-  | `DevcBridge.app` (macOS)   | `~/.config/devc-bridge/DevcBridge.app`       |
   | Linux client               | `~/.config/devc-bridge/client/devc-bridge`   |
 
 - **The client is installed on every platform**, arch-matched to the host
@@ -295,10 +281,9 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
 - **`devc/README.md`** — installed binary as the primary path; `deno task build`
   demoted to development.
 - **`devc-bridge/README.md`** — rework "Setup (macOS host)": installer first,
-  then the from-source path. Document that a **compiled** `devc-bridge start`
-  needs the installed `DevcBridge.app` and will not build one (decision 5), and
-  that the client now arrives from the installer rather than `build:client` for
-  non-developers.
+  then the from-source path, and note that the client now arrives from the
+  installer rather than `build:client` for non-developers. The tray section
+  stays as it is: it is a from-source extra, and nothing here ships it.
 
 ## Risks
 
@@ -317,7 +302,7 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
   inference above is load-bearing. The verified Intel result stands as the
   reason cross-building is a viable fallback if a runner ever goes away.
 - **Gatekeeper quarantine.** `curl` does not set `com.apple.quarantine`, so an
-  installed `.app` should launch; a browser-downloaded one would not. Worth a
+  installed binary should run; a browser-downloaded one would not. Worth a
   README note, not a code path.
 - **`--allow-run` noise — accepted, document it.** `devc`'s compiled binary
   prints `Info Failed to resolve 'docker' for allow-run: cannot find binary path`
@@ -329,8 +314,6 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
 
 ## Checklist
 
-- [ ] `devc-bridge/host/main.ts` — `start` builds only from source; compiled
-      requires the installed app and fails naming it
 - [ ] `devc-bridge/host/version.ts` + `main.ts` — `VERSION`, `version`
       subcommand, `--version`/`-V`, `USAGE` updated
 - [ ] `devc-bridge/host/deno.json`, `devc/deno.json`, `devc-bridge/client/deno.json`
@@ -345,9 +328,8 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
 - [ ] `install.sh` — detect, resolve version, verify checksums, install the
       per-platform set, `DEVC_*` env knobs, PATH warning
 - [x] `.gitignore` — `/dist/` (added ahead of this plan, for the signing test)
-- [ ] Tests for the from-source/compiled probe and for the installer's
-      triple→asset mapping (a shell harness in the style of
-      `devc/tests/bridge_client_link_test.sh`)
+- [ ] Tests for the installer's triple→asset mapping (a shell harness in the
+      style of `devc/tests/bridge_client_link_test.sh`)
 - [ ] `README.md`, `devc/README.md`, `devc-bridge/README.md` — install-first
 - [ ] `.plans/PLAN.md` — register
 
@@ -357,8 +339,9 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
       **verified**: unsigned, executes, `devc 0.1.0`
 - [ ] `aarch64-apple-darwin` on Apple Silicon — now a CI assertion rather than a
       manual check: the `macos-14` job must execute what it built
-- [ ] `deno task test` / `check` / `fmt --check` clean across the repo
-- [ ] `workflow_dispatch` with `dry_run` produces all ten archives and a
+- [ ] `deno task test` / `check` / `fmt --check` clean across the repo (devc
+      **and** devc-bridge/host)
+- [ ] `workflow_dispatch` with `dry_run` produces all eight archives and a
       `checksums.txt` whose hashes verify
 - [ ] Every build job's smoke test runs the binary it produced and sees the
       release version — in particular `macos-14`, which is the arm64 evidence
@@ -368,12 +351,11 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
 - [ ] Tag a prerelease (`v0.1.0-rc.1`) → release created with every asset
 - [ ] A tag disagreeing with `VERSION` fails the workflow before building
 - [ ] `install.sh` run against the prerelease on macOS: `devc --version` and
-      `devc-bridge --version` both report it; `~/.config/devc-bridge/DevcBridge.app`
-      exists; `devc-bridge status` reports `client: installed`
-- [ ] `devc-bridge start` from the **installed** binary launches the installed
-      tray with no `deno` on PATH — the case finding 1 blocks today
-- [ ] `devc-bridge start` from source still rebuilds and reflects working-tree
-      edits (decision 5's dev property is intact)
+      `devc-bridge --version` both report it; `devc-bridge status` reports
+      `client: installed`
+- [ ] `devc-bridge start` from the **installed** binary comes up on a macOS host
+      with no `deno` on PATH — finding 1's case, already proven on Linux from a
+      compiled binary, confirmed here on the platform that ships
 - [ ] The installed client is the **host-matched Linux** binary: on an arm64
       Mac, `file` reports `aarch64` ELF, and `devc build` in an unrelated repo
       → `devc-bridge ping test` prints `pong`
@@ -383,7 +365,8 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
 
 ## Relevant Files
 
-- `devc-bridge/host/main.ts` — the `start` change that unblocks shipping it
+- `devc-bridge/host/main.ts` — the `version` subcommand (its `start` no longer
+  needs anything from this plan)
 - `devc-bridge/host/version.ts` — new
 - `devc/help.ts` — existing `VERSION`, the guard's reference point
 - `.github/workflows/release.yml` — new (alongside `publish-feature.yml`, added by

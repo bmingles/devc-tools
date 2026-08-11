@@ -142,7 +142,7 @@ are still needed for anything but signing.
 - [x] `devc-bridge/host/deno.json` — `build` produces the plain binary
 - [x] Tests for the relaunch-argv helper (both modes) and for `start`'s
       detach-and-wait contract
-- [ ] `.plans/release-and-installer.md` — `.app` assets and the `start`
+- [x] `.plans/release-and-installer.md` — `.app` assets and the `start`
       prerequisite removed
 - [x] `devc-bridge/README.md` — headless default, `status` as the
       idle/active affordance, tray as a from-source extra
