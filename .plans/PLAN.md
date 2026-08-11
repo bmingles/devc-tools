@@ -11,6 +11,28 @@
 
 ### Pending
 
+- [devc-bridge-client-mount](devc-bridge-client-mount.md) — Ship the devc-bridge
+  container client by **read-only bind mount** from devc's bundled
+  `devcontainer.json`, so every devc container gets it with no per-project
+  wiring — the current `.devc/devc-post-create.sh` builds from source that only
+  exists in this repo, so it cannot be the distribution mechanism. The mounts
+  must live in `devcontainer.json` rather than a `devc.json` overlay because
+  only verbatim string mounts there can carry `readonly`. Mounts the client's
+  _directory_ (a file mount pins the inode, so a rebuilt client would go stale)
+  into devc's namespace, plus an unconditional PATH symlink that heals the
+  moment the host builds the client — shell-init healing does not work, since
+  devc's `~/.bashrc` additions sit after Ubuntu's non-interactive guard and
+  `devc claude` runs `bash -lc`. A host-side placeholder keeps the dangling link
+  self-explanatory. Nothing is built on the fly: the mount source is a
+  destination that the release installer (typical user) or `deno task build:client`
+  (dev) writes to, so `start` needs no embedded source, arch derivation or
+  build-failure handling. Also hardens the existing `run/` mount to `readonly`,
+  which closes a live issue: it is writable today, and `stop` `Deno.kill`s
+  whatever PID a container can write into `run/tray.pid`. **Requires migration**
+  — this repo's overlay mounts the same target (Docker fails on duplicate mount
+  points) and its `.devc/devc-post-create.sh` is deleted, leaving devc-tools
+  consuming the bridge like any other project.
+
 - [devc-claude-seed-dir](devc-claude-seed-dir.md) — Replace the three brittle
   per-file `~/.claude/*` host binds with one read-only directory bind of
   `~/.config/devc/.claude`, symlinked into the `.claude` volume by
@@ -262,3 +284,4 @@
 | devc attach exit-code handling — stop crashing on non-zero `docker exec`                 | [devc-attach-exit-code](archived/devc-attach-exit-code.md)                 | complete    |
 | devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md)               | complete    |
 | devc project post-create hook — restore `devc-post-create.sh` for zero-config projects   | [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) | complete    |
+| devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](devc-bridge-client-mount.md)                    |             |
