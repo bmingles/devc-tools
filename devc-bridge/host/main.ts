@@ -1,30 +1,36 @@
 // devc-bridge — host-side control CLI for the devcontainer command bridge.
 //
-//   devc-bridge start     seed config (first run) + build & launch the tray in the background
-//   devc-bridge stop      stop the background tray
-//   devc-bridge status    report whether the tray is running
-//   devc-bridge restart    stop then start
-//   devc-bridge run       run the tray (this file, launched inside the built .app)
+//   devc-bridge start       seed config (first run) + run the bridge in the background
+//   devc-bridge stop        stop the background bridge
+//   devc-bridge status      report whether the bridge is running
+//   devc-bridge restart     stop then start
+//   devc-bridge run         run the bridge in the foreground (headless)
+//   devc-bridge run --tray  ditto, plus the macOS menu-bar tray (`deno desktop` only)
 //
 // main.ts plays two roles from one file:
-//   • As a plain `deno run` CLI (start/stop/status) it's the *controller* — fast, no
-//     desktop runtime, no window. `start` builds a .app bundle from this source (fast —
-//     Deno caches the compile) and launches it with `open -g`, because a menu-bar GUI
-//     app can only be backgrounded via LaunchServices, not by detaching a terminal
-//     process. stop/status use the pidfile the tray writes.
-//   • Inside that built .app it runs with no args → the tray (runTray in tray.ts).
+//   • As the CLI (start/stop/status/restart) it's the *controller* — it spawns, signals
+//     and inspects; it never serves. `start` relaunches *this same program* with the
+//     `run` subcommand as a plain detached child, so there is no build step, no bundle
+//     and no `deno` needed on PATH: a compiled binary can start itself.
+//   • As `run` it's the bridge itself — the TCP server, dispatch, state watcher and
+//     keepalive from core.ts, headless by default.
+//
+// The tray (tray.ts) is an opt-in front-end on the same core, not the way the bridge
+// runs. See .plans/archived/devc-bridge-tray-decouple.md.
 
-import { dirname, fromFileUrl, join } from '@std/path';
+import { fromFileUrl } from '@std/path';
 import {
+  appendLog,
   type Config,
   ensureConfig,
   errMsg,
   loadConfig,
-  persistEnvSettings,
 } from './config.ts';
+import { startServer } from './core.ts';
+import { ensureToken } from './token.ts';
 import { runTray } from './tray.ts';
 
-const USAGE = 'usage: devc-bridge {start|stop|status|restart|run}';
+const USAGE = 'usage: devc-bridge {start|stop|status|restart|run [--tray]}';
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -43,12 +49,13 @@ async function main(): Promise<void> {
       await stop(cfg);
       await start(cfg);
       break;
-    case undefined:
     case 'run':
-      await runTray(cfg); // never returns
+      await run(cfg, Deno.args.slice(1)); // never returns
       break;
     default:
-      console.error(`devc-bridge: unknown command ${JSON.stringify(sub)}`);
+      if (sub !== undefined) {
+        console.error(`devc-bridge: unknown command ${JSON.stringify(sub)}`);
+      }
       console.error(USAGE);
       Deno.exit(2);
   }
@@ -57,86 +64,32 @@ async function main(): Promise<void> {
 async function start(cfg: Config): Promise<void> {
   await ensureConfig(cfg);
 
-  // This process has the shell's env; the tray (launched via `open -g`, so started
-  // by launchd) does not. Hand the settings over through the config dir instead.
-  const changed = await persistEnvSettings(cfg);
-  if (changed.length > 0) {
-    console.error(`devc-bridge: saved settings: ${changed.join(', ')}`);
-  }
-
   const existing = await readPid(cfg);
   if (existing !== null && await pidAlive(existing)) {
     console.log(`already running (pid ${existing})`);
-    if (changed.length > 0) {
-      // Settings are read once, at tray launch — saving them is not applying them.
-      console.error(
-        'devc-bridge: run `devc-bridge restart` to apply the new settings',
-      );
-    }
     return;
   }
-  // No usable pidfile — but that is not proof no tray is running. Deleting the config
-  // dir takes the pidfile with it and orphans the tray, and `open -g` on a bundle that
-  // is already running just re-activates that instance instead of launching a second
-  // one: no new process, no log, and the wait below would time out blaming the launch.
-  // A listening port is the handle the pidfile no longer is.
+  // No usable pidfile — but that is not proof nothing is running. Deleting the config
+  // dir takes the pidfile with it and orphans the daemon, whose port stays bound: the
+  // spawn below would then fail inside the detached child, where nobody sees it, and
+  // the wait would time out blaming the launch. A listening port is the handle the
+  // pidfile no longer is.
   if (await portInUse(cfg.hostname, cfg.port)) {
     console.error(
-      `devc-bridge: ${cfg.hostname}:${cfg.port} is already in use, but no tray pidfile exists`,
+      `devc-bridge: ${cfg.hostname}:${cfg.port} is already in use, but no devc-bridge pidfile exists`,
     );
     console.error(
-      `devc-bridge: (an orphaned tray — deleted config dir? — or another program. Find it with: lsof -i :${cfg.port})`,
+      `devc-bridge: (an orphaned bridge — deleted config dir? — or another program. Find it with: lsof -i :${cfg.port})`,
     );
     Deno.exit(1);
   }
 
-  // Drop any stale pidfile so the fresh one the tray writes is our success signal.
+  // Drop any stale pidfile so the fresh one the daemon writes is our success signal.
   await removePidfile(cfg);
 
-  // Build the tray bundle from this source. Deno caches the compile, so rebuilding on
-  // every start is cheap and always reflects the current source. --include embeds the
-  // command scripts; paths are relative to the host/ dir (where main.ts lives).
-  const appPath = join(cfg.base, 'DevcBridge.app');
-  const hostDir = dirname(fromFileUrl(Deno.mainModule));
-  console.error('devc-bridge: building tray app…');
-  const build = await new Deno.Command('deno', {
-    args: [
-      'desktop',
-      '--output',
-      appPath,
-      '--include',
-      'commands',
-      '--icon',
-      '../icons/app.png',
-      '--allow-read',
-      '--allow-write',
-      '--allow-run',
-      '--allow-env',
-      '--allow-net',
-      'main.ts',
-    ],
-    cwd: hostDir,
-    stdout: 'piped',
-    stderr: 'piped',
-  }).output();
-  if (!build.success) {
-    console.error('devc-bridge: failed to build the tray app:');
-    await Deno.stderr.write(build.stderr);
-    Deno.exit(1);
-  }
+  spawnDetached(relaunchArgv(['run']), cfg.logfile);
 
-  // Launch it via LaunchServices (`-g` = don't steal focus). A GUI app can only be put
-  // in the background this way — a detached terminal process never brings the tray up.
-  console.error('devc-bridge: launching…');
-  const opened = await new Deno.Command('open', { args: ['-g', appPath] })
-    .output();
-  if (!opened.success) {
-    console.error(`devc-bridge: 'open -g ${appPath}' failed:`);
-    await Deno.stderr.write(opened.stderr);
-    Deno.exit(1);
-  }
-
-  // The tray writes its pidfile once it's listening — our proof it came up.
+  // The daemon writes its pidfile once it's listening — our proof it came up.
   const ok = await waitFor(async () => {
     const pid = await readPid(cfg);
     return pid !== null && await pidAlive(pid);
@@ -144,16 +97,85 @@ async function start(cfg: Config): Promise<void> {
 
   if (!ok) {
     console.error(
-      `devc-bridge: tray launched but never reported ready — see ${cfg.logfile}`,
+      `devc-bridge: started but never reported ready — see ${cfg.logfile}`,
     );
     await printLogTail(cfg.logfile);
     console.error(
-      `devc-bridge: (to see its errors directly, run: open ${appPath})`,
+      'devc-bridge: (to see its errors directly, run: devc-bridge run)',
     );
     Deno.exit(1);
   }
 
   console.log(`started (pid ${await readPid(cfg)})`);
+}
+
+/**
+ * The bridge itself: server + pidfile + signal handlers, parked until terminated.
+ *
+ * This is what `start` backgrounds, and the only entrypoint that serves. `--tray`
+ * hands off to tray.ts, which runs the same core with a menu-bar icon on top — an
+ * extra for a `deno desktop` runtime, never a requirement.
+ */
+async function run(cfg: Config, args: string[]): Promise<void> {
+  const tray = args.includes('--tray');
+  const unknown = args.filter((a) => a !== '--tray');
+  if (unknown.length > 0) {
+    console.error(
+      `devc-bridge: unknown run option ${JSON.stringify(unknown[0])}`,
+    );
+    console.error(USAGE);
+    Deno.exit(2);
+  }
+  // Self-sufficient: `run` is reachable directly (foreground debugging, `deno task
+  // dev`), not only through `start`, and it must not depend on a prior seeding.
+  await ensureConfig(cfg);
+  if (tray) {
+    await runTray(cfg); // never returns
+    return;
+  }
+
+  const token = await ensureToken(cfg.token);
+  const server = await startServer({
+    hostname: cfg.hostname,
+    port: cfg.port,
+    token,
+    commandsDir: cfg.commands,
+    stateDir: cfg.state,
+    onActiveChange: (active) =>
+      console.log(`active: ${JSON.stringify(active)}`),
+    keepawake: cfg.keepawake,
+  });
+
+  // How `stop`/`status` find us, however we were launched.
+  try {
+    await Deno.writeTextFile(cfg.pidfile, `${Deno.pid}\n`);
+  } catch (e) {
+    await appendLog(
+      cfg.logfile,
+      `could not write pidfile ${cfg.pidfile}: ${errMsg(e)}`,
+    );
+  }
+
+  // Backgrounded by `start`, stdout is the log file — this line is what a failed
+  // launch would be missing, and it is `start`'s own readiness message in reverse.
+  console.log(`listening on ${server.address} (commands: ${cfg.commands})`);
+  console.log(
+    `keepawake: ${cfg.keepawake.command} (idleMs: ${cfg.keepawake.idleMs})`,
+  );
+
+  const shutdown = async () => {
+    await server.close();
+    try {
+      Deno.removeSync(cfg.pidfile);
+    } catch { /* already gone */ }
+    Deno.exit(0);
+  };
+  // `devc-bridge stop` sends SIGTERM; also handle Ctrl-C in the foreground.
+  Deno.addSignalListener('SIGINT', shutdown);
+  Deno.addSignalListener('SIGTERM', shutdown);
+
+  // Park forever; the signal handlers drive shutdown.
+  await new Promise<void>(() => {});
 }
 
 async function stop(cfg: Config): Promise<void> {
@@ -171,16 +193,17 @@ async function stop(cfg: Config): Promise<void> {
     return;
   }
   // Wait for it to actually exit before returning, so `restart` doesn't race the old
-  // process for the TCP port (the tray's SIGTERM handler also removes the pidfile).
+  // process for the TCP port (the daemon's SIGTERM handler also removes the pidfile).
   await waitFor(async () => !await pidAlive(pid), 3000);
   await removePidfile(cfg);
   console.log('stopped');
 }
 
 async function status(cfg: Config): Promise<void> {
-  // Report the client too: the tray running says nothing about whether a container can
-  // actually reach it, and "why doesn't the container see devc-bridge" should be
-  // answerable from the host.
+  // Report the client too: the bridge running says nothing about whether a container
+  // can actually reach it, and "why doesn't the container see devc-bridge" should be
+  // answerable from the host. With no menu-bar icon by default, the idle/active
+  // suffix below is also *the* way to answer "is it doing anything".
   const client = await clientStatus(cfg);
   const pid = await readPid(cfg);
   if (pid !== null && await pidAlive(pid)) {
@@ -196,6 +219,103 @@ async function status(cfg: Config): Promise<void> {
   console.log('stopped');
   console.log(client);
   Deno.exit(1);
+}
+
+// --- relaunching ourselves -----------------------------------------------------
+
+/**
+ * Permissions the backgrounded bridge needs, for the from-source relaunch only.
+ *
+ * A compiled binary carries its own (baked in by `deno task build`); this list is
+ * the same one, and `deno.json`'s `build`/`dev` tasks and `scripts/bash_aliases.sh`
+ * must agree with it — a flag missing here fails the child at runtime, in the log,
+ * rather than at the prompt.
+ */
+const RUN_PERMISSIONS = [
+  '--allow-read',
+  '--allow-write',
+  '--allow-run',
+  '--allow-env',
+  '--allow-net',
+];
+
+/**
+ * The argv that re-runs *this program* with `args`.
+ *
+ * The two ways it can be running need different command lines, and `start` is the
+ * one place that cares:
+ *   • **Compiled** — `Deno.execPath()` is the bridge itself, so the argv is it plus
+ *     the args.
+ *   • **From source** — `execPath()` is the `deno` binary, so the whole invocation
+ *     has to be rebuilt: `deno run <permissions> <main.ts> <args>`.
+ *
+ * `Deno.build.standalone` is the discriminator. Path-based probes do not work: a
+ * compiled binary reports a *virtual* `file:///tmp/deno-compile-<name>/main.ts` for
+ * `Deno.mainModule` which its own process can stat (the embedded VFS answers) but
+ * which does not exist for anything it spawns.
+ *
+ * Parameterized so both branches are testable from either mode.
+ */
+export function relaunchArgv(
+  args: string[],
+  opts: {
+    standalone?: boolean;
+    execPath?: string;
+    mainModule?: string;
+  } = {},
+): string[] {
+  const standalone = opts.standalone ?? Deno.build.standalone;
+  const execPath = opts.execPath ?? Deno.execPath();
+  if (standalone) return [execPath, ...args];
+
+  const mainModule = opts.mainModule ?? Deno.mainModule;
+  if (!mainModule.startsWith('file:')) {
+    // `deno run https://…/main.ts` — nothing local to hand the child.
+    throw new Error(
+      `devc-bridge: cannot relaunch from a non-file main module (${mainModule})`,
+    );
+  }
+  return [
+    execPath,
+    'run',
+    ...RUN_PERMISSIONS,
+    fromFileUrl(mainModule),
+    ...args,
+  ];
+}
+
+/**
+ * Start `argv` as a background process that outlives this one, with its output
+ * appended to `logfile`.
+ *
+ * Via `/bin/sh` for two things `Deno.Command` cannot express:
+ *   • **Redirection to a file.** `stdout`/`stderr` only take piped/inherit/null, and
+ *     a pipe dies with this process. `start` tails that log to explain a failed
+ *     launch, so the child's own output has to land in it.
+ *   • **`nohup`.** An orphaned child stays in the terminal's process group, so
+ *     closing the terminal SIGHUPs it. `nohup` sets SIGHUP to ignore across the
+ *     exec, which is what makes this a daemon rather than a long-lived job.
+ *
+ * Both `exec`s preserve the pid, so the child *is* the bridge — though `start`
+ * proves the launch by the pidfile the bridge writes, not by this pid.
+ */
+export function spawnDetached(argv: string[], logfile: string): void {
+  const [command, ...args] = argv;
+  const child = new Deno.Command('/bin/sh', {
+    args: [
+      '-c',
+      'log="$1"; shift; exec nohup "$@" >>"$log" 2>&1',
+      'devc-bridge',
+      logfile,
+      command,
+      ...args,
+    ],
+    stdin: 'null',
+    stdout: 'null',
+    stderr: 'null',
+  }).spawn();
+  // Nothing here waits for it: this process must be free to exit immediately.
+  child.unref();
 }
 
 // --- helpers -------------------------------------------------------------------
@@ -310,16 +430,23 @@ async function printLogTail(logfile: string, lines = 20): Promise<void> {
   }
 }
 
-try {
-  await main();
-} catch (e) {
-  // Our own failures carry a "devc-bridge: …" message and are worth reading on their own;
-  // anything else is a bug, so keep its stack.
-  if (e instanceof Error && e.message.startsWith('devc-bridge:')) {
-    console.error(e.message);
-  } else {
-    console.error('devc-bridge: unexpected failure');
-    console.error(e);
+// Guarded so the tests can import the helpers above without the CLI running on
+// import (it would see the test runner's argv and exit 2). `import.meta.main` is
+// true for `deno run` and for a compiled binary; `standalone` is the belt-and-braces
+// half, since a `deno desktop` bundle is compiled too and its entry semantics are
+// not something this repo can assert from Linux.
+if (import.meta.main || Deno.build.standalone) {
+  try {
+    await main();
+  } catch (e) {
+    // Our own failures carry a "devc-bridge: …" message and are worth reading on
+    // their own; anything else is a bug, so keep its stack.
+    if (e instanceof Error && e.message.startsWith('devc-bridge:')) {
+      console.error(e.message);
+    } else {
+      console.error('devc-bridge: unexpected failure');
+      console.error(e);
+    }
+    Deno.exit(1);
   }
-  Deno.exit(1);
 }

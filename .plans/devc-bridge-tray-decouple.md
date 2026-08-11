@@ -131,16 +131,16 @@ are still needed for anything but signing.
 
 ## Checklist
 
-- [ ] `devc-bridge/host/main.ts` — `start` spawns detached; no build, no `open`
-- [ ] `devc-bridge/host/main.ts` — relaunch-argv helper covering source and
+- [x] `devc-bridge/host/main.ts` — `start` spawns detached; no build, no `open`
+- [x] `devc-bridge/host/main.ts` — relaunch-argv helper covering source and
       compiled
-- [ ] `devc-bridge/host/main.ts` — bare `run` is headless, `run --tray` reaches
+- [x] `devc-bridge/host/main.ts` — bare `run` is headless, `run --tray` reaches
       the tray, `USAGE` updated
-- [ ] `devc-bridge/host/config.ts` — settings-file mechanism deleted
-- [ ] `devc-bridge/host/serve.ts` — deleted; keepawake semantics resolve to
+- [x] `devc-bridge/host/config.ts` — settings-file mechanism deleted
+- [x] `devc-bridge/host/serve.ts` — deleted; keepawake semantics resolve to
       `Config` (always configured)
-- [ ] `devc-bridge/host/deno.json` — `build` produces the plain binary
-- [ ] Tests for the relaunch-argv helper (both modes) and for `start`'s
+- [x] `devc-bridge/host/deno.json` — `build` produces the plain binary
+- [x] Tests for the relaunch-argv helper (both modes) and for `start`'s
       detach-and-wait contract
 - [ ] `.plans/release-and-installer.md` — `.app` assets and the `start`
       prerequisite removed
