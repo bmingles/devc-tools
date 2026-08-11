@@ -1,5 +1,21 @@
 # devc-bridge as a devcontainer Feature
 
+> **Partly superseded (`b513800`, `0d46b51`).** The Feature itself shipped as
+> described and is current. Two decisions about **devc's** relationship to it
+> were reversed shortly after this plan landed, so anything below about devc
+> consuming the Feature is history:
+>
+> - devc's bundled config does **not** reference the Feature. A ref in the
+>   bundled default makes every `devc up` depend on that ref resolving. It is
+>   opt-in via `additionalFeatures` in a user- or project-level `devc.json`.
+> - devc does **not** create the mount sources. The `devc:bridge-placeholder`
+>   block is deleted; the host bridge seeds `~/.config/devc-bridge/` itself on
+>   `start`. Installing the host bridge first is now the same prerequisite for
+>   devc and non-devc projects alike — so decision 5's deliberate asymmetry, and
+>   the "inert rather than fatal" argument for it, no longer apply.
+>
+> See `.plans/PLAN.md`'s Completed entry for the reasoning.
+
 ## Goal
 
 Make the container half of devc-bridge a published devcontainer Feature, so any

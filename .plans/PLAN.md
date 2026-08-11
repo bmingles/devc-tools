@@ -128,6 +128,32 @@ with a new plan here (see the `plan-orchestrating` skill for the conventions).
   publish has no `1` tag), and a staging wrapper for `devcontainer features
   test`, which insists on a `src/`+`test/` collection layout that
   `features publish` does not.
+  **Partly superseded — two of this plan's decisions were reversed after it
+  landed** (`b513800`, `0d46b51`), so read the paragraphs above as history:
+  1. **devc's bundled config does _not_ consume the Feature.** Putting a Feature
+     ref in the bundled default made every `devc up` anywhere depend on that ref
+     resolving — so an unpublished (or renamed, or yanked) Feature breaks devc
+     for everyone, and it broke it immediately, since nothing was published.
+     devc-bridge is now opt-in via `additionalFeatures` in a user-level
+     `~/.config/devc/devc.json` or a project-level `devc.json`, which the
+     overlay already supported. `devc/tests/default_config_test.ts` asserts the
+     **absence** of the Feature from the default; the test covering the
+     Feature's own readonly string mounts is unchanged.
+  2. **devc no longer pre-creates the mount sources.** The
+     `devc:bridge-placeholder` fence in `initialize-command.sh` (and
+     `devc/tests/initialize_command_test.sh` with it) is deleted: a host that
+     never uses the bridge should not carry directories for it, and the host
+     bridge seeds `~/.config/devc-bridge/` itself on `start`
+     (`devc-bridge/host/config.ts`). So the "devc stays inert / standalone
+     fails" asymmetry above is gone — installing the host bridge first is now
+     the same prerequisite for everyone, which is what "one mechanism" should
+     have meant in the first place.
+
+     Unchanged by this: the Feature itself, its mounts, and the requirement to
+     publish it before any `ghcr.io/...` ref resolves. Pre-publish testing goes
+     through a project whose own `.devcontainer/devcontainer.json` references
+     `./features/devc-bridge` — a relative local path resolves against that
+     file's folder, and needs no overlay and no registry.
 
 - [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) — Ship the devc-bridge
   container client by **read-only bind mount** from devc's bundled
