@@ -165,6 +165,10 @@ function buildRows(
  * `/workspaces/a/b`). A picked git worktree additionally contributes a mount of its primary repo's
  * `.git`, mirrored from that same base — one helper decides both, so what gets written is exactly
  * what the picker showed under that pick.
+ *
+ * Rows are then grouped per repo — its `.git` mount, its own working tree if that was picked too,
+ * then the worktrees behind it — so a repo reads as one block however the picks were interleaved. A
+ * group sits where its first pick did, and picks belonging to no repo keep pick order.
  */
 async function buildSourceRows(
   paths: string[],
@@ -183,17 +187,45 @@ async function buildSourceRows(
     }
   };
 
+  // A pending row plus where it sits inside its group: `.git` mount, then the repo's own working
+  // tree, then its worktrees. A pick belonging to no repo keys on its own path — a group of one.
+  interface Entry {
+    row: MountRow;
+    rank: 0 | 1 | 2;
+    onDup: () => void;
+  }
+  const groups = new Map<string, Entry[]>();
+  const order: string[] = [];
+  const push = (key: string, entry: Entry): void => {
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, [entry]);
+      order.push(key); // first pick of a repo fixes where its whole block goes
+    } else {
+      group.push(entry);
+    }
+  };
+
   for (const m of await resolvePickedMounts(paths, codeRoots, fs)) {
-    add(
-      rowForHostPath('source', m.path, m.base),
-      () => warn(`  skipped ${m.path} — target already in use`),
-    );
-    // Right after its worktree, so the fence reads in the order the picker showed it.
+    const key = m.repo ?? m.path;
     if (m.primary !== undefined) {
-      add(
-        { source: foldHome(m.primary.gitDir), target: m.primary.target },
-        () => {}, // already covered by an earlier row → mount it once, silently
-      );
+      push(key, {
+        row: { source: foldHome(m.primary.gitDir), target: m.primary.target },
+        rank: 0,
+        onDup: () => {}, // already covered by an earlier row → mount it once, silently
+      });
+    }
+    push(key, {
+      row: rowForHostPath('source', m.path, m.base),
+      rank: m.path === key ? 1 : 2,
+      onDup: () => warn(`  skipped ${m.path} — target already in use`),
+    });
+  }
+
+  for (const key of order) {
+    // Stable, so worktrees of one repo stay in the order they were picked.
+    for (const e of groups.get(key)!.sort((a, b) => a.rank - b.rank)) {
+      add(e.row, e.onDup);
     }
   }
   return rows;

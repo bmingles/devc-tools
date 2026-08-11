@@ -143,7 +143,17 @@ export interface PickedMount {
   path: string;
   /** Directory its container target mirrors from; undefined ⇒ the `/workspaces/<basename>` fallback. */
   base?: string;
-  /** The primary repo `.git` this pick drags in (mountable worktrees only). */
+  /**
+   * Absolute host path of the primary repo's working tree this pick belongs to — set on mountable
+   * worktrees only. It is what groups a repo's mounts together in the fence, and it is deliberately
+   * the working tree rather than the git dir: a pick *of* the primary itself has that same path, so
+   * its worktrees group under it whether or not a separate `.git` mount was needed.
+   */
+  repo?: string;
+  /**
+   * The primary repo `.git` this pick drags in — set on the *first* pick of a repo that needs one,
+   * so a shared primary is mounted once (later picks of the same repo carry only `repo`).
+   */
   primary?: {
     /** Absolute host path of the primary repo's git dir. */
     gitDir: string;
@@ -153,8 +163,8 @@ export interface PickedMount {
 }
 
 /**
- * Resolve each picked path to the base its container target mirrors from and the primary `.git` it
- * drags in — one entry per input, in order.
+ * Resolve each picked path to the base its container target mirrors from, the repo it belongs to,
+ * and the primary `.git` it drags in — one entry per input, in order.
  *
  * Single source of truth on purpose: the picker shows these while you pick and the mount builder
  * writes them, so both call this rather than each deciding for itself. The base has to travel with
@@ -176,7 +186,11 @@ export async function resolvePickedMounts(
       continue;
     }
 
-    const mount: PickedMount = { path, base: wt.mountBase };
+    const mount: PickedMount = {
+      path,
+      base: wt.mountBase,
+      repo: wt.primaryRoot,
+    };
     // Nothing to add when the primary's whole working tree is picked (that mount already carries its
     // `.git`), or when an earlier pick brought the same target in — worktrees sharing one primary.
     if (

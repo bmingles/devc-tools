@@ -50,6 +50,7 @@ const SPACE = ' ';
 const ENTER = '\r';
 const DOWN = '\x1b[B';
 const RIGHT = '\x1b[C';
+const UP = '\x1b[A';
 const ESC = '\x1b';
 
 Deno.test('project flow: pick one source + one skills folder, apply gets the rows', async () => {
@@ -163,7 +164,8 @@ Deno.test('project flow: the project folder is pinned in the picker, not a pick'
 
 const WFS: Record<string, string[]> = {
   '/': ['code', 'skills', 'srv'],
-  '/code': ['myproject', 'myproject.worktrees'],
+  '/code': ['myproject', 'myproject.worktrees', 'zlib'], // `zlib`: an unrelated plain folder
+
   '/code/myproject.worktrees': ['feature1', 'feature2'],
   '/srv': ['proj', 'proj.worktrees'],
   '/srv/proj.worktrees': ['f1'],
@@ -216,14 +218,15 @@ Deno.test('worktree flow: source keeps its sub-path and mounts the primary .git'
         'gitdir: ../../myproject/.git/worktrees/feature1\n',
     },
   );
+  // The primary `.git` leads, then the worktree that needs it.
   assertEquals(sel.source, [
-    {
-      source: '/code/myproject.worktrees/feature1',
-      target: '/workspaces/myproject.worktrees/feature1',
-    },
     {
       source: '/code/myproject/.git',
       target: '/workspaces/myproject/.git',
+    },
+    {
+      source: '/code/myproject.worktrees/feature1',
+      target: '/workspaces/myproject.worktrees/feature1',
     },
   ]);
 });
@@ -259,11 +262,11 @@ Deno.test('worktree flow: two worktrees of one primary share a single .git mount
     r.target === '/workspaces/myproject/.git'
   );
   assertEquals(primaries.length, 1);
-  const targets = sel.source.map((r) => r.target).sort();
-  assertEquals(targets, [
+  // Written in order: the shared `.git` first, then both worktrees behind it.
+  assertEquals(sel.source.map((r) => r.target), [
+    '/workspaces/myproject/.git',
     '/workspaces/myproject.worktrees/feature1',
     '/workspaces/myproject.worktrees/feature2',
-    '/workspaces/myproject/.git',
   ]);
 });
 
@@ -276,9 +279,45 @@ Deno.test('worktree flow: picking the primary working tree too skips the redunda
         'gitdir: ../../myproject/.git/worktrees/feature1\n',
     },
   );
-  assertEquals(sel.source.map((r) => r.target).sort(), [
+  // No separate `.git` row, but the grouping still holds: the repo, then its worktree.
+  assertEquals(sel.source.map((r) => r.target), [
     '/workspaces/myproject',
     '/workspaces/myproject.worktrees/feature1',
+  ]);
+});
+
+Deno.test('worktree flow: a repo groups as one block however the picks were interleaved', async () => {
+  // Pick feature1, an unrelated folder, then feature2 — the two worktrees still write as one block
+  // behind their `.git`, and the unrelated pick keeps its place after them.
+  const sel = await runWith(
+    [
+      DOWN,
+      RIGHT,
+      SPACE, // into myproject.worktrees, tick feature1
+      LEFT,
+      DOWN,
+      DOWN,
+      SPACE, // back to /code (cursor resets to the top), down to zlib, tick it
+      UP,
+      RIGHT,
+      DOWN,
+      SPACE, // back into myproject.worktrees, tick feature2
+      ENTER,
+      ENTER,
+      'y',
+    ],
+    {
+      '/code/myproject.worktrees/feature1/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature1\n',
+      '/code/myproject.worktrees/feature2/.git':
+        'gitdir: ../../myproject/.git/worktrees/feature2\n',
+    },
+  );
+  assertEquals(sel.source.map((r) => r.target), [
+    '/workspaces/myproject/.git',
+    '/workspaces/myproject.worktrees/feature1',
+    '/workspaces/myproject.worktrees/feature2',
+    '/workspaces/zlib',
   ]);
 });
 
@@ -444,14 +483,15 @@ Deno.test("worktree flow: absorbing the fence's .git row rewrites the same fence
       });
     },
   });
+  // Rewritten primary-first, whatever order the fence on disk was in.
   assertEquals((captured as unknown as WizardSelection).source, [
-    {
-      source: '/code/myproject.worktrees/feature1',
-      target: '/workspaces/myproject.worktrees/feature1',
-    },
     {
       source: '/code/myproject/.git',
       target: '/workspaces/myproject/.git',
+    },
+    {
+      source: '/code/myproject.worktrees/feature1',
+      target: '/workspaces/myproject.worktrees/feature1',
     },
   ]);
   assertEquals(warnings, [], 'no duplicate-target skip to report any more');
@@ -503,12 +543,12 @@ Deno.test('free navigation: a worktree outside every root still mounts its prima
   // /workspaces/proj.worktrees/f1/../../proj/.git → /workspaces/proj/.git.
   assertEquals(sel.source, [
     {
-      source: '/srv/proj.worktrees/f1',
-      target: '/workspaces/proj.worktrees/f1',
-    },
-    {
       source: '/srv/proj/.git',
       target: '/workspaces/proj/.git',
+    },
+    {
+      source: '/srv/proj.worktrees/f1',
+      target: '/workspaces/proj.worktrees/f1',
     },
   ]);
 });

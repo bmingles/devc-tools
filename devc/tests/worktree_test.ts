@@ -149,6 +149,7 @@ Deno.test('resolvePickedMounts: a valid worktree drags in its primary .git', asy
     [{
       path: WT('feature1'),
       base: '/home/me/code',
+      repo: '/home/me/code/myproject',
       primary: {
         gitDir: '/home/me/code/myproject/.git',
         target: '/workspaces/myproject/.git',
@@ -170,6 +171,11 @@ Deno.test('resolvePickedMounts: two worktrees of one primary bring it in once', 
     undefined,
     "the second shares the first's mount",
   );
+  // Both still name the repo, which is what groups them behind that one mount.
+  assertEquals(mounts.map((m) => m.repo), [
+    '/home/me/code/myproject',
+    '/home/me/code/myproject',
+  ]);
 });
 
 Deno.test('resolvePickedMounts: picking the primary working tree makes the .git mount moot', async () => {
@@ -180,6 +186,11 @@ Deno.test('resolvePickedMounts: picking the primary working tree makes the .git 
   );
   assertEquals(mounts.map((m) => m.primary), [undefined, undefined]);
   assertEquals(mounts.map((m) => m.base), ['/home/me/code', '/home/me/code']);
+  // The worktree's repo key is the picked primary itself, so the two group together.
+  assertEquals(mounts.map((m) => m.repo), [
+    undefined,
+    '/home/me/code/myproject',
+  ]);
 });
 
 Deno.test('resolvePickedMounts: an invalid worktree and a plain folder keep their root as base', async () => {
@@ -209,6 +220,7 @@ Deno.test('resolvePickedMounts: a worktree outside every root mirrors from the c
     [{
       path: '/srv/proj.worktrees/f1',
       base: '/srv',
+      repo: '/srv/proj',
       primary: { gitDir: '/srv/proj/.git', target: '/workspaces/proj/.git' },
     }],
   );
