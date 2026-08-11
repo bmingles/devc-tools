@@ -345,10 +345,11 @@ check "no temp dir survives a failure either" \
 # --- 12: the matrix this installer expects ---------------------------------------------
 
 echo "case 12: install.sh and the release workflow agree on the asset names"
-# Names are <tool>-<version>-<triple>.tar.gz in both files, but each spells the version
-# with its own variable — $VERSION in the workflow (bare, from the gate job), $BARE_VERSION
-# in install.sh. So the literal checked here is the workflow's spelling; what it guards is
-# the part that can actually drift, the tool prefix and the triple.
+# Names are <tool>-<version>-<triple>.tar.gz in both files, but each spells the version with
+# its own variable — $VERSION in the workflow (bare, from the gate job), $BARE_VERSION in
+# install.sh — so the literal below is the workflow's spelling. The installer's own half
+# needs no assertion here: cases 1-11 run it against fixtures named by make_release, so a
+# wrong name there is already a failed download.
 WF="$(dirname "$SCRIPT")/.github/workflows/release.yml"
 if [ -f "$WF" ]; then
   for asset in \
@@ -360,12 +361,6 @@ if [ -f "$WF" ]; then
     'devc-bridge-client-$VERSION-aarch64-unknown-linux-gnu'; do
     check "workflow builds $asset.tar.gz" grep -qF "$asset.tar.gz" "$WF"
   done
-  # And the version really is in the middle on both sides — the property the whole naming
-  # scheme exists for. A revert to <tool>-<triple> passes every check above but not this.
-  check 'install.sh puts the version in the asset name' \
-    grep -qF 'devc-$BARE_VERSION-$HOST_TRIPLE.tar.gz' "$SCRIPT"
-  check 'install.sh versions the client asset too' \
-    grep -qF 'devc-bridge-client-$BARE_VERSION-$CLIENT_TRIPLE.tar.gz' "$SCRIPT"
 else
   echo "  skip (no $WF)"
 fi
