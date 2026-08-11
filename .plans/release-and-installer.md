@@ -330,11 +330,15 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
       stamped `install.sh`, `gh release create`
 - [x] `devc/tests/jsonc_edit_test.ts:111` — fixed ahead of this plan: the
       fixture was missing its fence end marker (9/9 passing)
-- [ ] `install.sh` — detect, resolve version, verify checksums, install the
+- [x] `install.sh` — detect, resolve version, verify checksums, install the
       per-platform set, `DEVC_*` env knobs, PATH warning
 - [x] `.gitignore` — `/dist/` (added ahead of this plan, for the signing test)
-- [ ] Tests for the installer's triple→asset mapping (a shell harness in the
-      style of `devc/tests/bridge_client_link_test.sh`)
+- [x] Tests for the installer's triple→asset mapping (a shell harness in the
+      style of `devc/tests/bridge_client_link_test.sh`, which has since moved to
+      `features/devc-bridge/test/install_link_test.sh`) — `tests/install_test.sh`,
+      which runs the real script against a `file://` fixture release with `uname`
+      stubbed on PATH: all four triples, the failure paths, the env knobs and the
+      upgrade path
 - [ ] `README.md`, `devc/README.md`, `devc-bridge/README.md` — install-first
 - [ ] `.plans/PLAN.md` — register
 
