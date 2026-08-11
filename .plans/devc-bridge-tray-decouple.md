@@ -101,7 +101,7 @@ Delete everything named in decision 4. `loadConfig` reads env or built-in
 defaults, nothing else. `Config` loses `settingsFile`.
 
 Note this file is also touched by
-[devc-bridge-feature](devc-bridge-feature.md), which moves `pidfile` out of
+[devc-bridge-feature](archived/devc-bridge-feature.md), which moves `pidfile` out of
 `run/`. Independent edits; whichever lands first does that move.
 
 ### `devc-bridge/host/serve.ts` — deleted

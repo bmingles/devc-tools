@@ -11,23 +11,6 @@
 
 ### Pending
 
-- [devc-bridge-feature](devc-bridge-feature.md) — Repackage the container half
-  of devc-bridge as a published devcontainer Feature, so any project (devc or
-  not) opts in with one line, and devc's bundled config consumes the same
-  Feature instead of carrying its own mounts — one mechanism, not two. Two
-  assumptions were tested rather than assumed, with a throwaway Feature under
-  `test/`: `${localEnv:HOME}` **is** substituted in Feature mounts, and a mount
-  written as a **string** is passed through verbatim so `readonly` survives
-  (`RW=false`), while the object form is re-serialized and drops it. The string
-  form is unspecified by the published schema, so the probe is kept as a
-  regression harness. Features cannot declare `initializeCommand`, so the
-  Feature cannot create its own mount sources: standalone users must install the
-  host bridge first (documented), while devc keeps its own host-side hook and
-  stays inert-when-absent. Docker Compose is out of scope — the string form
-  emits the wrong syntax there — which is why the pidfile also moves out of
-  `run/`, making a writable token mount harmless rather than a way to feed
-  `devc-bridge stop` an arbitrary PID.
-
 - [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md) — Make
   `devc-bridge start` run the bridge as a plain detached background process:
   no `.app`, no `deno desktop`, no LaunchServices, with the menu-bar tray
@@ -64,6 +47,39 @@
 
 ### Completed
 
+- [devc-bridge-feature](archived/devc-bridge-feature.md) — Repackage the container half
+  of devc-bridge as a published devcontainer Feature, so any project (devc or
+  not) opts in with one line, and devc's bundled config consumes the same
+  Feature instead of carrying its own mounts — one mechanism, not two. Two
+  assumptions were tested rather than assumed, with a throwaway Feature under
+  `test/`: `${localEnv:HOME}` **is** substituted in Feature mounts, and a mount
+  written as a **string** is passed through verbatim so `readonly` survives
+  (`RW=false`), while the object form is re-serialized and drops it. The string
+  form is unspecified by the published schema, so the probe is kept as a
+  regression harness. Features cannot declare `initializeCommand`, so the
+  Feature cannot create its own mount sources: standalone users must install the
+  host bridge first (documented), while devc keeps its own host-side hook and
+  stays inert-when-absent. Docker Compose is out of scope — the string form
+  emits the wrong syntax there — which is why the pidfile also moves out of
+  `run/`, making a writable token mount harmless rather than a way to feed
+  `devc-bridge stop` an arbitrary PID.
+  Merged. Verified here: `deno task check`/`test` (269/269) and repo-wide
+  `deno fmt --check` clean, the Feature's `install.sh` symlink harness (moved
+  from devc's tests and retargeted) passing all five cases, devc's other four
+  shell harnesses unchanged, and a new unit test pinning the two mounts to the
+  **string** form with `readonly`. Left for a human, all needing Docker or a
+  real host: the `devcontainer features test` scenario (written, not run), a
+  standalone non-devc project reaching `pong`, a devc project with no
+  duplicate-mount error, the two failed `touch`es, the never-installed-bridge
+  difference between the devc and standalone paths, live client healing, and
+  `stop` against the moved pidfile. **The Feature must be published before
+  devc's bundled config is used**, this repo's own container included: that
+  config is materialized into a cache dir, so it can only reference a published
+  ref. Deviations recorded in the archived plan: `:0` rather than `:1` (a 0.1.0
+  publish has no `1` tag), and a staging wrapper for `devcontainer features
+  test`, which insists on a `src/`+`test/` collection layout that
+  `features publish` does not.
+
 - [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) — Ship the devc-bridge
   container client by **read-only bind mount** from devc's bundled
   `devcontainer.json`, so every devc container gets it with no per-project
@@ -86,7 +102,7 @@
   points) and its `.devc/devc-post-create.sh` is deleted, leaving devc-tools
   consuming the bridge like any other project.
   Merged and in use; its remaining end-to-end checks were deliberately not run
-  standalone, because [devc-bridge-feature](devc-bridge-feature.md) replaces
+  standalone, because [devc-bridge-feature](archived/devc-bridge-feature.md) replaces
   this mechanism and re-tests the same behaviors more thoroughly.
 
 - [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) —
@@ -330,6 +346,6 @@
 | devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md)               | complete |
 | devc project post-create hook — restore `devc-post-create.sh` for zero-config projects   | [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) | complete |
 | devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](archived/devc-bridge-client-mount.md)           | complete |
-| devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](devc-bridge-feature.md)                              |          |
+| devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](archived/devc-bridge-feature.md)                     | complete |
 | devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md)                  |          |
 | releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](release-and-installer.md)                          |          |

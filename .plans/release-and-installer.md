@@ -387,7 +387,7 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
 - `devc-bridge/host/version.ts` — new
 - `devc/help.ts` — existing `VERSION`, the guard's reference point
 - `.github/workflows/release.yml` — new (alongside `publish-feature.yml`, added by
-  [devc-bridge-feature](devc-bridge-feature.md))
+  [devc-bridge-feature](archived/devc-bridge-feature.md))
 - `install.sh` — new
 - `devc/deno.json`, `devc-bridge/host/deno.json`, `devc-bridge/client/deno.json`
   — release build tasks
