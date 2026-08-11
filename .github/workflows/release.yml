@@ -207,6 +207,12 @@ jobs:
           fi
           exit "$fail"
 
+      # <tool>-<version>-<triple>.tar.gz, the shape GoReleaser and most Rust/Go releases
+      # use. The version is in the middle for two reasons: digits sort before letters, so
+      # devc-bridge-* can never wedge itself into the middle of devc-* on the release page;
+      # and a downloaded archive says which version it is instead of colliding in
+      # ~/Downloads. $VERSION is bare here — the `v` belongs to the tag, not the file.
+      #
       # Every asset is a .tar.gz, even a single binary: executable bits matter and tar
       # carries mode, zip does not portably. One archive format keeps the installer's
       # extract path single.
@@ -214,13 +220,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/assets
-          tar -czf "dist/assets/devc-$DEVC_TARGET.tar.gz" -C dist/devc devc
+          tar -czf "dist/assets/devc-$VERSION-$DEVC_TARGET.tar.gz" -C dist/devc devc
           if [ -d dist/devc-bridge-host ]; then
-            tar -czf "dist/assets/devc-bridge-host-$DEVC_TARGET.tar.gz" \
+            tar -czf "dist/assets/devc-bridge-host-$VERSION-$DEVC_TARGET.tar.gz" \
               -C dist/devc-bridge-host devc-bridge
           fi
           if [ -d dist/devc-bridge-client ]; then
-            tar -czf "dist/assets/devc-bridge-client-$DEVC_TARGET.tar.gz" \
+            tar -czf "dist/assets/devc-bridge-client-$VERSION-$DEVC_TARGET.tar.gz" \
               -C dist/devc-bridge-client devc-bridge
           fi
           ls -l dist/assets
@@ -237,6 +243,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ needs.gate.outputs.tag }}
+      VERSION: ${{ needs.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -255,15 +262,15 @@ jobs:
           set -euo pipefail
           mkdir -p dist/release
           cp dist/incoming/*.tar.gz dist/release/
-          cat > /tmp/expected.txt <<'EOF'
-          devc-aarch64-apple-darwin.tar.gz
-          devc-aarch64-unknown-linux-gnu.tar.gz
-          devc-bridge-client-aarch64-unknown-linux-gnu.tar.gz
-          devc-bridge-client-x86_64-unknown-linux-gnu.tar.gz
-          devc-bridge-host-aarch64-apple-darwin.tar.gz
-          devc-bridge-host-x86_64-apple-darwin.tar.gz
-          devc-x86_64-apple-darwin.tar.gz
-          devc-x86_64-unknown-linux-gnu.tar.gz
+          cat > /tmp/expected.txt <<EOF
+          devc-$VERSION-aarch64-apple-darwin.tar.gz
+          devc-$VERSION-aarch64-unknown-linux-gnu.tar.gz
+          devc-$VERSION-x86_64-apple-darwin.tar.gz
+          devc-$VERSION-x86_64-unknown-linux-gnu.tar.gz
+          devc-bridge-client-$VERSION-aarch64-unknown-linux-gnu.tar.gz
+          devc-bridge-client-$VERSION-x86_64-unknown-linux-gnu.tar.gz
+          devc-bridge-host-$VERSION-aarch64-apple-darwin.tar.gz
+          devc-bridge-host-$VERSION-x86_64-apple-darwin.tar.gz
           EOF
           (cd dist/release && ls -1 ./*.tar.gz | sed 's#^\./##' | sort) > /tmp/actual.txt
           if ! diff -u /tmp/expected.txt /tmp/actual.txt; then

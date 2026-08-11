@@ -97,6 +97,12 @@ To cut a release:
 3. [`release.yml`](.github/workflows/release.yml) builds each of the eight
    archives on a runner of its own architecture, runs `--version` on what it
    built, writes `checksums.txt`, stamps the tag into `install.sh` and publishes.
+   Assets are named `<tool>-<version>-<triple>.tar.gz` — the version sits in the
+   middle so the assets group by tool on the release page (digits sort before
+   letters, so `devc-bridge-*` cannot wedge into the middle of `devc-*`) and a
+   downloaded archive says which version it is. `install.sh` and `checksums.txt`
+   stay version-free: the former is served from `releases/latest/download/`, so
+   its name cannot move.
    [`publish-feature.yml`](.github/workflows/publish-feature.yml) pushes the
    devcontainer Feature on the same tag.
 

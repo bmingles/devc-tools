@@ -69,16 +69,18 @@ make_archive() { # make_archive <release-dir> <asset> <binary-name> <marker>
 # .github/workflows/release.yml publishes.
 make_release() { # make_release <dir> <version-marker>
   local dir="$1" v="$2"
+  # Asset names carry the bare version; the tag (and the URL path) carries the `v`.
+  local b="${v#v}"
   mkdir -p "$dir"
   local t
   for t in "${TRIPLES[@]}"; do
-    make_archive "$dir" "devc-$t.tar.gz" devc "devc $v $t"
+    make_archive "$dir" "devc-$b-$t.tar.gz" devc "devc $v $t"
   done
   for t in "${DARWIN[@]}"; do
-    make_archive "$dir" "devc-bridge-host-$t.tar.gz" devc-bridge "host $v $t"
+    make_archive "$dir" "devc-bridge-host-$b-$t.tar.gz" devc-bridge "host $v $t"
   done
   for t in "${LINUX[@]}"; do
-    make_archive "$dir" "devc-bridge-client-$t.tar.gz" devc-bridge "client $v $t"
+    make_archive "$dir" "devc-bridge-client-$b-$t.tar.gz" devc-bridge "client $v $t"
   done
   ( cd "$dir" && sha256sum ./*.tar.gz | sed 's#\./##' > checksums.txt )
 }
@@ -185,11 +187,11 @@ check_out "names the arches it supports" 'supported: x86_64, arm64/aarch64'
 echo "case 6: a corrupted checksums.txt entry aborts with nothing written"
 BADREL="$WORK/badrelease/download/v9.9.9"
 make_release "$BADREL" v9.9.9
-sed -i 's/^[0-9a-f]\{64\}\(  devc-x86_64-unknown-linux-gnu\)/00000000000000000000000000000000000000000000000000000000000000ff\1/' \
+sed -i 's/^[0-9a-f]\{64\}\(  devc-9\.9\.9-x86_64-unknown-linux-gnu\)/00000000000000000000000000000000000000000000000000000000000000ff\1/' \
   "$BADREL/checksums.txt"
 run_install badsum Linux x86_64 DEVC_RELEASE_BASE="file://$WORK/badrelease"
 check "nonzero exit" test $? -ne 0
-check_out "says which asset mismatched" 'checksum mismatch for devc-x86_64-unknown-linux-gnu.tar.gz'
+check_out "says which asset mismatched" 'checksum mismatch for devc-9.9.9-x86_64-unknown-linux-gnu.tar.gz'
 check_out "says nothing was installed" 'nothing was installed'
 check "devc not installed" test ! -e "$HOME_DIR/.local/bin/devc"
 check "client not installed either (staged first, installed last)" \
@@ -198,7 +200,7 @@ check "client not installed either (staged first, installed last)" \
 echo "case 6b: a tampered *archive* is caught the same way"
 TAMPER="$WORK/tampered/download/v9.9.9"
 make_release "$TAMPER" v9.9.9
-make_archive "$TAMPER" devc-x86_64-unknown-linux-gnu.tar.gz devc 'pwned'
+make_archive "$TAMPER" devc-9.9.9-x86_64-unknown-linux-gnu.tar.gz devc 'pwned'
 run_install tampered Linux x86_64 DEVC_RELEASE_BASE="file://$WORK/tampered"
 check "nonzero exit" test $? -ne 0
 check_out "reports a mismatch" 'checksum mismatch'
@@ -207,7 +209,7 @@ check "devc not installed" test ! -e "$HOME_DIR/.local/bin/devc"
 echo "case 6c: an asset missing from checksums.txt is not silently trusted"
 NOSUM="$WORK/nosum/download/v9.9.9"
 make_release "$NOSUM" v9.9.9
-grep -v 'devc-x86_64-unknown-linux-gnu' "$NOSUM/checksums.txt" > "$NOSUM/c2" && mv "$NOSUM/c2" "$NOSUM/checksums.txt"
+grep -v 'devc-9.9.9-x86_64-unknown-linux-gnu' "$NOSUM/checksums.txt" > "$NOSUM/c2" && mv "$NOSUM/c2" "$NOSUM/checksums.txt"
 run_install nosum Linux x86_64 DEVC_RELEASE_BASE="file://$WORK/nosum"
 check "nonzero exit" test $? -ne 0
 check_out "says the entry is missing" 'checksums.txt has no entry for'
@@ -216,7 +218,7 @@ check "devc not installed" test ! -e "$HOME_DIR/.local/bin/devc"
 echo "case 6d: a missing asset fails cleanly"
 GONE="$WORK/gone/download/v9.9.9"
 make_release "$GONE" v9.9.9
-rm "$GONE/devc-x86_64-unknown-linux-gnu.tar.gz"
+rm "$GONE/devc-9.9.9-x86_64-unknown-linux-gnu.tar.gz"
 run_install gone Linux x86_64 DEVC_RELEASE_BASE="file://$WORK/gone"
 check "nonzero exit" test $? -ne 0
 check_out "names the failed download" 'download failed'
@@ -343,15 +345,27 @@ check "no temp dir survives a failure either" \
 # --- 12: the matrix this installer expects ---------------------------------------------
 
 echo "case 12: install.sh and the release workflow agree on the asset names"
+# Names are <tool>-<version>-<triple>.tar.gz in both files, but each spells the version
+# with its own variable — $VERSION in the workflow (bare, from the gate job), $BARE_VERSION
+# in install.sh. So the literal checked here is the workflow's spelling; what it guards is
+# the part that can actually drift, the tool prefix and the triple.
 WF="$(dirname "$SCRIPT")/.github/workflows/release.yml"
 if [ -f "$WF" ]; then
   for asset in \
-    devc-x86_64-unknown-linux-gnu devc-aarch64-unknown-linux-gnu \
-    devc-x86_64-apple-darwin devc-aarch64-apple-darwin \
-    devc-bridge-host-x86_64-apple-darwin devc-bridge-host-aarch64-apple-darwin \
-    devc-bridge-client-x86_64-unknown-linux-gnu devc-bridge-client-aarch64-unknown-linux-gnu; do
+    'devc-$VERSION-x86_64-unknown-linux-gnu' 'devc-$VERSION-aarch64-unknown-linux-gnu' \
+    'devc-$VERSION-x86_64-apple-darwin' 'devc-$VERSION-aarch64-apple-darwin' \
+    'devc-bridge-host-$VERSION-x86_64-apple-darwin' \
+    'devc-bridge-host-$VERSION-aarch64-apple-darwin' \
+    'devc-bridge-client-$VERSION-x86_64-unknown-linux-gnu' \
+    'devc-bridge-client-$VERSION-aarch64-unknown-linux-gnu'; do
     check "workflow builds $asset.tar.gz" grep -qF "$asset.tar.gz" "$WF"
   done
+  # And the version really is in the middle on both sides — the property the whole naming
+  # scheme exists for. A revert to <tool>-<triple> passes every check above but not this.
+  check 'install.sh puts the version in the asset name' \
+    grep -qF 'devc-$BARE_VERSION-$HOST_TRIPLE.tar.gz' "$SCRIPT"
+  check 'install.sh versions the client asset too' \
+    grep -qF 'devc-bridge-client-$BARE_VERSION-$CLIENT_TRIPLE.tar.gz' "$SCRIPT"
 else
   echo "  skip (no $WF)"
 fi

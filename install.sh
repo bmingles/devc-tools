@@ -156,6 +156,11 @@ resolve_version() {
     v*) ;;
     *) VERSION="v$VERSION" ;;
   esac
+  # Asset filenames carry the *bare* version — the `v` belongs to the tag and to the URL
+  # path, not to the file. Keeping the version in the filename is what stops `devc-bridge-*`
+  # from sorting into the middle of `devc-*` on the release page (digits sort before
+  # letters), and makes a downloaded archive self-identifying.
+  BARE_VERSION="${VERSION#v}"
 }
 
 # --- fetch + verify ------------------------------------------------------------------
@@ -265,12 +270,12 @@ main() {
 
   # Stage everything first; install only once all of it has verified, so a corrupt or
   # tampered asset aborts with nothing written anywhere.
-  if want devc; then stage devc "devc-$HOST_TRIPLE.tar.gz" devc; fi
+  if want devc; then stage devc "devc-$BARE_VERSION-$HOST_TRIPLE.tar.gz" devc; fi
   if want bridge; then
-    stage bridge "devc-bridge-host-$HOST_TRIPLE.tar.gz" devc-bridge
+    stage bridge "devc-bridge-host-$BARE_VERSION-$HOST_TRIPLE.tar.gz" devc-bridge
   fi
   if want client; then
-    stage client "devc-bridge-client-$CLIENT_TRIPLE.tar.gz" devc-bridge
+    stage client "devc-bridge-client-$BARE_VERSION-$CLIENT_TRIPLE.tar.gz" devc-bridge
   fi
 
   if want devc; then install_binary devc devc "$INSTALL_DIR" devc; fi

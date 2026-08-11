@@ -58,10 +58,14 @@ Expected from `release.yml`:
 - [ ] `publish` collects exactly these eight, and `diff` against the expected
       list is empty:
 
-      devc-{x86_64,aarch64}-unknown-linux-gnu.tar.gz
-      devc-{x86_64,aarch64}-apple-darwin.tar.gz
-      devc-bridge-host-{x86_64,aarch64}-apple-darwin.tar.gz
-      devc-bridge-client-{x86_64,aarch64}-unknown-linux-gnu.tar.gz
+      devc-0.1.0-{x86_64,aarch64}-unknown-linux-gnu.tar.gz
+      devc-0.1.0-{x86_64,aarch64}-apple-darwin.tar.gz
+      devc-bridge-host-0.1.0-{x86_64,aarch64}-apple-darwin.tar.gz
+      devc-bridge-client-0.1.0-{x86_64,aarch64}-unknown-linux-gnu.tar.gz
+
+- [ ] On the release page the assets group by tool — four `devc-`, then two
+      `client`, then two `host`. The version sits between tool and triple
+      precisely so `devc-bridge-*` cannot sort into the middle of `devc-*`.
 
 - [ ] `sha256sum -c checksums.txt` passes in the collect step
 - [ ] The stamp step rewrites `DEVC_RELEASE_VERSION='v0.1.0'` and `sh -n` passes
