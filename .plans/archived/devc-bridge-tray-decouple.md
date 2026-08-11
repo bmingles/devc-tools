@@ -7,7 +7,7 @@
 an opt-in extra rather than the only way to run the thing.
 
 This is what makes the host binary shippable at all, and it deletes work from
-[release-and-installer](release-and-installer.md) rather than adding to it.
+[release-and-installer](../release-and-installer.md) rather than adding to it.
 
 ### Why
 
@@ -53,7 +53,7 @@ already runs without a tray. Only `start` insists otherwise.
    `Deno.execPath()` is the `deno` binary and the script path is needed;
    compiled, `execPath()` is the bridge itself. One helper returns the argv for
    both, rather than sprinkling the distinction through `start`. This is the
-   same source-vs-compiled question [release-and-installer](release-and-installer.md)
+   same source-vs-compiled question [release-and-installer](../release-and-installer.md)
    raised, answered once and in the one place that needs it.
 4. **Delete the settings-file mechanism entirely** — `Settings`, `SETTING_ENV`,
    `readSettings`, `persistEnvSettings`, `settingsFile`, and the stored-value
@@ -101,7 +101,7 @@ Delete everything named in decision 4. `loadConfig` reads env or built-in
 defaults, nothing else. `Config` loses `settingsFile`.
 
 Note this file is also touched by
-[devc-bridge-feature](archived/devc-bridge-feature.md), which moves `pidfile` out of
+[devc-bridge-feature](devc-bridge-feature.md), which moves `pidfile` out of
 `run/`. Independent edits; whichever lands first does that move.
 
 ### `devc-bridge/host/serve.ts` — deleted
@@ -146,28 +146,51 @@ are still needed for anything but signing.
       prerequisite removed
 - [x] `devc-bridge/README.md` — headless default, `status` as the
       idle/active affordance, tray as a from-source extra
-- [ ] `.plans/PLAN.md` — status
+- [x] `.plans/PLAN.md` — status
 
 ## Validation
 
-- [ ] `deno task check` / `fmt --check` clean
-- [ ] Relaunch-argv helper returns a runnable argv under `deno run` and under a
-      compiled binary
+Everything below was run on **Linux, in this repo's devcontainer** unless it says
+otherwise — which is itself a result: none of it needed a Mac or a GUI any more.
+The `(user)` items are the ones whose remaining half is macOS-specific.
+
+- [x] `deno task check` / `fmt --check` clean — plus `deno task test` in
+      `devc-bridge/host` (new, 10/10) and in `devc` (269/269, unchanged)
+- [x] Relaunch-argv helper returns a runnable argv under `deno run` and under a
+      compiled binary — the `deno run` argv is executed by a test; the compiled
+      argv is exercised end-to-end by the compiled binary's own `start` below
 - [ ] (user) From source: `devc-bridge start` → `status` reports running;
-      `devc-bridge ping test` from a container still returns `pong`
-- [ ] (user) **The case that motivates this plan:** `deno task build`, then run
-      the _compiled_ binary's `start` on a machine with **no `deno` on PATH** →
-      it comes up. This is the exact path that fails today
-- [ ] (user) The daemon survives closing the terminal that started it
-- [ ] (user) `stop` still stops it; `restart` works; a second `start` reports
-      already-running rather than starting a rival
+      `devc-bridge ping test` from a container still returns `pong`.
+      **Verified here** apart from the container: `start`/`status` from source
+      are a test, and `ping` from `client/devc-bridge.ts` over loopback returned
+      `pong` and armed a stub `caffeinate`. Only the container→host hop and the
+      real macOS `caffeinate` are left
+- [x] **The case that motivates this plan:** `deno task build`, then run the
+      _compiled_ binary's `start` on a machine with **no `deno` on PATH** → it
+      comes up. Verified with `env PATH=/usr/bin:/bin`:
+      `start`/`status`/`restart`/`stop` all work, nothing is built, and the log
+      shows the daemon listening. (On Linux — a Mac should still see it once.)
+- [x] The daemon survives closing the terminal that started it — and this found
+      a real bug: `nohup`'s SIG_IGN does **not** survive Deno's own signal setup
+      (`SigCgt` in /proc carries SIGHUP), so the daemon died on hangup. Fixed
+      with an explicit empty SIGHUP listener in `run`, and pinned by a test
+- [x] (user) `stop` still stops it; `restart` works; a second `start` reports
+      already-running rather than starting a rival — all three from the compiled
+      binary, plus a test for the orphaned-port refusal
 - [ ] (user) Keepalive still works end-to-end with no tray: pings from a
       container start `caffeinate` and it stops after the idle timeout
-      (`pmset -g assertions | grep -i caffeinate`)
-- [ ] (user) `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=… devc-bridge restart` takes effect
-      **without** the settings file — the inherited environment is the whole
-      mechanism now (decision 4)
+      (`pmset -g assertions | grep -i caffeinate`). **The tray-less half is
+      verified**: against a stub `caffeinate`, a `ping` armed it, `status`
+      reported `active: caffeinate`, and it stopped by itself after the idle
+      timeout. Only the real `caffeinate(8)`/`pmset` part needs a Mac
+- [x] `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=… devc-bridge restart` takes effect
+      **without** the settings file — verified: the log reports the inherited
+      `idleMs`, no `settings.json` is written, and unsetting it reverts
 - [ ] (user) Tray still reachable from source via the opt-in and `deno task dev`
+      — `run --tray` was run from source and came up (headless, as it must with
+      no `Deno.Tray` on Linux). Whether a real menu-bar icon appears under
+      `deno desktop` needs a Mac: this container's `deno desktop` never executes
+      the bundle it builds
 
 ## Relevant Files
 

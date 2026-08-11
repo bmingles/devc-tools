@@ -11,41 +11,59 @@
 
 ### Pending
 
-- [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md) — Make
-  `devc-bridge start` run the bridge as a plain detached background process:
-  no `.app`, no `deno desktop`, no LaunchServices, with the menu-bar tray
-  demoted to an opt-in extra. This is what makes the host binary shippable —
-  a compiled binary's `start` fails today because it shells out to
-  `deno desktop … main.ts` with a cwd derived from `Deno.mainModule`, which in a
-  compiled binary is a virtual `/tmp/deno-compile-*` path (verified), and it
-  needs a `deno` on PATH that a released binary must not assume. Nothing of
-  substance is lost: `core.ts` owns the server, dispatch and keepawake,
-  `tray.ts` already degrades headless when `Deno.Tray` is absent, and `serve.ts`
-  is already a headless entrypoint. It also deletes the settings-file mechanism
-  outright, which exists only because `open -g` starts the tray under launchd
-  without the shell's environment. Sequenced **before**
-  [release-and-installer](release-and-installer.md): it removes that plan's
-  first checklist item and two of its ten assets rather than adding to them.
-
 - [release-and-installer](release-and-installer.md) — Publish prebuilt binaries
   from a tagged GitHub release and install them with one `curl | sh`, so nobody
   needs Deno to _use_ these tools. Covers `devc` (4 targets), the devc-bridge
-  host CLI + tray `.app` (macOS), and the Linux container client — the
-  destination [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) already
-  fixed. **Blocked on a prerequisite it also fixes:** a compiled
-  `devc-bridge start` cannot work today, because it shells out to
-  `deno desktop … main.ts` with a cwd derived from `Deno.mainModule`, which in a
-  compiled binary is a virtual `/tmp/deno-compile-*` path that does not exist
-  (verified) — so `start` must build only when running from source and otherwise
-  require the installed app. Two other findings shape it: `deno desktop`
-  cross-compiles darwin targets from Linux (one `ubuntu-latest` job builds
-  everything, subject to code-signing), and the tray bundle's executable is a
-  generic `laufey_webview`, so macOS needs both a plain CLI binary and the
-  `.app`. Assets are named by Deno's own target triples, verified against a
-  `checksums.txt`, and installed without `sudo` into `~/.local/bin`. The Linux
-  client is arch-matched to the **host**, not the installer's own platform.
+  host CLI (macOS) and the Linux container client — the destination
+  [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) already fixed.
+  **Its prerequisite is done:**
+  [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md) made a
+  compiled `devc-bridge start` work, which removed this plan's first checklist
+  item and both `.app` assets with it — eight plain-binary archives now, no
+  bundle, no `--icon`, and nothing needing a second macOS artifact. Assets are
+  named by Deno's own target triples, built natively on a runner of each
+  architecture (which is also how "does this run on Apple Silicon" becomes a CI
+  assertion), verified against a `checksums.txt`, and installed without `sudo`
+  into `~/.local/bin`. The Linux client is arch-matched to the **host**, not the
+  installer's own platform.
 
 ### Completed
+
+- [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md) — Make
+  `devc-bridge start` run the bridge as a plain detached background process: no
+  `.app`, no `deno desktop`, no LaunchServices, with the menu-bar tray demoted to
+  an opt-in extra behind `run --tray`. This is what makes the host binary
+  shippable — a compiled binary's `start` used to shell out to
+  `deno desktop … main.ts` with a cwd derived from `Deno.mainModule`, which in a
+  compiled binary is a virtual `/tmp/deno-compile-*` path, and it needed a `deno`
+  on PATH that a released binary must not assume. `start` now relaunches _the
+  program it was invoked as_ with the `run` subcommand, detached; one helper
+  returns that argv for both modes, keyed off `Deno.build.standalone` — **not** a
+  path probe, because a compiled binary can stat its own virtual `main.ts` even
+  though nothing it spawns can reach it. Nothing of substance is lost: `core.ts`
+  owns the server, dispatch and keepawake, and `tray.ts` already degraded
+  headless when `Deno.Tray` is absent. `serve.ts` is deleted — bare `run` is what
+  it was — and its opt-in keepawake resolves toward `Config`, which always
+  configures it. The settings file goes too: it existed only because `open -g`
+  started the tray under launchd without the shell's environment, and a detached
+  child inherits that environment directly.
+  Verified here, all on Linux with no GUI, which is itself the result: the
+  compiled binary's `start`/`status`/`restart`/`stop` on a PATH with **no
+  `deno`** (the case that blocked shipping), a `ping` from the client arming and
+  expiring a stub keepalive with `status` reporting `active: caffeinate`,
+  `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS` taking effect through the inherited environment
+  with no `settings.json` written, `run --tray` coming up (headless, as it must
+  without `Deno.Tray`), and a new 10-test host suite covering the relaunch argv
+  in both modes plus `start`'s detach-and-wait contract. **One real bug was found
+  by validating rather than assuming:** `nohup`'s SIG_IGN does not survive Deno's
+  own signal setup, so the daemon died when the terminal that started it closed —
+  fixed with an explicit SIGHUP listener and pinned by a test. Left for a human,
+  all macOS-only: the real `caffeinate(8)`/`pmset` assertions, a container→host
+  `ping`, and whether a menu-bar icon actually appears under `deno task dev`
+  (this container's `deno desktop` never executes the bundle it builds). Also
+  updated [release-and-installer](release-and-installer.md) in the same change,
+  as planned: its first checklist item and both `.app` assets are gone (ten
+  archives → eight) and its decisions 5 and 6 are marked withdrawn.
 
 - [devc-bridge-feature](archived/devc-bridge-feature.md) — Repackage the container half
   of devc-bridge as a published devcontainer Feature, so any project (devc or
@@ -347,5 +365,5 @@
 | devc project post-create hook — restore `devc-post-create.sh` for zero-config projects   | [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) | complete |
 | devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](archived/devc-bridge-client-mount.md)           | complete |
 | devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](archived/devc-bridge-feature.md)                     | complete |
-| devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md)                  |          |
+| devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md)         | complete |
 | releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](release-and-installer.md)                          |          |
