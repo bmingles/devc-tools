@@ -6,8 +6,10 @@ name: Publish devcontainer Feature
 # unrelated artifacts and a failure in one should not block the other, while a single tag still
 # moves the whole repo (see .plans/release-and-installer.md decision 8).
 #
-# `workflow_dispatch` runs everything except the publish, so the packaging can be exercised
-# before a tag exists.
+# `workflow_dispatch` with `dry_run` (the default) runs everything except the publish, so the
+# packaging can be exercised before a tag exists — and, since a dispatch can target a tag,
+# against the exact ref about to be released. `inputs` is null outside workflow_dispatch, so
+# `!inputs.dry_run` is true on a tag push and normal releases are unaffected.
 
 on:
   push:
@@ -50,12 +52,12 @@ jobs:
       # Plain `docker login` rather than a third-party action: one less thing in the path that
       # produces an artifact people pull into their containers.
       - name: Log in to ghcr.io
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run }}
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       # → ghcr.io/bmingles/devc-tools/devc-bridge, tagged latest / 0 / 0.1 / 0.1.0.
       - name: Publish
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx --yes @devcontainers/cli@latest features publish ./features --namespace "${{ github.repository }}"

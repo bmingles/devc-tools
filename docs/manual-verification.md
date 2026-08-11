@@ -36,10 +36,12 @@ gh workflow run publish-feature.yml
 gh run list --limit 5
 ```
 
-> **The `dry_run` input is decorative.** Neither workflow references it — every
-> publish step is gated on `startsWith(github.ref, 'refs/tags/v')` instead. A
-> dispatch from a branch therefore cannot publish whatever you set it to. It
-> fails closed, so this is safe, but do not read the checkbox as the control.
+`dry_run` defaults to true and every publishing step is gated on it _and_ on the
+ref being a `v*` tag. Both conditions are asserted by
+`tests/workflow_guards_test.sh`, which the `gate` job runs — worth knowing
+because a dispatch can target a **tag**, where the ref check alone would publish
+from a run whose own checkbox said dry run. That also means a tag dry run is
+safe, and is the last rehearsal to do before §3.
 
 Expected from `release.yml`:
 
