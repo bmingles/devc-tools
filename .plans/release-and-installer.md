@@ -342,7 +342,10 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
       which runs the real script against a `file://` fixture release with `uname`
       stubbed on PATH: all four triples, the failure paths, the env knobs and the
       upgrade path
-- [ ] `README.md`, `devc/README.md`, `devc-bridge/README.md` — install-first
+- [x] `README.md`, `devc/README.md`, `devc-bridge/README.md` — install-first.
+      The root README also gains a **Releasing** section: the three `VERSION`
+      consts to bump, the tag, and what each workflow does — the guard is strict
+      equality, so a `v0.1.0-rc.1` tag needs `VERSION` to be `0.1.0-rc.1` too
 - [ ] `.plans/PLAN.md` — register
 
 ## Validation

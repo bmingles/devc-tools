@@ -41,6 +41,7 @@ Run these on the host, outside any container:
 | `devc-bridge restart`    | `stop` + `start`                                                                  |
 | `devc-bridge run`        | Run it in the foreground instead (Ctrl-C to quit) — how you watch it work         |
 | `devc-bridge run --tray` | Ditto, plus the menu-bar icon; needs a `deno desktop` runtime (see below)         |
+| `devc-bridge version`    | Print the version (also `--version` / `-V`) — which host binary is this           |
 
 `start` runs **this same program** with the `run` subcommand as a detached child
 — no bundle, no build step, and no `deno` on `PATH`. It inherits your shell's
@@ -58,6 +59,7 @@ of the box:
 | `caffeinate start\|stop\|status` | The keepalive's own on/off switch, exposed directly (macOS-only; runs the real `caffeinate(8)`). Manual/advanced use only — see below.                                                                                                                |
 | `echo <args...>`                 | Round-trip smoke test — echoes args back                                                                                                                                                                                                              |
 | `toggle on\|off`                 | Demo command that flips a state marker (exercises `status`/the tray without needing macOS)                                                                                                                                                            |
+| `version`                        | **Answered by the client itself**, never sent to the host (also `--version` / `-V`) — which client is actually mounted in here, answerable with the bridge down                                                                                       |
 
 **In normal use you never call `caffeinate` yourself** — `ping` drives it
 automatically once it's wired into hooks. Reach for `caffeinate start`/`stop`/
@@ -96,36 +98,52 @@ power _and_ an external display to avoid. Verify what is held with
 
 ## Setup (macOS host)
 
-Build the `devc-bridge` binary once (requires Deno 2.9+), then it is
-self-contained — no config dir or command files to create by hand.
-
 ```sh
-# 1. Build the host tool and put it on PATH (Deno 2.9+ needed only for this step).
-cd devc-bridge/host && deno task build  # → ./devc-bridge (command scripts embedded)
-install devc-bridge /usr/local/bin/     # or move it anywhere on your PATH
+# 1. Install. Puts the host `devc-bridge` in ~/.local/bin and the Linux *container
+#    client* in ~/.config/devc-bridge/client/ — the dir every devcontainer with the
+#    bridge Feature mounts. No Deno, no sudo.
+curl -fsSL https://github.com/bmingles/devc-tools/releases/latest/download/install.sh | sh
 
 # 2. Start it in the background. First run auto-creates ~/.config/devc-bridge/ (run/,
 #    state/, commands/, client/), seeds the example command scripts, and writes the token.
 devc-bridge start                   # -> started (pid N)
 devc-bridge status                  # -> running (pid N) — idle / client: installed
 
-# 3. Install the Linux client into the dir devc mounts (see "The container client" below).
-cd ../client && deno task build:client
-
-# 4. `devc up` any repo. The client is already on PATH inside.
+# 3. `devc up` any repo. The client is already on PATH inside.
 ```
+
+`--version` on either binary reports which one you have — including from inside
+a container, which is how you tell whether the mounted client is current.
+
+The installer places **both** `devc-bridge` binaries, which are two different
+programs sharing a name: the host CLI on your `PATH`, and the container client
+at `~/.config/devc-bridge/client/devc-bridge`. See
+[The container client](#the-container-client) for why that path matters and
+[the repo README](../README.md#install) for the installer's env knobs. The host
+CLI is **macOS-only** — every command it ships is macOS (`caffeinate`) — so on
+Linux the installer places only the client.
 
 (See [Commands](#commands) above for the full `start`/`stop`/`status`/`restart`
 lifecycle CLI.)
 
-To skip the build entirely, source the repo's shell integration instead — it
-defines a `devc-bridge` function that runs `host/main.ts` from source via Deno:
+### From a clone instead
+
+Requires Deno 2.9+. Either build the binary:
+
+```sh
+cd devc-bridge/host && deno task build  # → ./devc-bridge (command scripts embedded)
+install devc-bridge /usr/local/bin/     # or move it anywhere on your PATH
+cd ../client && deno task build:client  # the container client, to the same dir the installer uses
+```
+
+…or skip the build entirely and source the repo's shell integration — it defines
+a `devc-bridge` function that runs `host/main.ts` from source via Deno:
 
 ```sh
 source /path/to/devc-tools/scripts/bash_aliases.sh   # add this to ~/.bashrc
 ```
 
-Either way `start` is the same: it relaunches whichever of the two you invoked,
+All three are the same to `start`: it relaunches whichever of them you invoked,
 with the `run` subcommand, as a detached background process. There is nothing to
 build at start time and no `.app` bundle involved.
 
@@ -193,21 +211,26 @@ and a placeholder client, so they stay inert instead.
 compiles one. `~/.config/devc-bridge/client/devc-bridge` is a plain destination
 that two paths write to:
 
-| Path         | How                                                                   |
-| ------------ | --------------------------------------------------------------------- |
-| Typical user | The release installer drops the prebuilt Linux client there           |
-| Developer    | `cd client && deno task build:client` cross-compiles to the same path |
+| Path         | How                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------- |
+| Typical user | `install.sh` drops the prebuilt Linux client there (see [Setup](#setup-macos-host)) |
+| Developer    | `cd client && deno task build:client` cross-compiles to the same path               |
+
+Both honor `DEVC_BRIDGE_CLIENT_DIR` if you need the destination somewhere else.
 
 Both **overwrite unconditionally** — note the asymmetry with
 `~/.config/devc-bridge/commands/`, which is yours to edit and is never
 clobbered. The binary is not user-owned: it is a build artifact with a fixed
 name, and a stale one is a bug rather than a customization.
 
-The cross-compile target follows the **host** arch (`arm64` →
+The client's target follows the **host** arch (`arm64` →
 `aarch64-unknown-linux-gnu`, `x86_64` → `x86_64-unknown-linux-gnu`), since
-Docker Desktop runs containers matching the host by default. A container
-deliberately run under emulation on the other arch is out of scope — rebuild
-with `DEVC_BRIDGE_CLIENT_TARGET` set if you need that.
+Docker Desktop runs containers matching the host by default — so an arm64 Mac
+gets a Linux **arm64** client, not a darwin one. Both paths above make the same
+choice from the same `uname -m`. A container deliberately run under emulation on
+the other arch is out of scope — rebuild with `DEVC_BRIDGE_CLIENT_TARGET` set if
+you need that (`deno task build:client` only), or fetch the other archive by
+hand.
 
 Because the mount is a live _directory_ mount and the symlink is made
 unconditionally, installing the client while a container is already running is
@@ -569,8 +592,10 @@ Paths are relative to `devc-bridge/` unless noted.
 | `host/tray.ts`             | Opt-in tray layer (`run --tray`) — same core + a menu-bar icon; headless if no GUI                                    |
 | `host/tests/`              | `deno task test` — the relaunch argv (both modes) and `start`'s detach-and-wait contract                              |
 | `host/token.ts`            | Generate/persist the shared token                                                                                     |
+| `host/version.ts`          | The host CLI's `VERSION` — one of the three the release workflow's version guard pins to the tag                      |
 | `host/commands/`           | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands`                     |
 | `client/devc-bridge.ts`    | Container client CLI                                                                                                  |
+| `client/version.ts`        | The client's own `VERSION` — separate compile unit, pinned to the same tag                                            |
 | `client/build-client.sh`   | `deno task build:client` — cross-compile the client into `~/.config/devc-bridge/client/` (dev install)                |
 | `../features/devc-bridge/` | The container half as a devcontainer Feature: the two read-only mounts and the PATH symlink                           |
 | `../devc/default/`         | devc's side: the Feature reference in `devcontainer.json` and the mount-source placeholder in `initialize-command.sh` |

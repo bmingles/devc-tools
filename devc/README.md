@@ -10,6 +10,24 @@ Every command operates on the current working directory by default; an optional
 `[PATH]` positional overrides it. The resolved path identifies the project and
 its container.
 
+## Install
+
+```sh
+curl -fsSL https://github.com/bmingles/devc-tools/releases/latest/download/install.sh | sh
+```
+
+That drops a prebuilt `devc` into `~/.local/bin` (macOS and Linux, Intel and
+ARM) — **Deno is not needed to use it**, only to develop it. See the
+[repo README](../README.md#install) for the env knobs, the `PATH` note, and why
+`Info Failed to resolve 'docker' for allow-run` shows up until Docker is
+installed.
+
+`devc` shells out to `docker` and the
+[`devcontainer` CLI](https://github.com/devcontainers/cli) at run time; install
+both.
+
+To build it from a clone instead, see [Development](#development).
+
 ## Commands
 
 ```text
@@ -504,11 +522,17 @@ land in the generated compose file, where `,readonly` is not compose's syntax.
 
 ## Development
 
+Requires Deno 2.9+. This is the from-a-clone path; users install the prebuilt
+binary instead (see [Install](#install)).
+
 ```sh
 deno task run    -- <command> [args]   # run from source
 deno task test                         # unit tests
 deno task check                        # type-check
 deno task build                        # compile the `devc` binary (embeds default/)
+
+# What the release workflow calls: same flags, cross-compiled, into the repo-root dist/.
+DEVC_TARGET=aarch64-apple-darwin deno task build:release
 
 # Parts of the baseline are bash (in default/scripts/, or in the host-side entry script), so
 # they are covered by shell harnesses rather than `deno task test`. Each extracts a fenced block
@@ -521,6 +545,9 @@ bash tests/initialize_command_test.sh default/initialize-command.sh         # de
 
 # The bridge's PATH symlink is no longer devc's — it lives in the devc-bridge Feature:
 bash ../features/devc-bridge/test/install_link_test.sh   # devc:bridge-client-link
+
+# The release installer has its own harness at the repo root (offline, no network):
+bash ../tests/install_test.sh ../install.sh
 ```
 
 ### `devc config`
