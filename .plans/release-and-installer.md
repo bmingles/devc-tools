@@ -323,11 +323,14 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
       `build:release` in each, taking the triple from `$DEVC_TARGET` (a deno task
       cannot take a positional flag, and an appended `--target` would land after
       the entrypoint and be baked in as a runtime arg)
-- [ ] `.github/workflows/release.yml` — tag trigger + `dry_run` dispatch;
+- [x] `.github/workflows/release.yml` — tag trigger + `dry_run` dispatch;
       version + test gates; four native build jobs (`ubuntu-24.04`,
       `ubuntu-24.04-arm`, `macos-13`, `macos-14`) each smoke-testing what it
       built and ad-hoc signing on macOS; publish job with `checksums.txt`,
-      stamped `install.sh`, `gh release create`
+      stamped `install.sh`, `gh release create`. The publish job asserts **set
+      equality** against the eight asset names spelled out in full, rather than
+      counting files — that is also the list `tests/install_test.sh` greps, so the
+      installer and the workflow cannot drift apart on a name silently
 - [x] `devc/tests/jsonc_edit_test.ts:111` — fixed ahead of this plan: the
       fixture was missing its fence end marker (9/9 passing)
 - [x] `install.sh` — detect, resolve version, verify checksums, install the

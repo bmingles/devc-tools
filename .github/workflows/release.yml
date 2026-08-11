@@ -1,0 +1,313 @@
+name: Release
+
+# Builds every binary this repo produces and publishes them as a GitHub release, so
+# nobody needs Deno to *use* these tools.
+#
+# One tag moves the whole repo (see .plans/archived/release-and-installer.md decision 8):
+# `vX.Y.Z` gates devc and devc-bridge together, and the tag is the source of truth —
+# nothing here rewrites a VERSION during the build, a tag that disagrees with one just
+# fails before anything is compiled.
+#
+# `workflow_dispatch` runs the whole matrix and uploads the assets as workflow artifacts
+# *without* creating a release, so it can be exercised before a tag exists.
+#
+# Runs alongside publish-feature.yml on the same trigger: the two produce unrelated
+# artifacts and a failure in one should not block the other.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and upload workflow artifacts only — do not publish'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  # Pinned to the version this repo builds with, everywhere.
+  DENO_VERSION: '2.9.5'
+
+jobs:
+  # Both gates on the cheapest runner, before any build starts.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.guard.outputs.version }}
+      tag: ${{ steps.guard.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      # A released binary must not disagree with the commit it claims to be, so this
+      # fails rather than stamping a version into the source during the build. All three
+      # VERSIONs move in lockstep; the tag decides.
+      - name: Version guard
+        id: guard
+        run: |
+          set -euo pipefail
+          read_version() {
+            sed -n "s/^export const VERSION = '\(.*\)';$/\1/p" "$1" | head -1
+          }
+          devc="$(read_version devc/help.ts)"
+          host="$(read_version devc-bridge/host/version.ts)"
+          client="$(read_version devc-bridge/client/version.ts)"
+          echo "devc/help.ts               $devc"
+          echo "devc-bridge/host/version.ts   $host"
+          echo "devc-bridge/client/version.ts $client"
+          for v in "$devc" "$host" "$client"; do
+            if [ -z "$v" ]; then
+              echo "::error::could not read a VERSION — has the const's shape changed?"
+              exit 1
+            fi
+          done
+          if [ "$devc" != "$host" ] || [ "$devc" != "$client" ]; then
+            echo "::error::the three VERSION constants disagree ($devc / $host / $client)"
+            exit 1
+          fi
+          if [ "${GITHUB_REF}" != "${GITHUB_REF#refs/tags/v}" ]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            if [ "$tag" != "v$devc" ]; then
+              echo "::error::tag $tag disagrees with VERSION $devc"
+              echo "::error::the tag is the source of truth; bump the three VERSION consts to match it and re-tag"
+              echo "::error::(a prerelease is no exception — to tag v0.1.0-rc.1, VERSION must be 0.1.0-rc.1, so the binary never claims a version its release does not have)"
+              exit 1
+            fi
+          else
+            tag="v$devc"
+          fi
+          echo "version=$devc" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # A release must not be publishable from a red tree. Both suites, not just devc's:
+      # the bridge host is one of the binaries this workflow ships.
+      - name: Format
+        run: deno fmt --check
+
+      - name: devc — check + test
+        working-directory: devc
+        run: |
+          deno task check
+          deno task test
+
+      - name: devc-bridge host — check + test
+        working-directory: devc-bridge/host
+        run: |
+          deno task check
+          deno task test
+
+      - name: devc-bridge client — check
+        working-directory: devc-bridge/client
+        run: deno task check
+
+      # The installer is shipped by this workflow, so its harness gates it too.
+      - name: install.sh — shell harness
+        run: bash tests/install_test.sh install.sh
+
+  # One job per architecture, each building only its own target's assets and *running*
+  # them (decision 4). Cross-compiling would work for most of this, but a native runner
+  # can execute what it just built, so "does this run on Apple Silicon" is a CI assertion
+  # instead of a stranger's bug report.
+  #
+  # If `ubuntu-24.04-arm` is ever unavailable to this repo, the contained fallback is to
+  # drop that row and cross-build aarch64-unknown-linux-gnu from ubuntu-24.04 — already
+  # proven, and how the client has been built since devc-bridge-client-mount — losing
+  # only the smoke test for those two assets.
+  build:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-13
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    env:
+      DEVC_TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      # The compile flags live in the repo's own tasks, never inlined here: permission
+      # flags drifting between a local build and a released binary is the failure that
+      # avoids. `--target` and the dist/ output path come through $DEVC_TARGET.
+      - name: Build devc
+        working-directory: devc
+        run: deno task build:release
+
+      # macOS only — every command the bridge ships is macOS (`caffeinate`), so a Linux
+      # host asset would have nothing to run.
+      - name: Build devc-bridge host
+        if: runner.os == 'macOS'
+        working-directory: devc-bridge/host
+        run: deno task build:release
+
+      # Linux only, and it is the *container* client: an arm64 Mac gets the aarch64 Linux
+      # one, built here on the arm64 Linux runner.
+      - name: Build devc-bridge client
+        if: runner.os == 'Linux'
+        working-directory: devc-bridge/client
+        run: deno task build:release
+
+      # Ad-hoc sign rather than relying on Deno's own behavior — it signs arm64 output
+      # and not x86_64, which is defensible but is not a contract this repo should depend
+      # on. Signing before the smoke test means the smoke test covers the signed binary.
+      - name: Ad-hoc sign (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          for f in dist/*/devc dist/*/devc-bridge; do
+            [ -f "$f" ] || continue
+            codesign --force --sign - "$f"
+            codesign -dv "$f" 2>&1 | sed 's/^/  /'
+          done
+
+      # The point of building natively: run what was just built. This is also what makes
+      # the version flags load-bearing rather than cosmetic.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          fail=0
+          smoke() { # smoke <binary> <expected output>
+            if [ ! -f "$1" ]; then
+              echo "::error::$1 was not built"; fail=1; return
+            fi
+            got="$("$1" --version 2>/dev/null)"
+            if [ "$got" = "$2" ]; then
+              echo "  ok   $1 -> $got"
+            else
+              echo "::error::$1 printed '$got', expected '$2'"; fail=1
+            fi
+          }
+          smoke dist/devc/devc "devc $VERSION"
+          if [ "$RUNNER_OS" = 'macOS' ]; then
+            smoke dist/devc-bridge-host/devc-bridge "devc-bridge $VERSION"
+          else
+            smoke dist/devc-bridge-client/devc-bridge "devc-bridge $VERSION"
+          fi
+          exit "$fail"
+
+      # Every asset is a .tar.gz, even a single binary: executable bits matter and tar
+      # carries mode, zip does not portably. One archive format keeps the installer's
+      # extract path single.
+      - name: Archive
+        run: |
+          set -euo pipefail
+          mkdir -p dist/assets
+          tar -czf "dist/assets/devc-$DEVC_TARGET.tar.gz" -C dist/devc devc
+          if [ -d dist/devc-bridge-host ]; then
+            tar -czf "dist/assets/devc-bridge-host-$DEVC_TARGET.tar.gz" \
+              -C dist/devc-bridge-host devc-bridge
+          fi
+          if [ -d dist/devc-bridge-client ]; then
+            tar -czf "dist/assets/devc-bridge-client-$DEVC_TARGET.tar.gz" \
+              -C dist/devc-bridge-client devc-bridge
+          fi
+          ls -l dist/assets
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assets-${{ matrix.target }}
+          path: dist/assets/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [gate, build]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/incoming
+          pattern: assets-*
+          merge-multiple: true
+
+      # The release matrix, spelled out. Asserting set equality here rather than counting
+      # files is what catches a build job that silently produced the wrong asset — and
+      # tests/install_test.sh greps this list, so the installer and the workflow cannot
+      # drift apart on an asset name without one of them failing.
+      - name: Collect + checksums
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          cp dist/incoming/*.tar.gz dist/release/
+          cat > /tmp/expected.txt <<'EOF'
+          devc-aarch64-apple-darwin.tar.gz
+          devc-aarch64-unknown-linux-gnu.tar.gz
+          devc-bridge-client-aarch64-unknown-linux-gnu.tar.gz
+          devc-bridge-client-x86_64-unknown-linux-gnu.tar.gz
+          devc-bridge-host-aarch64-apple-darwin.tar.gz
+          devc-bridge-host-x86_64-apple-darwin.tar.gz
+          devc-x86_64-apple-darwin.tar.gz
+          devc-x86_64-unknown-linux-gnu.tar.gz
+          EOF
+          (cd dist/release && ls -1 ./*.tar.gz | sed 's#^\./##' | sort) > /tmp/actual.txt
+          if ! diff -u /tmp/expected.txt /tmp/actual.txt; then
+            echo "::error::the collected assets are not the eight this release publishes"
+            exit 1
+          fi
+          (cd dist/release && sha256sum ./*.tar.gz | sed 's#\./##' > checksums.txt)
+          # Verify the file we are about to ship actually verifies, with the same tool the
+          # installer uses.
+          (cd dist/release && sha256sum -c checksums.txt)
+          cat dist/release/checksums.txt
+
+      # install.sh ships as a release asset rather than from `main`, so the copy served at
+      # releases/latest/download/install.sh is the one that release was built and tested
+      # with. Stamping the tag into it means it installs its own release's binaries: no
+      # GitHub API call, no rate limit, no drift from the assets beside it.
+      - name: Stamp install.sh
+        run: |
+          set -euo pipefail
+          sed "s/^DEVC_RELEASE_VERSION=.*/DEVC_RELEASE_VERSION='$TAG'/" install.sh \
+            > dist/release/install.sh
+          grep -q "^DEVC_RELEASE_VERSION='$TAG'\$" dist/release/install.sh || {
+            echo "::error::the devc:stamp fence in install.sh did not take"
+            exit 1
+          }
+          chmod 0755 dist/release/install.sh
+          sh -n dist/release/install.sh
+
+      # The dry run stops here: everything above ran, nothing is published.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          name: release-${{ needs.gate.outputs.tag }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 7
+
+      # `gh` over a third-party action, deliberately: fewer third parties in the path that
+      # produces binaries people `curl | sh`. A tag with a pre-release suffix (v0.1.0-rc.1)
+      # publishes as a prerelease, so `releases/latest` keeps pointing at the last stable.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          prerelease=''
+          case "$TAG" in *-*) prerelease='--prerelease' ;; esac
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            $prerelease \
+            dist/release/*
