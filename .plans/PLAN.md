@@ -33,6 +33,24 @@
   points) and its `.devc/devc-post-create.sh` is deleted, leaving devc-tools
   consuming the bridge like any other project.
 
+- [release-and-installer](release-and-installer.md) — Publish prebuilt binaries
+  from a tagged GitHub release and install them with one `curl | sh`, so nobody
+  needs Deno to *use* these tools. Covers `devc` (4 targets), the devc-bridge
+  host CLI + tray `.app` (macOS), and the Linux container client — the
+  destination [devc-bridge-client-mount](devc-bridge-client-mount.md) already
+  fixed. **Blocked on a prerequisite it also fixes:** a compiled
+  `devc-bridge start` cannot work today, because it shells out to
+  `deno desktop … main.ts` with a cwd derived from `Deno.mainModule`, which in a
+  compiled binary is a virtual `/tmp/deno-compile-*` path that does not exist
+  (verified) — so `start` must build only when running from source and otherwise
+  require the installed app. Two other findings shape it: `deno desktop`
+  cross-compiles darwin targets from Linux (one `ubuntu-latest` job builds
+  everything, subject to code-signing), and the tray bundle's executable is a
+  generic `laufey_webview`, so macOS needs both a plain CLI binary and the
+  `.app`. Assets are named by Deno's own target triples, verified against a
+  `checksums.txt`, and installed without `sudo` into `~/.local/bin`. The Linux
+  client is arch-matched to the **host**, not the installer's own platform.
+
 ### Completed
 
 - [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) —
@@ -276,3 +294,4 @@
 | devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md)               | complete    |
 | devc project post-create hook — restore `devc-post-create.sh` for zero-config projects   | [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) | complete    |
 | devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](devc-bridge-client-mount.md)                    |             |
+| releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](release-and-installer.md)                          |             |
