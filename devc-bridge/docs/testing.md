@@ -15,14 +15,15 @@ Proves the protocol, token auth, dispatch, allowlist, and injection-safety
 without a Mac. Run from `devc-bridge/` inside the devcontainer.
 
 ```sh
-# 1. Start the headless server on loopback
+# 1. Start the bridge on loopback, in the foreground (headless — `run` has no tray).
 export DEVC_BRIDGE_HOST=127.0.0.1 DEVC_BRIDGE_PORT=48227
+export DEVC_BRIDGE_BASE=/tmp/devc-bridge
 export DEVC_BRIDGE_COMMANDS="$PWD/host/commands"
 export DEVC_BRIDGE_STATE=/tmp/devc-bridge/state
 export DEVC_BRIDGE_TOKEN_FILE=/tmp/devc-bridge/token
 export DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=1500
 rm -rf /tmp/devc-bridge
-deno run --allow-read --allow-write --allow-run --allow-env --allow-net host/serve.ts &
+deno run --allow-read --allow-write --allow-run --allow-env --allow-net host/main.ts run &
 
 # 2. Client helper (points at the same loopback + token)
 export DEVC_BRIDGE_ADDR=127.0.0.1:48227
@@ -36,11 +37,16 @@ client() { deno run --allow-read --allow-net --allow-env=DEVC_BRIDGE_ADDR,DEVC_B
 | A2 exit propagation | `client toggle badarg; echo $?`                                 | usage on stderr, exit `2`                           |
 | A3 injection safety | `client echo '; touch /tmp/pwned; #'`                           | printed literally; `/tmp/pwned` NOT created         |
 | A4 unknown command  | `client nope; echo $?`                                          | `unknown command: nope`, exit 1                     |
-| A4 traversal        | `client ../serve.ts; echo $?`                                   | `invalid command name`, exit 1                      |
+| A4 traversal        | `client ../core.ts; echo $?`                                    | `invalid command name`, exit 1                      |
 | AUTH bad token      | `DEVC_BRIDGE_TOKEN_FILE=<file with wrong token> client echo hi` | `unauthorized`, exit 1                              |
 | A5 state watcher    | `client toggle on` then `client toggle off`                     | server log shows `active: []` → `["toggle"]` → `[]` |
 
-Cleanup: `pkill -f host/serve.ts; rm -rf /tmp/devc-bridge`.
+Cleanup: `pkill -f 'host/main.ts run'; rm -rf /tmp/devc-bridge`.
+
+`host/main.ts`'s own automated tests (`cd host && deno task test`) cover the
+lifecycle around this: the relaunch argv in both modes, and `start` spawning a
+detached bridge that survives SIGHUP, logs to `devc-bridge.log`, and answers
+`status`/`stop`. They need no host and no GUI either.
 
 ### §A — keepalive (`ping` builtin + idle-timeout `caffeinate`)
 
@@ -55,24 +61,24 @@ with `toggle`-style marker semantics (`start` → touch `$DEVC_BRIDGE_STATE/caff
   instead of `host/commands` for these rows; `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=1500` in
   the setup snippet above keeps the idle window short.
 
-| Check              | Command                                                                            | Expected                                                              |
-| ------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| K1 round-trip      | `client ping PostToolUse`                                                          | `pong`, exit 0 — same response shape as `client echo`                 |
-| K2 starts          | `client ping A`                                                                    | marker `caffeinate` appears; invocation log shows exactly one `start` |
-| K3 no double-start | two more `client ping` calls while active                                          | still exactly one `start` in the log                                  |
-| K4 expiry stops    | wait ~1.5s after the last ping                                                     | marker gone; log gains one `stop`                                     |
-| K5 re-arm          | `client ping` again after expiry                                                   | marker returns; log gains a second `start`                            |
-| K6 ping gap reset  | ping, wait 1s, ping, wait 1s (each gap < idleMs)                                   | still active (no `stop` yet); silence afterward then stops            |
-| K7 unauthorized    | `client ping` with a wrong token                                                   | `unauthorized`, exit 1; marker does NOT appear                        |
-| K8 `close()` stops | keepalive armed, `kill -TERM` the server pid                                       | marker removed, log gains `stop` (proves the await, not just intent)  |
-| K9 fall-through    | serve **without** the two `DEVC_BRIDGE_KEEPAWAKE_*` env vars, then `client ping X` | `unknown command: ping`, exit 1                                       |
+| Check              | Command                                                                                     | Expected                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| K1 round-trip      | `client ping PostToolUse`                                                                   | `pong`, exit 0 — same response shape as `client echo`                 |
+| K2 starts          | `client ping A`                                                                             | marker `caffeinate` appears; invocation log shows exactly one `start` |
+| K3 no double-start | two more `client ping` calls while active                                                   | still exactly one `start` in the log                                  |
+| K4 expiry stops    | wait ~1.5s after the last ping                                                              | marker gone; log gains one `stop`                                     |
+| K5 re-arm          | `client ping` again after expiry                                                            | marker returns; log gains a second `start`                            |
+| K6 ping gap reset  | ping, wait 1s, ping, wait 1s (each gap < idleMs)                                            | still active (no `stop` yet); silence afterward then stops            |
+| K7 unauthorized    | `client ping` with a wrong token                                                            | `unauthorized`, exit 1; marker does NOT appear                        |
+| K8 `close()` stops | keepalive armed, `kill -TERM` the server pid                                                | marker removed, log gains `stop` (proves the await, not just intent)  |
+| K9 unconfigured    | a `startServer({ keepawake: undefined })` unit test — no entrypoint expresses this any more | `ping` falls through to script dispatch (`unknown command: ping`)     |
 
 Cleanup: as above, plus remove the stub commands dir and its invocation log.
 
 ## §B — Host verification (macOS)
 
-Requires Deno 2.9+ on the host (only to _build_). Run **in order — stop at the
-first failure.**
+Requires Deno 2.9+ on the host (only to _build_ — the built binary needs no Deno
+at all, which B4 checks). Run **in order — stop at the first failure.**
 
 ```sh
 # One-time build: self-contained binary with the command scripts embedded.
@@ -82,7 +88,7 @@ install devc-bridge /usr/local/bin/     # anywhere on PATH
 # GATE: zero-setup start (no hand-created ~/.config) reaches the container over
 # host.docker.internal?
 rm -rf ~/.config/devc-bridge        # prove first-run seeding (optional; destroys existing config)
-devc-bridge start                   # seeds config, writes token, menu-bar icon appears (idle ○)
+devc-bridge start                   # seeds config, writes token, backgrounds the bridge
 # → reopen the devcontainer, then INSIDE it:
 devc-bridge echo hello              # expect: echo: hello
 ```
@@ -100,30 +106,30 @@ If the gate fails, check in this order:
 4. **`unknown command: echo`** → commands not seeded; check
    `~/.config/devc-bridge/commands/` exists (it is auto-created on `start`).
 
-| Check                | Where     | Command                                                                                                                        | Expected                                                                                                                       |
-| -------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| B0 zero-setup        | host      | `rm -rf ~/.config/devc-bridge && devc-bridge start`                                                                            | `started (pid N)`; `~/.config/devc-bridge/{run,state,commands}` + token created; `commands/` has `echo`/`caffeinate`/`toggle`  |
-| B0 idempotent        | host      | `devc-bridge start` again                                                                                                      | `already running (pid N)`                                                                                                      |
-| B0 status/stop       | host      | `devc-bridge status` then `devc-bridge stop`                                                                                   | `running (pid N)` (icon shown) → `stopped` (icon gone)                                                                         |
-| B1 gate              | container | `devc-bridge echo hello`                                                                                                       | `echo: hello`                                                                                                                  |
-| B2 caffeinate start  | container | `devc-bridge caffeinate start`                                                                                                 | `started`                                                                                                                      |
-| B2 assertion         | host      | `pmset -g assertions \| grep -i caffeinate`                                                                                    | assertion present                                                                                                              |
-| B2 status            | container | `devc-bridge caffeinate status`                                                                                                | `running`                                                                                                                      |
-| B2 stop              | container | `devc-bridge caffeinate stop`                                                                                                  | `stopped`, assertion gone                                                                                                      |
-| B3 tray              | host      | (watch menu bar)                                                                                                               | ○→● on start, ●→○ on stop; "Quit" exits                                                                                        |
-| B4 no window flash   | host      | `devc-bridge start`/`stop`/`status`                                                                                            | no webview window appears (menu-bar only, `--backend raw`)                                                                     |
-| B5 real caffeinate   | container | `devc-bridge ping PostToolUse`                                                                                                 | `pmset -g assertions` (host) shows the caffeinate assertion; tray flips ○→●                                                    |
-| B6 idle stop         | host      | stop pinging, wait ~5 min (default idle timeout)                                                                               | assertion and marker gone; tray returns to ○                                                                                   |
-| B7 quit while armed  | host      | Quit the tray mid-keepalive                                                                                                    | `pmset -g assertions` no longer shows caffeinate (no leak)                                                                     |
-| B8 status unchanged  | container | `devc-bridge status` while armed                                                                                               | still reports `— active: caffeinate` (unchanged code path — confirms nothing regressed)                                        |
-| B9 real hook         | container | install the README's `PreToolUse`/`PostToolUse`/`UserPromptSubmit` hook snippet in `settings.json`, run a short Claude session | assertion appears on the first tool call; clears ~5 min after the session goes quiet                                           |
-| B10 settings persist | host      | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=600000 devc-bridge restart`                                                                     | prints `saved settings: keepawakeIdleMs=600000`; `~/.config/devc-bridge/settings.json` contains it                             |
-| B10 tray applies it  | host      | `devc-bridge stop; devc-bridge start` (no env var set)                                                                         | idle stop now takes ~10 min, not 5 — proves the launchd-started tray read the file                                             |
-| B10 needs restart    | host      | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=900000 devc-bridge start` while running                                                         | `already running (pid N)` + `run devc-bridge restart to apply the new settings`                                                |
-| B10 clear            | host      | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS= devc-bridge restart`                                                                           | prints `keepawakeIdleMs=(default)`; key gone from `settings.json`; back to 5 min                                               |
-| B11 flags            | host      | `pmset -g assertions` while armed                                                                                              | `PreventUserIdleSystemSleep` held; **no** `UserIsActive` (confirms `-dims`, no `-u`)                                           |
-| B12 orphaned tray    | host      | with the tray running: `rm -rf ~/.config/devc-bridge && devc-bridge start`                                                     | `48227 is already in use, but no tray pidfile exists` + the `lsof` hint, exit 1 — _not_ the 30s "never reported ready" timeout |
-| B12 no false alarm   | host      | `devc-bridge stop` then `devc-bridge start`                                                                                    | starts normally (a just-released port must not read as still in use)                                                           |
+| Check               | Where     | Command                                                                                                                        | Expected                                                                                                                        |
+| ------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| B0 zero-setup       | host      | `rm -rf ~/.config/devc-bridge && devc-bridge start`                                                                            | `started (pid N)`; `~/.config/devc-bridge/{run,state,commands}` + token created; `commands/` has `echo`/`caffeinate`/`toggle`   |
+| B0 idempotent       | host      | `devc-bridge start` again                                                                                                      | `already running (pid N)`                                                                                                       |
+| B0 status/stop      | host      | `devc-bridge status` then `devc-bridge stop`                                                                                   | `running (pid N)` — idle → `stopped` (exit 1)                                                                                   |
+| B1 gate             | container | `devc-bridge echo hello`                                                                                                       | `echo: hello`                                                                                                                   |
+| B2 caffeinate start | container | `devc-bridge caffeinate start`                                                                                                 | `started`                                                                                                                       |
+| B2 assertion        | host      | `pmset -g assertions \| grep -i caffeinate`                                                                                    | assertion present                                                                                                               |
+| B2 status           | container | `devc-bridge caffeinate status`                                                                                                | `running`                                                                                                                       |
+| B2 stop             | container | `devc-bridge caffeinate stop`                                                                                                  | `stopped`, assertion gone                                                                                                       |
+| B3 detached         | host      | `devc-bridge start`, then close the terminal window                                                                            | `devc-bridge status` from a new terminal still reports `running` (SIGHUP ignored, output still going to `devc-bridge.log`)      |
+| B4 no deno needed   | host      | `env PATH=/usr/bin:/bin devc-bridge start` with the **compiled** binary                                                        | `started (pid N)` — nothing is built, nothing shells out to `deno`                                                              |
+| B5 real caffeinate  | container | `devc-bridge ping PostToolUse`                                                                                                 | `pmset -g assertions` (host) shows the caffeinate assertion; `devc-bridge status` → `active: caffeinate`                        |
+| B6 idle stop        | host      | stop pinging, wait ~5 min (default idle timeout)                                                                               | assertion and marker gone; `devc-bridge status` back to `idle`                                                                  |
+| B7 stop while armed | host      | `devc-bridge stop` mid-keepalive                                                                                               | `pmset -g assertions` no longer shows caffeinate (no leak — `close()` awaits the stop)                                          |
+| B8 status unchanged | container | `devc-bridge status` while armed                                                                                               | still reports `— active: caffeinate` (unchanged code path — confirms nothing regressed)                                         |
+| B9 real hook        | container | install the README's `PreToolUse`/`PostToolUse`/`UserPromptSubmit` hook snippet in `settings.json`, run a short Claude session | assertion appears on the first tool call; clears ~5 min after the session goes quiet                                            |
+| B10 env inherited   | host      | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=600000 devc-bridge restart`                                                                     | `devc-bridge.log` shows `keepawake: caffeinate (idleMs: 600000)`; idle stop now takes 10 min. **No `settings.json` is written** |
+| B10 not sticky      | host      | `devc-bridge restart` again with the var unset                                                                                 | back to `idleMs: 300000` — the environment is the only source, so nothing persists                                              |
+| B10 needs restart   | host      | `DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=900000 devc-bridge start` while running                                                         | `already running (pid N)`; the value does **not** apply until `restart`                                                         |
+| B11 flags           | host      | `pmset -g assertions` while armed                                                                                              | `PreventUserIdleSystemSleep` held; **no** `UserIsActive` (confirms `-dims`, no `-u`)                                            |
+| B12 orphaned bridge | host      | while running: `rm -rf ~/.config/devc-bridge && devc-bridge start`                                                             | `48227 is already in use, but no devc-bridge pidfile exists` + the `lsof` hint, exit 1 — _not_ the 30s ready timeout            |
+| B12 no false alarm  | host      | `devc-bridge stop` then `devc-bridge start`                                                                                    | starts normally (a just-released port must not read as still in use)                                                            |
+| B13 tray (opt-in)   | host      | `cd devc-bridge/host && deno task dev`                                                                                         | menu bar shows ○→● as markers appear/clear; "Quit" exits. Nothing else in this table needs it                                   |
 
 ### Notes / gotchas
 
@@ -135,10 +141,14 @@ If the gate fails, check in this order:
   `--allow-read/write`. The client also needs `--allow-read` (token file) and
   `--allow-env=DEVC_BRIDGE_ADDR,DEVC_BRIDGE_TOKEN_FILE`. All baked into the
   `deno.json` tasks.
-- **`deno desktop` runs from a temp dir**, so paths relative to
-  `import.meta.url` point into the bundle, not the CWD. Tray icons are embedded
-  (base64) in `host/tray.ts`; command scripts are embedded via
-  `deno desktop --include commands` and read back through
+- **A compiled binary runs from a virtual temp dir**, so paths relative to
+  `import.meta.url` point into the bundle, not the CWD. Command scripts are
+  embedded via `deno compile --include commands` and read back through
   `new URL("./commands", import.meta.url)` in `host/config.ts`, then **seeded**
   to the editable `~/.config/devc-bridge/commands` on first `start` (never
-  overwritten thereafter).
+  overwritten thereafter). Tray icons are embedded (base64) in `host/tray.ts`
+  for the same reason.
+- **That virtual path is also why `start` cannot shell out to the source tree.**
+  A compiled binary's `Deno.mainModule` is `file:///tmp/deno-compile-*/main.ts`,
+  which it can stat itself but no child process can reach — so the relaunch argv
+  keys off `Deno.build.standalone`, never a path probe.

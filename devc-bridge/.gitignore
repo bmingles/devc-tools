@@ -2,9 +2,9 @@
 /client/devc-bridge
 
 # Host tool build artifacts
-#   host.app/     — `deno task dev` (deno desktop main.ts) bundle
-#   DevcBridge.app — `deno task build` bundle
-# (`devc-bridge start` builds into ~/.config/devc-bridge/, outside the repo)
+#   devc-bridge   — `deno task build` binary
+#   host.app/     — `deno task dev` (deno desktop) bundle, for the opt-in tray
+# (`start` builds nothing: it re-runs the program it was invoked as)
 /host/devc-bridge
 /host/host.app/
 /host/DevcBridge.app/

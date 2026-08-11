@@ -10,8 +10,9 @@
 # Sourcing also exports $DEVC_BIN (the same from-source invocation as the `devc` function)
 # for non-shell callers that can't see shell functions.
 #
-# Requires Deno 2.9+ on PATH. devc-bridge's tray also needs `deno desktop` (macOS GUI);
-# its `start` builds the app bundle, so the first one takes ~10-30s (it says so).
+# Requires Deno 2.9+ on PATH. `devc-bridge start` backgrounds this same from-source
+# invocation with its `run` subcommand — nothing is built. Only the opt-in menu-bar
+# tray needs `deno desktop` (macOS GUI); see devc-bridge/host's `dev` task.
 
 # Permissions every tool here runs with. Kept in one variable so the shell functions and
 # the exported $DEVC_BIN invocation below can't drift apart.

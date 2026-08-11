@@ -4,20 +4,23 @@ A tiny bridge that lets a **devcontainer** invoke allowlisted commands on the
 **host** — so, for example, Claude Code hooks running inside a container can
 `caffeinate` the host Mac while a session is active.
 
-A Deno Desktop menu-bar icon (Deno 2.9+ `Deno.Tray`) shows whether anything is
-currently active (e.g. the Mac is being kept awake) vs. idle.
+It runs **headless**: `devc-bridge start` backgrounds a plain daemon, and
+`devc-bridge status` is how you ask whether anything is currently active (e.g.
+the Mac is being kept awake) vs. idle. A macOS menu-bar icon showing the same
+thing is available as an opt-in extra when you run it from source — see
+[The menu-bar tray](#the-menu-bar-tray-opt-in-from-source).
 
 ```
 Host (macOS)                                             Devcontainer
 ──────────────────────────────────────────────           ────────────────────────────
-devc-bridge start   (background menu-bar app)
+devc-bridge start   (detached background process)
   ├─ TCP 127.0.0.1:48227 ◄── host.docker.internal ────── devc-bridge <name> [args…]
   │      (token-authorized)                           │  reads token from
   ├─ runs ~/.config/devc-bridge/commands/<name>       │  /run/devc-bridge/token
   │      (args as argv, never a shell string)         ▲  (bind mount)
   ├─ writes token → ~/.config/devc-bridge/run/token ──┘
-  ├─ watches ~/.config/devc-bridge/state/ ──► tray
-  └─ menu-bar icon: idle ○ / active ●
+  ├─ watches ~/.config/devc-bridge/state/
+  └─ devc-bridge status → idle | active: caffeinate
 ```
 
 ## Commands
@@ -30,12 +33,19 @@ container** to invoke an allowlisted host script.
 
 Run these on the host, outside any container:
 
-| Command               | Does                                                                               |
-| --------------------- | ---------------------------------------------------------------------------------- |
-| `devc-bridge start`   | Seed `~/.config/devc-bridge/` on first run, then launch the tray in the background |
-| `devc-bridge status`  | `running (pid N)` — idle \| active: … — or `stopped`, plus a `client:` line        |
-| `devc-bridge stop`    | Stop the background tray                                                           |
-| `devc-bridge restart` | `stop` + `start`                                                                   |
+| Command                  | Does                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `devc-bridge start`      | Seed `~/.config/devc-bridge/` on first run, then run the bridge in the background |
+| `devc-bridge status`     | `running (pid N)` — idle \| active: … — or `stopped`, plus a `client:` line       |
+| `devc-bridge stop`       | Stop the background bridge                                                        |
+| `devc-bridge restart`    | `stop` + `start`                                                                  |
+| `devc-bridge run`        | Run it in the foreground instead (Ctrl-C to quit) — how you watch it work         |
+| `devc-bridge run --tray` | Ditto, plus the menu-bar icon; needs a `deno desktop` runtime (see below)         |
+
+`start` runs **this same program** with the `run` subcommand as a detached child
+— no bundle, no build step, and no `deno` on `PATH`. It inherits your shell's
+environment, so `DEVC_BRIDGE_*` variables set on the command line reach the
+daemon.
 
 ### Container — invoke a host command
 
@@ -47,7 +57,7 @@ of the box:
 | `ping [label]`                   | **The normal way to keep the host awake.** Reserved builtin — records activity and starts/stops `caffeinate` for you on an idle timeout. Wire it into hooks per [Wiring into Claude Code hooks](#wiring-into-claude-code-hooks) and forget it exists. |
 | `caffeinate start\|stop\|status` | The keepalive's own on/off switch, exposed directly (macOS-only; runs the real `caffeinate(8)`). Manual/advanced use only — see below.                                                                                                                |
 | `echo <args...>`                 | Round-trip smoke test — echoes args back                                                                                                                                                                                                              |
-| `toggle on\|off`                 | Demo command that flips a state marker (exercises the tray without needing macOS)                                                                                                                                                                     |
+| `toggle on\|off`                 | Demo command that flips a state marker (exercises `status`/the tray without needing macOS)                                                                                                                                                            |
 
 **In normal use you never call `caffeinate` yourself** — `ping` drives it
 automatically once it's wired into hooks. Reach for `caffeinate start`/`stop`/
@@ -96,8 +106,8 @@ install devc-bridge /usr/local/bin/     # or move it anywhere on your PATH
 
 # 2. Start it in the background. First run auto-creates ~/.config/devc-bridge/ (run/,
 #    state/, commands/, client/), seeds the example command scripts, and writes the token.
-devc-bridge start                   # menu-bar icon appears (idle ○)
-devc-bridge status                  # -> running (pid N) / client: installed
+devc-bridge start                   # -> started (pid N)
+devc-bridge status                  # -> running (pid N) — idle / client: installed
 
 # 3. Install the Linux client into the dir devc mounts (see "The container client" below).
 cd ../client && deno task build:client
@@ -115,14 +125,36 @@ defines a `devc-bridge` function that runs `host/main.ts` from source via Deno:
 source /path/to/devc-tools/scripts/bash_aliases.sh   # add this to ~/.bashrc
 ```
 
-(`start` still builds the tray `.app` bundle itself, since a menu-bar app must
-be launched via LaunchServices; Deno caches that compile.)
+Either way `start` is the same: it relaunches whichever of the two you invoked,
+with the `run` subcommand, as a detached background process. There is nothing to
+build at start time and no `.app` bundle involved.
 
 Command scripts are seeded to `~/.config/devc-bridge/commands/` on first start
 and are **yours to edit** — later starts never overwrite them. To pick up new
 example scripts from a rebuilt binary, add them there yourself (or delete the
-ones you want re-seeded). During development you can also run the tray in the
-foreground with `deno task dev`.
+ones you want re-seeded). To watch the bridge work, run it in the foreground
+with `devc-bridge run` instead of `start`.
+
+## The menu-bar tray (opt-in, from source)
+
+A macOS menu-bar icon (Deno 2.9+ `Deno.Tray`) can show the same idle ○ /
+active ● state `devc-bridge status` reports. It is **not** how the bridge runs
+and it is **not** part of what gets built or installed:
+
+```sh
+cd devc-bridge/host && deno task dev    # deno desktop, foreground, with the tray
+```
+
+`deno task dev` is `deno desktop … main.ts run --tray`; `--tray` is the only way
+to reach it. Everything else — `start`, a compiled binary, a plain
+`devc-bridge run` — is headless, and the tray layer degrades to headless
+silently when no `Deno.Tray` exists.
+
+Shipping a tray artifact is deliberately out of scope: bundling one pulls in
+`deno desktop`, `iconutil` (which cannot cross-build) and code signing, none of
+which should gate a headless daemon. Losing the icon by default is an accepted
+trade — `devc-bridge status` answers "is it working" without a GUI at all, which
+the icon never could from a script.
 
 ## The container client
 
@@ -199,8 +231,9 @@ Work on `client/devc-bridge.ts` through `deno task build:client` (or run the
 host side from source via `source scripts/bash_aliases.sh`). A compiled host
 binary has **no connection to the working tree**: once the container's client
 comes from the mount, editing the source and restarting silently keeps running
-the previously built client. This matches how the tray already behaves, and
-keeps one answer to "where did this binary come from".
+the previously built client. That is the same rule the host binary follows —
+`start` never rebuilds anything — and keeps one answer to "where did this binary
+come from".
 
 Port and bind host are configurable via `DEVC_BRIDGE_PORT` (default `48227`) and
 `DEVC_BRIDGE_HOST` (default `127.0.0.1`); if `host.docker.internal` can't reach
@@ -280,15 +313,13 @@ DEVC_BRIDGE_KEEPAWAKE_IDLE_MS=1200000 devc-bridge restart   # 20 min, for long b
 DEVC_BRIDGE_KEEPAWAKE_IDLE_MS= devc-bridge restart          # empty = back to the default
 ```
 
-`start` runs in your shell; the tray it launches does not — `open -g` hands off to
-LaunchServices, so the app starts under **launchd's** environment. Exporting the
-variable and leaving an already-running tray alone therefore does nothing. `start`
-bridges the gap by writing whichever of these vars are set in its own env to
-`~/.config/devc-bridge/settings.json`, which the tray reads at launch; env wins over
-the file, the file wins over the default. The value is read **once**, at launch, so
-a change needs a `restart` (plain `start` on a running tray saves the value and says
-so, but won't apply it). The same applies to `DEVC_BRIDGE_HOST` and
-`DEVC_BRIDGE_PORT`.
+The **environment is the only source**: `start` spawns the daemon as a plain child
+of your shell, so it inherits whatever you set on that command line. There is no
+settings file (a leftover `~/.config/devc-bridge/settings.json` from an older
+version is ignored and can be deleted). Config is read once at launch, so changing
+a value means `restart`, not `start` — a plain `start` against a running bridge
+reports `already running` and leaves it alone. The same applies to
+`DEVC_BRIDGE_HOST` and `DEVC_BRIDGE_PORT`.
 
 **Choosing a value.** The timeout never governs typical commands — every tool call
 pings, so the timer resets constantly while a session is active. It only matters in
@@ -343,14 +374,15 @@ second).
 
 ## How it works
 
-- **Server** (`devc-bridge`, a single `deno desktop` binary built from
-  `host/main.ts`) listens on loopback TCP and watches a state directory.
-  `devc-bridge start` launches it **in the background**;
-  `stop`/`status`/`restart` manage it. It runs as a **menu-bar-only accessory
-  app** — no dock icon and no window. `host/tray.ts` holds the tray,
-  `host/core.ts` all the transport/dispatch logic (which also runs headless via
-  `host/serve.ts`), and `host/config.ts` resolves paths + seeds the command
-  scripts on first start.
+- **Server** (`devc-bridge`, a single binary compiled from `host/main.ts`)
+  listens on loopback TCP and watches a state directory. `devc-bridge start`
+  re-runs that same program as `devc-bridge run`, detached, with its output
+  appended to `~/.config/devc-bridge/devc-bridge.log`; `stop`/`status`/`restart`
+  manage it through the pidfile. `host/core.ts` holds all the
+  transport/dispatch logic, `host/config.ts` resolves paths + seeds the command
+  scripts on first start, and `host/tray.ts` is the opt-in menu-bar front-end on
+  the same core (`run --tray`), which runs as a menu-bar-only accessory app —
+  no dock icon and no window.
 - **Client** (`client/devc-bridge.ts`, compiled to `devc-bridge`) runs in the
   container, reads the token, sends one JSON request, prints the script's
   output, and exits with its exit code.
@@ -409,7 +441,7 @@ not a hardened multi-tenant control.
   container could rewrite the binary the others run — lateral movement between
   containers, and tampering with host-managed state.
 
-The tray **pidfile lives in `base/`, not in the mounted `run/`** — `stop` reads
+The **pidfile lives in `base/`, not in the mounted `run/`** — `stop` reads
 it and `Deno.kill`s whatever positive integer it finds, so a container able to
 write it could pick the host process that gets SIGTERM. Read-only already closes
 that; keeping the file out of the mounted dir is what keeps it closed for Docker
@@ -417,9 +449,9 @@ Compose devcontainers, where the Feature's `readonly` does not survive into the
 generated compose file. (That is also why the Feature is unsupported there.)
 
 > Pre-release change with no migration: the pidfile moved from
-> `run/tray.pid` to `tray.pid`. A tray started before the move writes the old
-> path, so a post-move `stop` reports `not running` and leaves it orphaned —
-> kill it by hand once.
+> `run/tray.pid` to `tray.pid` (the name is unchanged, and still what a tray
+> writes). A bridge started before the move writes the old path, so a post-move
+> `stop` reports `not running` and leaves it orphaned — kill it by hand once.
 
 Because every container with the Feature mounts both dirs, one container's
 bridge access is not isolated from another's: they share the token and the
@@ -433,8 +465,9 @@ find a binary it cannot execute.
 ## Writing a command
 
 Drop an executable script in `host/commands/`. Its filename becomes the command
-name. For anything long-running that the tray should reflect, create a marker
-file in `$DEVC_BRIDGE_STATE` while active and remove it when done — see
+name. For anything long-running that `status` (and the tray) should reflect,
+create a marker file in `$DEVC_BRIDGE_STATE` while active and remove it when
+done — see
 `host/commands/caffeinate` and `host/commands/toggle` for the pattern.
 
 **`ping` is a reserved name.** When the server is configured with keepalive
@@ -530,11 +563,11 @@ Paths are relative to `devc-bridge/` unless noted.
 
 | Path                       | Role                                                                                                                  |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `host/main.ts`             | `devc-bridge` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`)                                     |
+| `host/main.ts`             | `devc-bridge` entrypoint — CLI dispatch, the detached `start`, and the headless `run`                                 |
 | `host/config.ts`           | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start)                                           |
-| `host/tray.ts`             | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI)                                            |
-| `host/core.ts`             | Headless TCP server + dispatch + state watcher                                                                        |
-| `host/serve.ts`            | Headless entrypoint (no tray) — used for testing                                                                      |
+| `host/core.ts`             | Headless TCP server + dispatch + state watcher — what `run` runs                                                      |
+| `host/tray.ts`             | Opt-in tray layer (`run --tray`) — same core + a menu-bar icon; headless if no GUI                                    |
+| `host/tests/`              | `deno task test` — the relaunch argv (both modes) and `start`'s detach-and-wait contract                              |
 | `host/token.ts`            | Generate/persist the shared token                                                                                     |
 | `host/commands/`           | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands`                     |
 | `client/devc-bridge.ts`    | Container client CLI                                                                                                  |

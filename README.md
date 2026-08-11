@@ -7,7 +7,7 @@ self-contained in its own subfolder, with its own docs and build tasks.
 
 | Tool                                    | What it does                                                                                                                                                                                                                                                                                    |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`devc-bridge/`](devc-bridge/README.md) | Lets a devcontainer invoke allowlisted commands on the host (e.g. `caffeinate` the Mac while a Claude Code session runs), with a menu-bar tray showing idle/active state.                                                                                                                       |
+| [`devc-bridge/`](devc-bridge/README.md) | Lets a devcontainer invoke allowlisted commands on the host (e.g. `caffeinate` the Mac while a Claude Code session runs). Runs headless; `devc-bridge status` reports idle/active, and a menu-bar tray is an opt-in extra.                                                                      |
 | [`devc/`](devc/README.md)               | Dev container lifecycle CLI (`up`, `attach`, `claude`, `exec`, `build`, …) over a bundled default config, plus `devc config` — a TUI that bind-mounts sibling projects, Git worktrees, and agent skill folders into the project's `.devcontainer/`, editing only its own comment-fenced blocks. |
 
 ## Repo layout

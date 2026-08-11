@@ -144,7 +144,7 @@ are still needed for anything but signing.
       detach-and-wait contract
 - [ ] `.plans/release-and-installer.md` — `.app` assets and the `start`
       prerequisite removed
-- [ ] `devc-bridge/README.md` — headless default, `status` as the
+- [x] `devc-bridge/README.md` — headless default, `status` as the
       idle/active affordance, tray as a from-source extra
 - [ ] `.plans/PLAN.md` — status
 
