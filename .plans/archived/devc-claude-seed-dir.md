@@ -322,33 +322,33 @@ Run from `/workspaces/devc-tools/devc` unless noted.
       linked; a directory is not; a removed seed file's link is pruned on the
       next run; a non-seed symlink in `CLAUDE_DIR` survives the prune; a
       pre-existing plain file at the destination is replaced by the link.
-- [ ] End-to-end, zero-config: with `~/.config/devc/.claude` absent and
+- [x] End-to-end, zero-config: with `~/.config/devc/.claude` absent and
       `~/.claude/{CLAUDE.md,settings.devc.json,statusline.sh}` present, `devc up`
       in a folder with no `.devcontainer/` succeeds, prints the created-it line,
       and leaves the seed dir **empty** — nothing was taken from `~/.claude`.
       Then `cp ~/.claude/CLAUDE.md ~/.config/devc/.claude/`, `devc build`, and
       `devc exec . -- ls -l /home/vscode/.claude` shows `CLAUDE.md` as a symlink
       into `/usr/local/share/devc/claude-seed`.
-- [ ] End-to-end, missing files: with `~/.config/devc/.claude` empty, `devc up`
+- [x] End-to-end, missing files: with `~/.config/devc/.claude` empty, `devc up`
       succeeds (this is the case that fails today).
-- [ ] **No-`devc` path:** delete `~/.config/devc/.claude` entirely, then bring a
+- [x] **No-`devc` path:** delete `~/.config/devc/.claude` entirely, then bring a
       `devc config`-generated project up with the upstream CLI only —
       `devcontainer up --workspace-folder <project>` — and confirm it succeeds,
       that `initializeCommand` recreated the directory, and that `~/.claude`
       contains no seed symlinks (empty seed dir, nothing to link). This is the
       scenario the hook exists for; run it without `devc` on `PATH` to be sure
       nothing else is creating the directory.
-- [ ] Deletion is honored: remove `statusline.sh` from the seed dir,
+- [x] Deletion is honored: remove `statusline.sh` from the seed dir,
       `devc up --rebuild` (or `devc down` + `devc up`), and confirm
       `/home/vscode/.claude/statusline.sh` is gone.
-- [ ] Live edit needs no recreate: append a line to the host `CLAUDE.md` and
+- [x] Live edit needs no recreate: append a line to the host `CLAUDE.md` and
       confirm `devc exec . -- cat /home/vscode/.claude/CLAUDE.md` shows it
       immediately.
-- [ ] Skills coexistence: in a project configured with at least one skills
+- [x] Skills coexistence: in a project configured with at least one skills
       mount, confirm `devc exec . -- ls -l /home/vscode/.claude/skills` still
       lists the bind-mounted skills and that `~/.claude/skills` is not a
       symlink.
-- [ ] `devc exec . -- test -x /home/vscode/.claude/statusline.sh` succeeds (host
+- [x] `devc exec . -- test -x /home/vscode/.claude/statusline.sh` succeeds (host
       mode preserved through the symlink).
 
 ## Relevant Files
