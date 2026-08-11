@@ -32,36 +32,10 @@ email="$(git config --get user.email || true)"
 [ -n "$name" ] && git config --file "$identity" user.name "$name"
 [ -n "$email" ] && git config --file "$identity" user.email "$email"
 
-# devc:bridge-placeholder (start)
-# devc-bridge mount sources. devc does NOT install the bridge — it is opt-in, via
-# `additionalFeatures` in a user- or project-level devc.json. This block exists so that
-# opting in works without a separate host-side step: the Feature declares the bind mounts
-# but, like every Feature, has no host-side hook and so cannot create their sources, and
-# `--mount type=bind` fails the create when the source is missing. devc does have such a
-# hook, so it pre-creates the (empty, inert) sources for anyone who opts in later. A
-# standalone project using only the Feature gets no such courtesy and fails the create with
-# Docker's "bind source path does not exist" — that difference is deliberate.
-#
-# Created empty; the bridge's own installer (or `deno task build:client`) fills the client
-# dir in.
-mkdir -p "$HOME/.config/devc-bridge/run" "$HOME/.config/devc-bridge/client"
-
-# Placeholder so the PATH symlink the Feature's install.sh makes always resolves; without it
-# bash reports a bare "No such file or directory". Created ONLY when absent —
-# this script runs before every `up`, and an unconditional write would clobber the real
-# client the bridge installed there. Exit 127 is the shell's own "command not found"
-# convention; the message is diagnostic rather than instructional, since a failed
-# cross-compile leaves the placeholder in place too.
-placeholder="$HOME/.config/devc-bridge/client/devc-bridge"
-if [ ! -e "$placeholder" ]; then
-  cat > "$placeholder" <<'PLACEHOLDER'
-#!/bin/sh
-echo "devc-bridge: no client binary — host bridge not started, or its client build failed" >&2
-exit 127
-PLACEHOLDER
-  chmod 0755 "$placeholder"
-fi
-# devc:bridge-placeholder (end)
+# No devc-bridge setup here, deliberately. The bridge is an opt-in add-on, and devc does not
+# create its directories on hosts that may never use it. Its mount sources are made by the
+# host bridge itself (`devc-bridge start` seeds ~/.config/devc-bridge/), which is the
+# documented prerequisite for opting in — see features/devc-bridge/README.md.
 
 # Explicit, because the git-identity tests above are the last thing that can set $?: an unset
 # name or email leaves the final `[ -n ... ]` failing, and a non-zero initializeCommand aborts

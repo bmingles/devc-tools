@@ -503,22 +503,18 @@ none of them. See
 [the Feature's README](../../features/devc-bridge/README.md) for what it does
 and why it does it that way.
 
-Two things are devc's business rather than the Feature's:
+**Install the host bridge first.** A Feature cannot create its own mount sources
+— its lifecycle hooks all run inside the container, and `--mount type=bind`
+errors on a missing source — so opting in on a host with no
+`~/.config/devc-bridge/` fails the create with Docker's `bind source path does
+not exist`. Running `devc-bridge start` once seeds that directory. devc does
+**not** pre-create it: a host that never uses the bridge should not carry
+directories for it. This is the same prerequisite a non-devc project has, which
+is the point — one mechanism, no devc-only shortcut.
 
-- **It stays inert if you never installed the bridge.** A Feature cannot create
-  its own mount sources — its lifecycle hooks all run inside the container, and
-  `--mount type=bind` errors on a missing source — so a _standalone_ project
-  using only the Feature fails to build on a host with no
-  `~/.config/devc-bridge/`. devc has `initialize-command.sh`, which runs on the
-  host, and it creates both dirs plus a placeholder client that prints "no
-  client binary" and exits `127`. It does this whether or not you opted in, so
-  opting in needs no separate host-side step: the mounts resolve, the symlink
-  resolves, and the cost to everyone else is two empty directories. The
-  placeholder is written **only when absent**: that script runs before every
-  `up`, and an unconditional write would clobber the real client.
-- **Nothing is compiled in the container.** The client is installed on the host
-  into `~/.config/devc-bridge/client/devc-bridge` — see
-  [devc-bridge's Setup](../devc-bridge/README.md#setup-macos-host).
+**Nothing is compiled in the container.** The client is installed on the host
+into `~/.config/devc-bridge/client/devc-bridge` — see
+[devc-bridge's Setup](../devc-bridge/README.md#setup-macos-host).
 
 **If you already wired the bridge yourself** — a `run` mount in `devc.json`, two
 bridge mounts copied into `devcontainer.json`, or a `devc-post-create.sh` that
@@ -549,7 +545,6 @@ DEVC_TARGET=aarch64-apple-darwin deno task build:release
 bash tests/seed_link_test.sh default/scripts/agents-setup.sh                # devc:seed-link
 bash tests/shell_dirs_test.sh default/scripts/bashrc-additions.sh           # devc:shell-dirs
 bash tests/project_hook_test.sh default/scripts/project-hook.sh             # devc:project-hook
-bash tests/initialize_command_test.sh default/initialize-command.sh         # devc:bridge-placeholder
 
 # The bridge's PATH symlink is no longer devc's — it lives in the devc-bridge Feature:
 bash ../features/devc-bridge/test/install_link_test.sh   # devc:bridge-client-link
