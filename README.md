@@ -81,21 +81,30 @@ Each tool owns its setup instructions; start with the tool's own README.
 **One version for the whole repo, moving in lockstep.** A single `vX.Y.Z` tag
 gates both tools; bumping one republishes the other unchanged. The tag is the
 source of truth and nothing rewrites a version during the build — a tag that
-disagrees with any of the three hand-maintained `VERSION` constants fails the
-workflow before anything is compiled.
+disagrees with any of the four hand-maintained versions fails the workflow
+before anything is compiled.
 
 To cut a release:
 
-1. Bump `VERSION` in **all three**: `devc/help.ts`,
-   `devc-bridge/host/version.ts`, `devc-bridge/client/version.ts`. Prereleases
-   are no exception — to tag `v0.1.0-rc.1`, `VERSION` must be `0.1.0-rc.1`, so
-   the binary never claims a version its release does not have.
+1. Bump the version in **all four**: `VERSION` in `devc/help.ts`,
+   `devc-bridge/host/version.ts` and `devc-bridge/client/version.ts`, plus
+   `"version"` in `features/devc-bridge/devcontainer-feature.json`. The first
+   three are guarded by `release.yml`, the fourth by `publish-feature.yml` —
+   miss it and the binaries publish while the Feature does not. Prereleases are
+   no exception — to tag `v0.1.0-rc.1`, every one of them must be `0.1.0-rc.1`,
+   so nothing claims a version its release does not have.
 2. Commit, then `git tag v0.1.0 && git push --tags`.
 3. [`release.yml`](.github/workflows/release.yml) builds each of the eight
    archives on a runner of its own architecture, runs `--version` on what it
    built, writes `checksums.txt`, stamps the tag into `install.sh` and publishes.
    [`publish-feature.yml`](.github/workflows/publish-feature.yml) pushes the
    devcontainer Feature on the same tag.
+
+Neither workflow has ever run, and the release path crosses machines this repo
+is not developed on. Before the first real tag, work through
+[docs/manual-verification.md](docs/manual-verification.md) — the checks that
+need GitHub Actions, a Docker host or a Mac, ordered cheapest-and-most-
+informative first.
 
 A tag with a `-suffix` publishes as a prerelease, so
 `releases/latest/download/install.sh` keeps pointing at the last stable one. To
