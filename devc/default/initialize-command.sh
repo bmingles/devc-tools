@@ -32,7 +32,30 @@ email="$(git config --get user.email || true)"
 [ -n "$name" ] && git config --file "$identity" user.name "$name"
 [ -n "$email" ] && git config --file "$identity" user.email "$email"
 
-# Explicit, because the tests above are the last thing to run: an unset name or email leaves
-# the final `[ -n ... ]` failing, and a non-zero initializeCommand aborts container creation.
-# A host with no git identity is a warning (from scripts/git-setup.sh), not a failure.
+# devc:bridge-placeholder (start)
+# devc-bridge mount sources. Created empty so the binds resolve on a host that has never
+# installed the bridge; the bridge's own installer (or `deno task build:client`) fills the
+# client dir in.
+mkdir -p "$HOME/.config/devc-bridge/run" "$HOME/.config/devc-bridge/client"
+
+# Placeholder so the container's PATH symlink always resolves. Created ONLY when absent —
+# this script runs before every `up`, and an unconditional write would clobber the real
+# client the bridge installed there. Exit 127 is the shell's own "command not found"
+# convention; the message is diagnostic rather than instructional, since a failed
+# cross-compile leaves the placeholder in place too.
+placeholder="$HOME/.config/devc-bridge/client/devc-bridge"
+if [ ! -e "$placeholder" ]; then
+  cat > "$placeholder" <<'PLACEHOLDER'
+#!/bin/sh
+echo "devc-bridge: no client binary — host bridge not started, or its client build failed" >&2
+exit 127
+PLACEHOLDER
+  chmod 0755 "$placeholder"
+fi
+# devc:bridge-placeholder (end)
+
+# Explicit, because the git-identity tests above are the last thing that can set $?: an unset
+# name or email leaves the final `[ -n ... ]` failing, and a non-zero initializeCommand aborts
+# container creation. A host with no git identity is a warning (from scripts/git-setup.sh),
+# not a failure.
 exit 0

@@ -1,6 +1,7 @@
 {
   "tasks": {
     "build": "deno compile --allow-read --allow-net --allow-env=DEVC_BRIDGE_ADDR,DEVC_BRIDGE_TOKEN_FILE --output devc-bridge devc-bridge.ts",
+    "build:client": "bash ./build-client.sh",
     "run": "deno run --allow-read --allow-net --allow-env=DEVC_BRIDGE_ADDR,DEVC_BRIDGE_TOKEN_FILE devc-bridge.ts"
   },
   "fmt": {

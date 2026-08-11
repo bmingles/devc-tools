@@ -454,6 +454,65 @@ container:
 "type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc/gitconfig-identity,consistency=cached,readonly",
 ```
 
+## devc-bridge mounts
+
+[devc-bridge](../devc-bridge/README.md) lets a container run an allowlisted
+command on the host. devc ships its container half in the default config, so
+**every** devc container has it with no per-project wiring — two read-only bind
+mounts plus a symlink:
+
+```jsonc
+"type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,consistency=cached,readonly",
+"type=bind,source=${localEnv:HOME}/.config/devc-bridge/client,target=/usr/local/share/devc/bridge-client,consistency=cached,readonly",
+```
+
+- **`run/`** carries the shared-secret token the client authenticates with.
+  `/run/devc-bridge` is the client's built-in default, so no env vars are
+  needed.
+- **`client/`** holds the host-installed Linux `devc-bridge` binary.
+  `scripts/bridge-client-link.sh` (run by `post-create.sh`) symlinks
+  `/usr/local/bin/devc-bridge` at it.
+
+Four things about this are deliberate:
+
+- **Both mounts are read-only.** The container only ever _reads_ them. A
+  writable `run/` would let a container write any PID into `run/tray.pid` and
+  have the next host-side `devc-bridge stop` SIGTERM it; a writable `client/`
+  would let one container rewrite a binary every other container executes.
+  Read-only removes both. This is also why the mounts live here rather than in a
+  [`devc.json` overlay](#optional-overlay-devcjson): the overlay re-serializes
+  mounts through `--mount` and drops `readonly`, while a string mount in
+  `devcontainer.json` is passed through verbatim.
+- **`client/` is mounted as a directory, not as the binary file.** A single-file
+  bind pins the inode, so a client reinstalled on the host would go stale inside
+  a running container. The directory mount is live for both the first appearance
+  and later replacements.
+- **The symlink is made unconditionally,** even when no client exists yet, so it
+  starts working the moment the host installs one — with nothing to re-run in
+  the container. (Healing on shell init would not work: devc's `~/.bashrc`
+  additions sit after Ubuntu's non-interactive early return, and `devc claude`
+  runs `bash -lc`.) `scripts/project-hook.sh` runs _after_ this step, so a
+  project that installs its own client at that path still wins.
+- **They are inert if you never installed the bridge.**
+  `initialize-command.sh` creates both source dirs — a bind mount will not
+  create a missing source — plus a placeholder at
+  `~/.config/devc-bridge/client/devc-bridge` that prints "no client binary" and
+  exits `127`. So the mounts resolve, the symlink resolves, and the only cost is
+  an unused directory. The placeholder is written **only when absent**: that
+  script runs before every `up`, and an unconditional write would clobber the
+  real client.
+
+Nothing is compiled in the container. The client is installed on the host into
+`~/.config/devc-bridge/client/devc-bridge` — see
+[devc-bridge's Setup](../devc-bridge/README.md#setup-macos-host).
+
+Projects whose `.devcontainer/devcontainer.json` was written by an earlier
+`devc` predate these mounts and need them added by hand. **If you already wired
+the bridge yourself** — a `run` mount in `devc.json`, or a
+`devc-post-create.sh` that builds the client — remove it. Overlay mounts
+colliding with base mounts are not deduped, and Docker fails the create with
+`Duplicate mount point`.
+
 ## Development
 
 ```sh
@@ -462,11 +521,15 @@ deno task test                         # unit tests
 deno task check                        # type-check
 deno task build                        # compile the `devc` binary (embeds default/)
 
-# Two pieces of the baseline are bash inside default/scripts/, so they are covered by shell
-# harnesses rather than `deno task test`. Each extracts a fenced block from the real script and
-# runs it against temp dirs, so the tests cannot drift from the implementation:
-bash tests/seed_link_test.sh default/scripts/agents-setup.sh       # devc:seed-link
-bash tests/shell_dirs_test.sh default/scripts/bashrc-additions.sh  # devc:shell-dirs
+# Parts of the baseline are bash (in default/scripts/, or in the host-side entry script), so
+# they are covered by shell harnesses rather than `deno task test`. Each extracts a fenced block
+# from the real script and runs it against temp dirs, so the tests cannot drift from the
+# implementation:
+bash tests/seed_link_test.sh default/scripts/agents-setup.sh                # devc:seed-link
+bash tests/shell_dirs_test.sh default/scripts/bashrc-additions.sh           # devc:shell-dirs
+bash tests/project_hook_test.sh default/scripts/project-hook.sh             # devc:project-hook
+bash tests/bridge_client_link_test.sh default/scripts/bridge-client-link.sh # devc:bridge-client-link
+bash tests/initialize_command_test.sh default/initialize-command.sh         # devc:bridge-placeholder
 ```
 
 ### `devc config`

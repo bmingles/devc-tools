@@ -33,7 +33,7 @@ Run these on the host, outside any container:
 | Command               | Does                                                                               |
 | --------------------- | ---------------------------------------------------------------------------------- |
 | `devc-bridge start`   | Seed `~/.config/devc-bridge/` on first run, then launch the tray in the background |
-| `devc-bridge status`  | `running (pid N)` — idle \| active: … — or `stopped`                               |
+| `devc-bridge status`  | `running (pid N)` — idle \| active: … — or `stopped`, plus a `client:` line        |
 | `devc-bridge stop`    | Stop the background tray                                                           |
 | `devc-bridge restart` | `stop` + `start`                                                                   |
 
@@ -95,11 +95,14 @@ cd devc-bridge/host && deno task build  # → ./devc-bridge (command scripts emb
 install devc-bridge /usr/local/bin/     # or move it anywhere on your PATH
 
 # 2. Start it in the background. First run auto-creates ~/.config/devc-bridge/ (run/,
-#    state/, commands/), seeds the example command scripts, and writes the token.
+#    state/, commands/, client/), seeds the example command scripts, and writes the token.
 devc-bridge start                   # menu-bar icon appears (idle ○)
-devc-bridge status                  # -> running (pid N)
+devc-bridge status                  # -> running (pid N) / client: installed
 
-# 3. (Re)open the devcontainer. Its post-create step compiles `devc-bridge` onto PATH.
+# 3. Install the Linux client into the dir devc mounts (see "The container client" below).
+cd ../client && deno task build:client
+
+# 4. `devc up` any repo. The client is already on PATH inside.
 ```
 
 (See [Commands](#commands) above for the full `start`/`stop`/`status`/`restart`
@@ -121,19 +124,58 @@ example scripts from a rebuilt binary, add them there yourself (or delete the
 ones you want re-seeded). During development you can also run the tray in the
 foreground with `deno task dev`.
 
-Container wiring lives in the repo-root `.devc/` dir for this repo's
-devcontainer tool: `.devc/devc.json` adds the run-dir bind mount, and
-`.devc/devc-post-create.sh` builds/installs the container-side `devc-bridge`
-binary. No env vars are needed — `DEVC_BRIDGE_ADDR` and
-`DEVC_BRIDGE_TOKEN_FILE` default to exactly the address and mount target used
-here (see [Commands](#commands)); set them only to override. If you use plain
-Dev Containers instead, put the equivalent `mounts` + `postCreateCommand` in
-`.devcontainer/devcontainer.json`.
+## The container client
 
-> **`.devc/` is gitignored in this repo**, so a fresh clone has no bridge wiring
-> — create both files yourself. That is deliberate: reaching out of the container
-> to the host is a per-developer choice, not something a checkout opts everyone
-> into.
+There is **no per-repo wiring**. [devc](../devc/README.md#devc-bridge-mounts)
+ships the container half in its default `devcontainer.json`: two read-only bind
+mounts (`~/.config/devc-bridge/run` → `/run/devc-bridge` for the token,
+`~/.config/devc-bridge/client` → `/usr/local/share/devc/bridge-client` for the
+binary) and a `post-create.sh` step that symlinks `/usr/local/bin/devc-bridge`
+at the mounted client. No env vars are needed either — `DEVC_BRIDGE_ADDR` and
+`DEVC_BRIDGE_TOKEN_FILE` default to exactly the address and mount target used
+here (see [Commands](#commands)); set them only to override.
+
+**The client is installed, not built on the fly.** `devc-bridge start` never
+compiles one. `~/.config/devc-bridge/client/devc-bridge` is a plain destination
+that two paths write to:
+
+| Path         | How                                                                   |
+| ------------ | --------------------------------------------------------------------- |
+| Typical user | The release installer drops the prebuilt Linux client there           |
+| Developer    | `cd client && deno task build:client` cross-compiles to the same path |
+
+Both **overwrite unconditionally** — note the asymmetry with
+`~/.config/devc-bridge/commands/`, which is yours to edit and is never
+clobbered. The binary is not user-owned: it is a build artifact with a fixed
+name, and a stale one is a bug rather than a customization.
+
+The cross-compile target follows the **host** arch (`arm64` →
+`aarch64-unknown-linux-gnu`, `x86_64` → `x86_64-unknown-linux-gnu`), since
+Docker Desktop runs containers matching the host by default. A container
+deliberately run under emulation on the other arch is out of scope — rebuild
+with `DEVC_BRIDGE_CLIENT_TARGET` set if you need that.
+
+Because the mount is a live _directory_ mount and the symlink is made
+unconditionally, installing the client while a container is already running is
+enough: the link resolves on the next invocation, with no rebuild and nothing to
+re-run inside. Until then, devc's placeholder makes the gap legible — the
+container prints `devc-bridge: no client binary …` and exits 127, and
+`devc-bridge status` on the host reports `client: not installed (placeholder)`.
+
+> **Upgrading from per-repo wiring:** if you previously added the run-dir mount
+> to a `devc.json` overlay, or installed the client from a
+> `.devc/devc-post-create.sh`, **remove both**. Overlay mounts colliding with
+> devc's base mounts are not deduped and Docker fails the create with
+> `Duplicate mount point`.
+
+### Developing the client
+
+Work on `client/devc-bridge.ts` through `deno task build:client` (or run the
+host side from source via `source scripts/bash_aliases.sh`). A compiled host
+binary has **no connection to the working tree**: once the container's client
+comes from the mount, editing the source and restarting silently keeps running
+the previously built client. This matches how the tray already behaves, and
+keeps one answer to "where did this binary come from".
 
 Port and bind host are configurable via `DEVC_BRIDGE_PORT` (default `48227`) and
 `DEVC_BRIDGE_HOST` (default `127.0.0.1`); if `host.docker.internal` can't reach
@@ -331,6 +373,26 @@ commands, but anything that can read that token file — i.e. anything with acce
 to your home dir — can. It is a convenience boundary for a single-user machine,
 not a hardened multi-tenant control.
 
+**Both container mounts are read-only**, and that is load-bearing in each case:
+
+- `run/` was writable in the original wiring. `devc-bridge stop` reads
+  `run/tray.pid` and validates only that it is a positive integer, then
+  `Deno.kill`s it — so a container could write any PID there and have the next
+  host-side `stop` SIGTERM a process of its choosing. The container only ever
+  _reads_ the token, so read-only costs nothing and removes the vector.
+- `client/` is executed by every devc container. Writable, one container could
+  rewrite the binary the others run — lateral movement between containers, and
+  tampering with host-managed state.
+
+Because devc mounts both dirs into every container it creates, one container's
+bridge access is not isolated from another's: they share the token and the
+client. That is the same single-user convenience boundary as above, stated at
+container scope.
+
+The arch note is a limitation, not a control: the client is cross-compiled for
+the host's architecture. A container run under emulation on the other arch will
+find a binary it cannot execute.
+
 ## Writing a command
 
 Drop an executable script in `host/commands/`. Its filename becomes the command
@@ -429,15 +491,16 @@ everything runs as your host user, so keep the scripts few and simple.
 
 Paths are relative to `devc-bridge/` unless noted.
 
-| Path                    | Role                                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `host/main.ts`          | `devc-bridge` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`)                           |
-| `host/config.ts`        | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start)                                 |
-| `host/tray.ts`          | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI)                                  |
-| `host/core.ts`          | Headless TCP server + dispatch + state watcher                                                              |
-| `host/serve.ts`         | Headless entrypoint (no tray) — used for testing                                                            |
-| `host/token.ts`         | Generate/persist the shared token                                                                           |
-| `host/commands/`        | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands`           |
-| `client/devc-bridge.ts` | Container client CLI                                                                                        |
-| `../.devc/`             | Devcontainer tool config (repo root, gitignored): run-dir bind-mount + `devc-post-create.sh` client install |
-| `icons/`                | Source PNGs for the app icon + the tray icons (embedded in `tray.ts`)                                       |
+| Path                     | Role                                                                                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host/main.ts`           | `devc-bridge` entrypoint — CLI dispatch (`start`/`stop`/`status`/`restart`/`run`)                                                                    |
+| `host/config.ts`         | Path resolution + `ensureConfig`/`seedCommands` (zero-setup on first start)                                                                          |
+| `host/tray.ts`           | Tray layer — wraps core + menu-bar icon (falls back to headless if no GUI)                                                                           |
+| `host/core.ts`           | Headless TCP server + dispatch + state watcher                                                                                                       |
+| `host/serve.ts`          | Headless entrypoint (no tray) — used for testing                                                                                                     |
+| `host/token.ts`          | Generate/persist the shared token                                                                                                                    |
+| `host/commands/`         | Allowlisted host scripts, **embedded** in the binary + seeded to `~/.config/devc-bridge/commands`                                                    |
+| `client/devc-bridge.ts`  | Container client CLI                                                                                                                                 |
+| `client/build-client.sh` | `deno task build:client` — cross-compile the client into `~/.config/devc-bridge/client/` (dev install)                                               |
+| `../devc/default/`       | The container half: the two read-only mounts in `devcontainer.json`, the placeholder in `initialize-command.sh`, and `scripts/bridge-client-link.sh` |
+| `icons/`                 | Source PNGs for the app icon + the tray icons (embedded in `tray.ts`)                                                                                |

@@ -23,6 +23,16 @@ export interface Config {
   state: string;
   /** Editable, allowlisted command scripts (seeded on first start). */
   commands: string;
+  /**
+   * Bind-mounted client dir: holds the Linux `devc-bridge` the container runs.
+   *
+   * Nothing here is built on the fly — this is a *destination* that the release
+   * installer (typical user) or `deno task build:client` (developer) writes to.
+   * Unlike `commands`, the binary is never user-owned: both paths overwrite it.
+   */
+  client: string;
+  /** The client binary itself, inside `client`. */
+  clientBin: string;
   /** Shared-secret token file (inside run/, read by the container client). */
   token: string;
   /** Pidfile for the background tray process. */
@@ -112,6 +122,7 @@ export function loadConfig(): Config {
   const base = Deno.env.get('DEVC_BRIDGE_BASE') ??
     join(home, '.config', 'devc-bridge');
   const run = join(base, 'run');
+  const client = join(base, 'client');
   const settingsFile = join(base, 'settings.json');
   // Precedence: this process's env → the file `start` wrote → built-in default.
   const stored = readSettings(settingsFile);
@@ -120,6 +131,8 @@ export function loadConfig(): Config {
     run,
     state: Deno.env.get('DEVC_BRIDGE_STATE') ?? join(base, 'state'),
     commands: Deno.env.get('DEVC_BRIDGE_COMMANDS') ?? join(base, 'commands'),
+    client,
+    clientBin: join(client, 'devc-bridge'),
     token: Deno.env.get('DEVC_BRIDGE_TOKEN_FILE') ?? join(run, 'token'),
     pidfile: join(run, 'tray.pid'),
     logfile: join(base, 'devc-bridge.log'),
@@ -195,6 +208,9 @@ export async function ensureConfig(cfg: Config): Promise<void> {
   await ensureDir(cfg.run);
   await ensureDir(cfg.state);
   await ensureDir(cfg.commands);
+  // The bind-mount source for the container's client. Created (never filled) here so the
+  // mount resolves; `start` deliberately builds no client — see `Config.client`.
+  await ensureDir(cfg.client);
   await seedCommands(cfg.commands);
 }
 

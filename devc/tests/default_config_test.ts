@@ -282,6 +282,7 @@ Deno.test('materializeDefaultConfig copies the embedded tree flat to cacheDir an
         'scripts/agents-setup.sh',
         'scripts/node-setup.sh',
         'scripts/git-setup.sh',
+        'scripts/bridge-client-link.sh',
         'scripts/project-hook.sh',
         'scripts/bashrc-additions.sh',
       ]
@@ -332,6 +333,42 @@ Deno.test('canonical default devcontainer.json has no Feature and a project-rela
   );
 });
 
+Deno.test('canonical default devcontainer.json mounts the devc-bridge run and client dirs read-only', async () => {
+  // These two binds are how the bridge reaches *every* devc container without per-project
+  // wiring, so they belong to the bundled config rather than a devc.json overlay — the
+  // overlay re-serializes `--mount` and drops `readonly`, while a string mount here is
+  // passed through verbatim. `readonly` is the point of putting them here, so assert it:
+  // a writable run/ lets a container write run/tray.pid and have the host's `devc-bridge
+  // stop` SIGTERM an arbitrary PID, and a writable client/ lets one container rewrite a
+  // binary the others execute.
+  const text = await Deno.readTextFile(
+    new URL('../default/devcontainer.json', import.meta.url),
+  );
+  const dc = JSON.parse(stripLineComments(text));
+  const mounts: string[] = dc.mounts;
+
+  for (
+    const [source, target] of [
+      ['${localEnv:HOME}/.config/devc-bridge/run', '/run/devc-bridge'],
+      [
+        '${localEnv:HOME}/.config/devc-bridge/client',
+        '/usr/local/share/devc/bridge-client',
+      ],
+    ]
+  ) {
+    const mount = mounts.find((m) =>
+      m.includes(`source=${source},`) && m.includes(`target=${target},`)
+    );
+    assertEquals(typeof mount, 'string', `no bind mount for ${target}`);
+    assertEquals(mount!.startsWith('type=bind,'), true);
+    assertEquals(
+      mount!.split(',').includes('readonly'),
+      true,
+      `${target} must be mounted readonly`,
+    );
+  }
+});
+
 Deno.test('materializeDefaultConfig overwrites an existing copy without erroring', async () => {
   await withTempDir(async (cacheDir) => {
     await Deno.mkdir(cacheDir, { recursive: true });
@@ -363,6 +400,7 @@ Deno.test('materializeDefaultConfig writes the embedded tree to real disk (defau
       'scripts/agents-setup.sh',
       'scripts/node-setup.sh',
       'scripts/git-setup.sh',
+      'scripts/bridge-client-link.sh',
       'scripts/project-hook.sh',
       'scripts/bashrc-additions.sh',
     ]

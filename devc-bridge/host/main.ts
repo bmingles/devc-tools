@@ -178,6 +178,10 @@ async function stop(cfg: Config): Promise<void> {
 }
 
 async function status(cfg: Config): Promise<void> {
+  // Report the client too: the tray running says nothing about whether a container can
+  // actually reach it, and "why doesn't the container see devc-bridge" should be
+  // answerable from the host.
+  const client = await clientStatus(cfg);
   const pid = await readPid(cfg);
   if (pid !== null && await pidAlive(pid)) {
     const active = await scanActive(cfg.state);
@@ -185,14 +189,49 @@ async function status(cfg: Config): Promise<void> {
       ? ` — active: ${active.join(', ')}`
       : ' — idle';
     console.log(`running (pid ${pid})${suffix}`);
+    console.log(client);
     return;
   }
   if (pid !== null) await removePidfile(cfg); // stale
   console.log('stopped');
+  console.log(client);
   Deno.exit(1);
 }
 
 // --- helpers -------------------------------------------------------------------
+
+/** Text from the placeholder devc's initialize-command.sh writes; keep the two in step. */
+const PLACEHOLDER_MARKER = 'devc-bridge: no client binary';
+
+/**
+ * A line describing what the container would find on PATH.
+ *
+ * The client dir is bind-mounted into every devc container, and devc's
+ * initialize-command.sh drops a placeholder script there when it is empty — so the
+ * mount and the PATH symlink always resolve. That makes "a file is present" too weak
+ * a test: the interesting states are *nothing installed yet* and *still only the
+ * placeholder*, which look identical from the container until you run it.
+ *
+ * Detected by content, not size or mtime: the placeholder is a tiny `#!/bin/sh` script
+ * and the real client is a compiled binary, so the shebang plus its own message is the
+ * one signal that stays true however either is produced.
+ */
+async function clientStatus(cfg: Config): Promise<string> {
+  let head: Uint8Array;
+  try {
+    using file = await Deno.open(cfg.clientBin, { read: true });
+    const buf = new Uint8Array(512);
+    const n = await file.read(buf) ?? 0;
+    head = buf.subarray(0, n);
+  } catch {
+    return 'client: not installed';
+  }
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(head);
+  if (text.startsWith('#!') && text.includes(PLACEHOLDER_MARKER)) {
+    return 'client: not installed (placeholder)';
+  }
+  return 'client: installed';
+}
 
 async function readPid(cfg: Config): Promise<number | null> {
   try {

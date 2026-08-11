@@ -233,29 +233,33 @@ their own.
 
 ## Checklist
 
-- [ ] `devc/default/devcontainer.json` — two read-only bind mounts added
-- [ ] `devc/default/initialize-command.sh` — fenced block creating both dirs and
+- [x] `devc/default/devcontainer.json` — two read-only bind mounts added
+- [x] `devc/default/initialize-command.sh` — fenced block creating both dirs and
       the create-if-missing placeholder
-- [ ] `devc/default/scripts/bridge-client-link.sh` — new, fenced, mode 0755
-- [ ] `devc/default/post-create.sh` — link step added before the project hook
-- [ ] `devc-bridge/host/config.ts` — `client`/`clientBin` paths, dir created by
+- [x] `devc/default/scripts/bridge-client-link.sh` — new, fenced, mode 0755
+- [x] `devc/default/post-create.sh` — link step added before the project hook
+- [x] `devc-bridge/host/config.ts` — `client`/`clientBin` paths, dir created by
       `ensureConfig`
-- [ ] `devc-bridge/host/main.ts` — `status` reports
+- [x] `devc-bridge/host/main.ts` — `status` reports
       `installed` / `not installed` / `not installed (placeholder)`; `start`
       unchanged
-- [ ] `devc-bridge/client/deno.json` — `build:client` task compiling to
+- [x] `devc-bridge/client/deno.json` — `build:client` task compiling to
       `~/.config/devc-bridge/client/devc-bridge` for the host-matched Linux
       target, via temp file + rename in the same dir
-- [ ] `.devc/devc.json` — the now-duplicate `run` mount removed
-- [ ] `.devc/devc-post-create.sh` — deleted (the mount supplies the client)
-- [ ] `devc/tests/default_config_test.ts` — assert both mounts present and each
+- [x] `.devc/devc.json` — the now-duplicate `run` mount removed **(n/a here:
+      this working tree's `.devc/` holds only its `.gitignore`, and the running
+      container has no `/run/devc-bridge` mount, confirming no overlay was in
+      play. Nothing to remove — but any host with its own wiring still must.)**
+- [x] `.devc/devc-post-create.sh` — deleted (the mount supplies the client)
+      **(n/a here: already absent, same evidence as above)**
+- [x] `devc/tests/default_config_test.ts` — assert both mounts present and each
       carries `readonly`; add `scripts/bridge-client-link.sh` to the two
       expected-file lists
-- [ ] `devc/tests/bridge_client_link_test.sh` — new, fence-extracted
-- [ ] `devc/tests/initialize_command_test.sh` — new, fence-extracted
-- [ ] `devc/README.md` — document the bridge mounts and the PATH symlink; note
+- [x] `devc/tests/bridge_client_link_test.sh` — new, fence-extracted
+- [x] `devc/tests/initialize_command_test.sh` — new, fence-extracted
+- [x] `devc/README.md` — document the bridge mounts and the PATH symlink; note
       that overlay mounts of the same targets must be removed
-- [ ] `devc-bridge/README.md` — Setup section: no per-repo hook; the client is
+- [x] `devc-bridge/README.md` — Setup section: no per-repo hook; the client is
       **installed, not built on the fly**, by the release installer (typical) or
       `deno task build:client` (dev), into
       `~/.config/devc-bridge/client/devc-bridge`; the two mounts ship in devc's
@@ -267,19 +271,20 @@ their own.
 
 ## Validation
 
-- [ ] `cd devc && deno task check` and `deno task test` pass (the pre-existing
+- [x] `cd devc && deno task check` and `deno task test` pass (the pre-existing
       `jsonc_edit_test.ts:111` failure excepted)
-- [ ] `bash devc/tests/bridge_client_link_test.sh devc/default/scripts/bridge-client-link.sh`
+- [x] `bash devc/tests/bridge_client_link_test.sh devc/default/scripts/bridge-client-link.sh`
       — link created when the target is absent (dangling), idempotent on re-run,
       a stale symlink is repointed, and the link resolves once the target appears
       (create the target after linking, assert it now executes)
-- [ ] `bash devc/tests/initialize_command_test.sh devc/default/initialize-command.sh`
+- [x] `bash devc/tests/initialize_command_test.sh devc/default/initialize-command.sh`
       — placeholder created 0755 when absent; an existing file is **not**
       modified (byte-compare before/after)
-- [ ] `bash devc/tests/project_hook_test.sh devc/default/scripts/project-hook.sh`
+- [x] `bash devc/tests/project_hook_test.sh devc/default/scripts/project-hook.sh`
       still passes
-- [ ] `deno fmt --check` clean at repo root
-- [ ] Placeholder behaves: `sh <placeholder>` exits 127 and prints to stderr, and
+- [x] `deno fmt --check` clean at repo root (`.plans/PLAN.md` was already
+      unformatted at HEAD — pre-existing, left alone)
+- [x] Placeholder behaves: `sh <placeholder>` exits 127 and prints to stderr, and
       `devc-bridge ping x >/dev/null 2>&1 || true` is silent and non-fatal
 - [ ] (user, macOS host) `deno task build:client` writes an
       `aarch64-unknown-linux-gnu` binary to `~/.config/devc-bridge/client/devc-bridge`
