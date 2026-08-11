@@ -173,6 +173,13 @@ async function run(cfg: Config, args: string[]): Promise<void> {
   // `devc-bridge stop` sends SIGTERM; also handle Ctrl-C in the foreground.
   Deno.addSignalListener('SIGINT', shutdown);
   Deno.addSignalListener('SIGTERM', shutdown);
+  // Closing the terminal that ran `start` SIGHUPs the whole process group, which
+  // the detached child is still in. `nohup` alone does not save it: Deno installs
+  // its own SIGHUP handler at startup (`SigCgt` in /proc has the bit), replacing
+  // the inherited SIG_IGN, and with no listener that handler exits. An empty
+  // listener is what actually makes this a daemon; nohup only covers the moments
+  // before this line runs.
+  Deno.addSignalListener('SIGHUP', () => {});
 
   // Park forever; the signal handlers drive shutdown.
   await new Promise<void>(() => {});
@@ -294,7 +301,8 @@ export function relaunchArgv(
  *     launch, so the child's own output has to land in it.
  *   • **`nohup`.** An orphaned child stays in the terminal's process group, so
  *     closing the terminal SIGHUPs it. `nohup` sets SIGHUP to ignore across the
- *     exec, which is what makes this a daemon rather than a long-lived job.
+ *     exec — which covers the child's first milliseconds only: Deno replaces that
+ *     disposition with a handler of its own, so `run` also ignores SIGHUP from JS.
  *
  * Both `exec`s preserve the pid, so the child *is* the bridge — though `start`
  * proves the launch by the pidfile the bridge writes, not by this pid.

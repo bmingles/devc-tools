@@ -91,6 +91,12 @@ Deno.test('start: detaches, comes up, and stop takes it down', async () => {
     const conn = await Deno.connect({ hostname: '127.0.0.1', port });
     conn.close();
 
+    // Closing the terminal that ran `start` must not take the bridge with it —
+    // the child is still in that terminal's process group.
+    Deno.kill(pid, 'SIGHUP');
+    await new Promise((r) => setTimeout(r, 300));
+    assert(alive(pid), 'the bridge died on SIGHUP');
+
     // Its stdout went to the log file — that redirect is what `start` tails when a
     // launch fails, so an empty log would make every future failure unreadable.
     const log = await Deno.readTextFile(join(base, 'devc-bridge.log'));
