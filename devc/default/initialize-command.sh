@@ -33,12 +33,14 @@ email="$(git config --get user.email || true)"
 [ -n "$email" ] && git config --file "$identity" user.email "$email"
 
 # devc:bridge-placeholder (start)
-# devc-bridge mount sources. The mounts themselves are declared by the `devc-bridge` Feature
-# (see the `features` block in devcontainer.json), which — like every Feature — has no
-# host-side hook and so cannot create them. devc does have one, which is why this block stays
-# here: it is what keeps the bridge inert rather than fatal for devc users who never installed
-# it. A standalone project using only the Feature gets no such courtesy and fails the create
-# with Docker's "bind source path does not exist" — that difference is deliberate.
+# devc-bridge mount sources. devc does NOT install the bridge — it is opt-in, via
+# `additionalFeatures` in a user- or project-level devc.json. This block exists so that
+# opting in works without a separate host-side step: the Feature declares the bind mounts
+# but, like every Feature, has no host-side hook and so cannot create their sources, and
+# `--mount type=bind` fails the create when the source is missing. devc does have such a
+# hook, so it pre-creates the (empty, inert) sources for anyone who opts in later. A
+# standalone project using only the Feature gets no such courtesy and fails the create with
+# Docker's "bind source path does not exist" — that difference is deliberate.
 #
 # Created empty; the bridge's own installer (or `deno task build:client`) fills the client
 # dir in.

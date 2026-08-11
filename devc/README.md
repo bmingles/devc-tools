@@ -472,19 +472,28 @@ container:
 "type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc/gitconfig-identity,consistency=cached,readonly",
 ```
 
-## devc-bridge: the Feature
+## devc-bridge: the opt-in Feature
 
 [devc-bridge](../devc-bridge/README.md) lets a container run an allowlisted
-command on the host. Its container half is a **devcontainer Feature**, and
-devc's bundled config just references it — so **every** devc container has the
-bridge with no per-project wiring, and a project that does not use devc opts in
-with the same one line:
+command on the host. Its container half is a **devcontainer Feature**, and it is
+**opt-in** — devc's bundled config does not reference it, and a devc container
+comes up fine on a host that has never heard of the bridge. That is deliberate:
+a Feature ref in the bundled default would make every `devc up` anywhere depend
+on that ref resolving.
+
+Opt in for **every project** (user level, `~/.config/devc/devc.json`) or for
+**one project** (`.devc/devc.json`, or `.devcontainer/devc.jsonc`):
 
 ```jsonc
-"features": {
-  "ghcr.io/bmingles/devc-tools/devc-bridge:0": {}
+{
+  "additionalFeatures": {
+    "ghcr.io/bmingles/devc-tools/devc-bridge:0": {}
+  }
 }
 ```
+
+Project level wins per feature id. A project that does not use devc at all opts
+in with the same reference in its own `devcontainer.json` `features` block.
 
 One mechanism, not two. The Feature owns the two read-only bind mounts
 (`~/.config/devc-bridge/run` → `/run/devc-bridge` for the token,
@@ -502,20 +511,19 @@ Two things are devc's business rather than the Feature's:
   using only the Feature fails to build on a host with no
   `~/.config/devc-bridge/`. devc has `initialize-command.sh`, which runs on the
   host, and it creates both dirs plus a placeholder client that prints "no
-  client binary" and exits `127`. So for devc users the mounts resolve, the
-  symlink resolves, and the only cost is an unused directory. The placeholder is
-  written **only when absent**: that script runs before every `up`, and an
-  unconditional write would clobber the real client.
+  client binary" and exits `127`. It does this whether or not you opted in, so
+  opting in needs no separate host-side step: the mounts resolve, the symlink
+  resolves, and the cost to everyone else is two empty directories. The
+  placeholder is written **only when absent**: that script runs before every
+  `up`, and an unconditional write would clobber the real client.
 - **Nothing is compiled in the container.** The client is installed on the host
   into `~/.config/devc-bridge/client/devc-bridge` — see
   [devc-bridge's Setup](../devc-bridge/README.md#setup-macos-host).
 
-Projects whose `.devcontainer/devcontainer.json` was written by an earlier
-`devc` predate this and need the Feature line added by hand. **If you already
-wired the bridge yourself** — a `run` mount in `devc.json`, two bridge mounts
-copied into `devcontainer.json`, or a `devc-post-create.sh` that builds the
-client — remove it. Mounts are not deduped across those layers, and Docker fails
-the create with `Duplicate mount point`.
+**If you already wired the bridge yourself** — a `run` mount in `devc.json`, two
+bridge mounts copied into `devcontainer.json`, or a `devc-post-create.sh` that
+builds the client — remove it before opting in. Mounts are not deduped across
+those layers, and Docker fails the create with `Duplicate mount point`.
 
 Not supported on **Docker Compose** devcontainers: the Feature's mount strings
 land in the generated compose file, where `,readonly` is not compose's syntax.

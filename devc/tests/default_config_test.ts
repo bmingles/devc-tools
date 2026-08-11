@@ -332,27 +332,31 @@ Deno.test('canonical default devcontainer.json has no Feature and a project-rela
   );
 });
 
-Deno.test('canonical default devcontainer.json gets the bridge from the Feature, not its own mounts', async () => {
-  // The bridge's container half is a published Feature (features/devc-bridge/), so any
-  // project — devc or not — opts in with one line. devc consumes the same Feature rather
-  // than carrying its own copy of the mounts: two mechanisms would collide, since Docker
-  // fails a create with `Duplicate mount point` when the same target is mounted twice.
+Deno.test('canonical default devcontainer.json does not install devc-bridge', async () => {
+  // The bridge is an opt-in add-on, never part of devc's baseline — neither as a Feature
+  // reference nor as mounts of devc's own. Two reasons, and the first is the load-bearing
+  // one: a devc container must come up on a host that never installed the bridge, and a
+  // Feature ref in the *bundled* default makes every create depend on that ref resolving,
+  // so an unpublished (or renamed, or yanked) Feature breaks devc for everyone. Second,
+  // carrying mounts here as well as in the Feature would collide for anyone who did opt
+  // in — Docker fails a create with `Duplicate mount point` on the same target twice.
+  // Opting in is `additionalFeatures` in a user- or project-level devc.json.
   const text = await Deno.readTextFile(
     new URL('../default/devcontainer.json', import.meta.url),
   );
   const dc = JSON.parse(stripLineComments(text));
 
-  const feature = Object.keys(dc.features).find((id) =>
-    id.startsWith('ghcr.io/bmingles/devc-tools/devc-bridge:')
+  assertEquals(
+    Object.keys(dc.features).filter((id) => id.includes('devc-bridge')),
+    [],
+    'devc-bridge must not be a baseline Feature — it is opt-in',
   );
-  assertEquals(typeof feature, 'string', 'no devc-bridge Feature reference');
 
-  // ...and no leftover bridge mount of devc's own, at any target.
   const mounts: string[] = dc.mounts;
   assertEquals(
     mounts.filter((m) => m.includes('/.config/devc-bridge/')),
     [],
-    'bridge mounts must come from the Feature only',
+    'devc must not carry bridge mounts of its own',
   );
 });
 
