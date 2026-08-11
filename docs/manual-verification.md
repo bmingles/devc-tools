@@ -12,23 +12,24 @@ Baseline that is already green, for contrast — re-run before starting if the
 tree has moved:
 
 ```sh
-deno fmt --check                                   # repo root
-(cd devc && deno task check && deno task test)                    # 269 tests
-(cd devc-bridge/host && deno task check && deno task test)        # 10 tests
+deno fmt --check                                            # repo root
+(cd devc && deno task check && deno task test)                     # 269 tests
+(cd devc-bridge/host && deno task check && deno task test)         # 10 tests
 (cd devc-bridge/client && deno task check)
-bash tests/install_test.sh install.sh                             # 34 cases
+bash tests/install_test.sh install.sh                              # ALL PASS
+bash tests/workflow_guards_test.sh                                 # ALL PASS
 (cd devc && for t in seed_link:default/scripts/agents-setup.sh \
                      shell_dirs:default/scripts/bashrc-additions.sh \
                      project_hook:default/scripts/project-hook.sh; do
   bash "tests/${t%%:*}_test.sh" "${t#*:}"; done)
-bash features/devc-bridge/test/install_link_test.sh                # 5 cases
+bash features/devc-bridge/test/install_link_test.sh                # ALL PASS
 ```
 
 ---
 
 ## 1. Workflow dry runs — no tag, nothing published
 
-Both workflows have **never run**. Do this from a branch, not a tag.
+Both workflows have **never run**. Start from a branch — no tag exists yet.
 
 ```sh
 gh workflow run release.yml
@@ -36,12 +37,13 @@ gh workflow run publish-feature.yml
 gh run list --limit 5
 ```
 
-`dry_run` defaults to true and every publishing step is gated on it _and_ on the
-ref being a `v*` tag. Both conditions are asserted by
-`tests/workflow_guards_test.sh`, which the `gate` job runs — worth knowing
-because a dispatch can target a **tag**, where the ref check alone would publish
-from a run whose own checkbox said dry run. That also means a tag dry run is
-safe, and is the last rehearsal to do before §3.
+`dry_run` defaults to true, and every publishing step requires it to be false
+_and_ the ref to be a `v*` tag. Both conditions are asserted by
+`tests/workflow_guards_test.sh`, which the `gate` job runs. That matters here
+because a dispatch can target a **tag**: the ref check alone would have
+published from a run whose own checkbox said dry run. With both in place, a dry
+run against the tag itself is safe, which makes it the last rehearsal available
+before §3 — worth doing once the tag exists.
 
 Expected from `release.yml`:
 
@@ -62,10 +64,6 @@ Expected from `release.yml`:
       devc-0.1.0-{x86_64,aarch64}-apple-darwin.tar.gz
       devc-bridge-host-0.1.0-{x86_64,aarch64}-apple-darwin.tar.gz
       devc-bridge-client-0.1.0-{x86_64,aarch64}-unknown-linux-gnu.tar.gz
-
-- [ ] On the release page the assets group by tool — four `devc-`, then two
-      `client`, then two `host`. The version sits between tool and triple
-      precisely so `devc-bridge-*` cannot sort into the middle of `devc-*`.
 
 - [ ] `sha256sum -c checksums.txt` passes in the collect step
 - [ ] The stamp step rewrites `DEVC_RELEASE_VERSION='v0.1.0'` and `sh -n` passes
@@ -113,15 +111,17 @@ ls ~/.config/devc-bridge/  # must show run/ and client/
 
 ## 3. Tag a prerelease
 
-**The version guard is strict equality.** To tag `v0.1.0-rc.1`, all three
-consts must first read `0.1.0-rc.1`:
+**The version guard is strict equality.** To tag `v0.1.0-rc.1`, all four must
+first read `0.1.0-rc.1`:
 
-- `devc/help.ts`
-- `devc-bridge/host/version.ts`
-- `devc-bridge/client/version.ts`
+- `devc/help.ts` — `VERSION`
+- `devc-bridge/host/version.ts` — `VERSION`
+- `devc-bridge/client/version.ts` — `VERSION`
+- `features/devc-bridge/devcontainer-feature.json` — `"version"`
 
-and `features/devc-bridge/devcontainer-feature.json`'s `version` must match too
-(its own guard, in `publish-feature.yml`).
+The first three are guarded by `release.yml`, the fourth by
+`publish-feature.yml`. Miss the fourth and the binaries publish while the
+Feature does not.
 
 - [ ] **Negative test first.** Push a tag that disagrees with `VERSION` and
       confirm `gate` fails before anything compiles, naming both values.
@@ -129,10 +129,17 @@ and `features/devc-bridge/devcontainer-feature.json`'s `version` must match too
 - [ ] `release.yml` creates a release with all eight assets plus `checksums.txt`
       and `install.sh`, flagged **prerelease** (the `-` in the tag), so
       `releases/latest` still points at the last stable
+- [ ] **On the release page the assets group by tool** — four `devc-`, then two
+      `client`, then two `host`. This is the first place the naming scheme is
+      actually visible; a dry run only produces workflow artifacts.
 - [ ] `publish-feature.yml` pushes
-      `ghcr.io/bmingles/devc-tools/devc-bridge`, tagged `latest`, `0`, `0.1`,
-      `0.1.0`. **`:0` is what devc's docs reference** — there is no `1` tag until
-      the repo hits 1.x.
+      `ghcr.io/bmingles/devc-tools/devc-bridge`. **Write down which tags it
+      actually created.** A stable `0.1.0` publish yields `latest`/`0`/`0.1`/
+      `0.1.0`, and `:0` is what `devc/README.md` and this repo's docs tell people
+      to reference — but it is unverified whether a **prerelease** version
+      produces the same rolling tags. If `:0` is absent, the documented opt-in
+      line does not resolve until a stable release — settle that in the docs
+      before telling anyone to use it.
 - [ ] Make the package public in the repo's Packages settings, or an anonymous
       `devcontainer up` cannot pull it
 
