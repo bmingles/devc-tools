@@ -6,6 +6,7 @@
 //   devc-bridge restart     stop then start
 //   devc-bridge run         run the bridge in the foreground (headless)
 //   devc-bridge run --tray  ditto, plus the macOS menu-bar tray (`deno desktop` only)
+//   devc-bridge version     print the version (also --version / -V)
 //
 // main.ts plays two roles from one file:
 //   • As the CLI (start/stop/status/restart) it's the *controller* — it spawns, signals
@@ -29,12 +30,21 @@ import {
 import { startServer } from './core.ts';
 import { ensureToken } from './token.ts';
 import { runTray } from './tray.ts';
+import { VERSION } from './version.ts';
 
-const USAGE = 'usage: devc-bridge {start|stop|status|restart|run [--tray]}';
+const USAGE =
+  'usage: devc-bridge {start|stop|status|restart|run [--tray]|version}';
 
 async function main(): Promise<void> {
-  const cfg = loadConfig();
   const sub = Deno.args[0];
+  // Before `loadConfig()`: `--version` is the one question a binary must be able to
+  // answer with nothing else resolved, and it is what the release workflow's smoke test
+  // runs against a freshly built artifact on a runner with no `~/.config/devc-bridge`.
+  if (sub === 'version' || sub === '--version' || sub === '-V') {
+    console.log(`devc-bridge ${VERSION}`);
+    return;
+  }
+  const cfg = loadConfig();
   switch (sub) {
     case 'start':
       await start(cfg);

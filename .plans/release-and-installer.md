@@ -314,10 +314,15 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
 
 ## Checklist
 
-- [ ] `devc-bridge/host/version.ts` + `main.ts` — `VERSION`, `version`
-      subcommand, `--version`/`-V`, `USAGE` updated
-- [ ] `devc-bridge/host/deno.json`, `devc/deno.json`, `devc-bridge/client/deno.json`
-      — release build tasks the workflow calls (targeted, output under `dist/`)
+- [x] `devc-bridge/host/version.ts` + `main.ts` — `VERSION`, `version`
+      subcommand, `--version`/`-V`, `USAGE` updated. Plus
+      `devc-bridge/client/version.ts` and the same three spellings in the client
+      (decision 9 covers both binaries; the guard checks both consts)
+- [x] `devc-bridge/host/deno.json`, `devc/deno.json`, `devc-bridge/client/deno.json`
+      — release build tasks the workflow calls (targeted, output under `dist/`).
+      `build:release` in each, taking the triple from `$DEVC_TARGET` (a deno task
+      cannot take a positional flag, and an appended `--target` would land after
+      the entrypoint and be baked in as a runtime arg)
 - [ ] `.github/workflows/release.yml` — tag trigger + `dry_run` dispatch;
       version + test gates; four native build jobs (`ubuntu-24.04`,
       `ubuntu-24.04-arm`, `macos-13`, `macos-14`) each smoke-testing what it

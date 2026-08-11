@@ -1,6 +1,7 @@
 // Container-side client for the host command bridge.
 //
 //   devc-bridge <command> [args...]
+//   devc-bridge version            print the client version (also --version / -V)
 //
 // Connects to the host bridge over TCP (a bind-mounted unix socket does not cross
 // the Docker Desktop VM boundary), reads the shared token from the bind-mounted run
@@ -10,6 +11,8 @@
 // Env:
 //   DEVC_BRIDGE_ADDR        host:port of the bridge  (default host.docker.internal:48227)
 //   DEVC_BRIDGE_TOKEN_FILE  path to the shared token (default /run/devc-bridge/token)
+
+import { VERSION } from './version.ts';
 
 const ADDR = Deno.env.get('DEVC_BRIDGE_ADDR') ?? 'host.docker.internal:48227';
 const TOKEN_FILE = Deno.env.get('DEVC_BRIDGE_TOKEN_FILE') ??
@@ -61,6 +64,13 @@ function main(): Promise<never> {
   if (!command) {
     console.error('usage: devc-bridge <command> [args...]');
     return Deno.exit(2);
+  }
+  // Answered locally, never forwarded to the host: "which client is mounted in here" is a
+  // question the container must be able to answer with the bridge down, and `version` is
+  // not a host command anyone could add to the allowlist to shadow it.
+  if (command === 'version' || command === '--version' || command === '-V') {
+    console.log(`devc-bridge ${VERSION}`);
+    return Deno.exit(0);
   }
   return run(command, args);
 }
