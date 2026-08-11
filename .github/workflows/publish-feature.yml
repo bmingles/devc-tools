@@ -1,0 +1,61 @@
+name: Publish devcontainer Feature
+
+# Publishes features/devc-bridge/ to ghcr.io/bmingles/devc-tools/devc-bridge.
+#
+# Separate from the binary release workflow but on the same `v*` tag trigger: the two produce
+# unrelated artifacts and a failure in one should not block the other, while a single tag still
+# moves the whole repo (see .plans/release-and-installer.md decision 8).
+#
+# `workflow_dispatch` runs everything except the publish, so the packaging can be exercised
+# before a tag exists.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Package and validate only — do not publish'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A published Feature must not disagree with the commit it claims to be, so the tag is
+      # the source of truth and this fails rather than rewriting the file during the build.
+      - name: Version guard
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          version="$(jq -r .version features/devc-bridge/devcontainer-feature.json)"
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::tag $tag disagrees with devcontainer-feature.json version $version"
+            exit 1
+          fi
+
+      # The Feature is a collection of one, so `features/` is the collection folder and
+      # `features/devc-bridge/` the Feature within it.
+      - name: Package
+        run: npx --yes @devcontainers/cli@latest features package ./features --force-clean-output-folder --output-folder ./dist/features
+
+      # Plain `docker login` rather than a third-party action: one less thing in the path that
+      # produces an artifact people pull into their containers.
+      - name: Log in to ghcr.io
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # → ghcr.io/bmingles/devc-tools/devc-bridge, tagged latest / 0 / 0.1 / 0.1.0.
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx --yes @devcontainers/cli@latest features publish ./features --namespace "${{ github.repository }}"

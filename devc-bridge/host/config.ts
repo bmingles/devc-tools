@@ -17,7 +17,7 @@ import { join } from '@std/path';
 export interface Config {
   /** Root of the config tree (default ~/.config/devc-bridge). */
   base: string;
-  /** Bind-mounted run dir: token + pidfile live here. */
+  /** Bind-mounted run dir: the token lives here, and nothing else. */
   run: string;
   /** Active-marker dir watched by the tray. */
   state: string;
@@ -35,7 +35,16 @@ export interface Config {
   clientBin: string;
   /** Shared-secret token file (inside run/, read by the container client). */
   token: string;
-  /** Pidfile for the background tray process. */
+  /**
+   * Pidfile for the background tray process.
+   *
+   * In `base/`, deliberately *not* in the bind-mounted `run/`. `stop` `Deno.kill`s
+   * whatever PID it reads here, so a container that can write the file can pick the
+   * host process that gets SIGTERM. The mount is read-only, which already closes
+   * that — but the devc-bridge Feature is unsupported on Docker Compose
+   * devcontainers, where `readonly` does not survive into the generated compose
+   * file, and this is what keeps the worst of that from being reachable.
+   */
   pidfile: string;
   /** Log file the detached tray's stdout/stderr is appended to. */
   logfile: string;
@@ -134,7 +143,7 @@ export function loadConfig(): Config {
     client,
     clientBin: join(client, 'devc-bridge'),
     token: Deno.env.get('DEVC_BRIDGE_TOKEN_FILE') ?? join(run, 'token'),
-    pidfile: join(run, 'tray.pid'),
+    pidfile: join(base, 'tray.pid'),
     logfile: join(base, 'devc-bridge.log'),
     settingsFile,
     hostname: Deno.env.get('DEVC_BRIDGE_HOST') || stored.hostname ||

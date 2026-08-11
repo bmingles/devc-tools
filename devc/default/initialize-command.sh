@@ -33,12 +33,19 @@ email="$(git config --get user.email || true)"
 [ -n "$email" ] && git config --file "$identity" user.email "$email"
 
 # devc:bridge-placeholder (start)
-# devc-bridge mount sources. Created empty so the binds resolve on a host that has never
-# installed the bridge; the bridge's own installer (or `deno task build:client`) fills the
-# client dir in.
+# devc-bridge mount sources. The mounts themselves are declared by the `devc-bridge` Feature
+# (see the `features` block in devcontainer.json), which — like every Feature — has no
+# host-side hook and so cannot create them. devc does have one, which is why this block stays
+# here: it is what keeps the bridge inert rather than fatal for devc users who never installed
+# it. A standalone project using only the Feature gets no such courtesy and fails the create
+# with Docker's "bind source path does not exist" — that difference is deliberate.
+#
+# Created empty; the bridge's own installer (or `deno task build:client`) fills the client
+# dir in.
 mkdir -p "$HOME/.config/devc-bridge/run" "$HOME/.config/devc-bridge/client"
 
-# Placeholder so the container's PATH symlink always resolves. Created ONLY when absent —
+# Placeholder so the PATH symlink the Feature's install.sh makes always resolves; without it
+# bash reports a bare "No such file or directory". Created ONLY when absent —
 # this script runs before every `up`, and an unconditional write would clobber the real
 # client the bridge installed there. Exit 127 is the shell's own "command not found"
 # convention; the message is diagnostic rather than instructional, since a failed

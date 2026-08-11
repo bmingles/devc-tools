@@ -12,13 +12,14 @@ self-contained in its own subfolder, with its own docs and build tasks.
 
 ## Repo layout
 
-| Path                        | Role                                                                                 |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| `devc-bridge/`              | The host command bridge — see its [README](devc-bridge/README.md)                    |
-| `devc/`                     | The dev container CLI + config TUI — see its [README](devc/README.md)                |
-| `scripts/bash_aliases.sh`   | Shell functions to run each tool from source (no build) — source it from `~/.bashrc` |
-| `.devc/`                    | Devcontainer config for developing _this_ repo (bind mounts, env, post-create)       |
-| `.plans/`                   | Plan docs; `.plans/PLAN.md` is the status index                                      |
-| `devc-tools.code-workspace` | VS Code workspace file                                                               |
+| Path                        | Role                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| `devc-bridge/`              | The host command bridge — see its [README](devc-bridge/README.md)                     |
+| `devc/`                     | The dev container CLI + config TUI — see its [README](devc/README.md)                 |
+| `features/`                 | Published devcontainer Features — see [`devc-bridge`](features/devc-bridge/README.md) |
+| `scripts/bash_aliases.sh`   | Shell functions to run each tool from source (no build) — source it from `~/.bashrc`  |
+| `.devc/`                    | Devcontainer config for developing _this_ repo (bind mounts, env, post-create)        |
+| `.plans/`                   | Plan docs; `.plans/PLAN.md` is the status index                                       |
+| `devc-tools.code-workspace` | VS Code workspace file                                                                |
 
 Each tool owns its setup instructions; start with the tool's own README.

@@ -1,14 +1,16 @@
 #!/bin/bash
-# Exercises the PATH-symlink block from bridge-client-link.sh against temp dirs, with no
+# Exercises the PATH-symlink block from the Feature's install.sh against temp dirs, with no
 # container involved. Extracts the block from the real script so the test cannot drift from
 # the implementation.
 #
 # The property under test is that the link is made *unconditionally* — including when the
 # mounted client does not exist yet — and that it therefore starts working the moment the
-# host installs one, with nothing re-run in the container.
+# host installs one, with nothing re-run in the container. That matters more here than it did
+# in the devc post-create step this replaces: a Feature's install.sh runs at image *build*
+# time, so the mount never exists yet when it runs.
 set -uo pipefail
 
-SCRIPT="${1:?usage: bridge_client_link_test.sh /path/to/bridge-client-link.sh}"
+SCRIPT="${1:-$(cd "$(dirname "$0")/.." && pwd)/install.sh}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -84,9 +86,9 @@ check "retargeted at the mount" \
 check "runs the new client" test "$("$R/bin/devc-bridge")" = "fresh"
 
 echo "case 5: an existing regular file is replaced (no guard, by design)"
-# post-create.sh runs the project hook *after* this step, so a project that wants its own
-# client at this path still wins on every create — a guard here would only serve a hand
-# re-run inside an already running container.
+# This runs at image build time, so anything a project installs at that path afterwards (a
+# postCreateCommand, devc's scripts/project-hook.sh) still wins — a guard here would only
+# serve a hand re-run inside an already running container.
 R="$WORK/c5"
 mkdir -p "$R/bin" "$R/mount"
 make_client "$R/bin/devc-bridge" "project-own"

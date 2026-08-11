@@ -454,64 +454,53 @@ container:
 "type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc/gitconfig-identity,consistency=cached,readonly",
 ```
 
-## devc-bridge mounts
+## devc-bridge: the Feature
 
 [devc-bridge](../devc-bridge/README.md) lets a container run an allowlisted
-command on the host. devc ships its container half in the default config, so
-**every** devc container has it with no per-project wiring — two read-only bind
-mounts plus a symlink:
+command on the host. Its container half is a **devcontainer Feature**, and
+devc's bundled config just references it — so **every** devc container has the
+bridge with no per-project wiring, and a project that does not use devc opts in
+with the same one line:
 
 ```jsonc
-"type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,consistency=cached,readonly",
-"type=bind,source=${localEnv:HOME}/.config/devc-bridge/client,target=/usr/local/share/devc/bridge-client,consistency=cached,readonly",
+"features": {
+  "ghcr.io/bmingles/devc-tools/devc-bridge:0": {}
+}
 ```
 
-- **`run/`** carries the shared-secret token the client authenticates with.
-  `/run/devc-bridge` is the client's built-in default, so no env vars are
-  needed.
-- **`client/`** holds the host-installed Linux `devc-bridge` binary.
-  `scripts/bridge-client-link.sh` (run by `post-create.sh`) symlinks
-  `/usr/local/bin/devc-bridge` at it.
+One mechanism, not two. The Feature owns the two read-only bind mounts
+(`~/.config/devc-bridge/run` → `/run/devc-bridge` for the token,
+`~/.config/devc-bridge/client` → `/usr/local/share/devc-bridge/client` for the
+binary) and the `/usr/local/bin/devc-bridge` symlink; devc's config declares
+none of them. See
+[the Feature's README](../../features/devc-bridge/README.md) for what it does
+and why it does it that way.
 
-Four things about this are deliberate:
+Two things are devc's business rather than the Feature's:
 
-- **Both mounts are read-only.** The container only ever _reads_ them. A
-  writable `run/` would let a container write any PID into `run/tray.pid` and
-  have the next host-side `devc-bridge stop` SIGTERM it; a writable `client/`
-  would let one container rewrite a binary every other container executes.
-  Read-only removes both. This is also why the mounts live here rather than in a
-  [`devc.json` overlay](#optional-overlay-devcjson): the overlay re-serializes
-  mounts through `--mount` and drops `readonly`, while a string mount in
-  `devcontainer.json` is passed through verbatim.
-- **`client/` is mounted as a directory, not as the binary file.** A single-file
-  bind pins the inode, so a client reinstalled on the host would go stale inside
-  a running container. The directory mount is live for both the first appearance
-  and later replacements.
-- **The symlink is made unconditionally,** even when no client exists yet, so it
-  starts working the moment the host installs one — with nothing to re-run in
-  the container. (Healing on shell init would not work: devc's `~/.bashrc`
-  additions sit after Ubuntu's non-interactive early return, and `devc claude`
-  runs `bash -lc`.) `scripts/project-hook.sh` runs _after_ this step, so a
-  project that installs its own client at that path still wins.
-- **They are inert if you never installed the bridge.**
-  `initialize-command.sh` creates both source dirs — a bind mount will not
-  create a missing source — plus a placeholder at
-  `~/.config/devc-bridge/client/devc-bridge` that prints "no client binary" and
-  exits `127`. So the mounts resolve, the symlink resolves, and the only cost is
-  an unused directory. The placeholder is written **only when absent**: that
-  script runs before every `up`, and an unconditional write would clobber the
-  real client.
-
-Nothing is compiled in the container. The client is installed on the host into
-`~/.config/devc-bridge/client/devc-bridge` — see
-[devc-bridge's Setup](../devc-bridge/README.md#setup-macos-host).
+- **It stays inert if you never installed the bridge.** A Feature cannot create
+  its own mount sources — its lifecycle hooks all run inside the container, and
+  `--mount type=bind` errors on a missing source — so a _standalone_ project
+  using only the Feature fails to build on a host with no
+  `~/.config/devc-bridge/`. devc has `initialize-command.sh`, which runs on the
+  host, and it creates both dirs plus a placeholder client that prints "no
+  client binary" and exits `127`. So for devc users the mounts resolve, the
+  symlink resolves, and the only cost is an unused directory. The placeholder is
+  written **only when absent**: that script runs before every `up`, and an
+  unconditional write would clobber the real client.
+- **Nothing is compiled in the container.** The client is installed on the host
+  into `~/.config/devc-bridge/client/devc-bridge` — see
+  [devc-bridge's Setup](../devc-bridge/README.md#setup-macos-host).
 
 Projects whose `.devcontainer/devcontainer.json` was written by an earlier
-`devc` predate these mounts and need them added by hand. **If you already wired
-the bridge yourself** — a `run` mount in `devc.json`, or a
-`devc-post-create.sh` that builds the client — remove it. Overlay mounts
-colliding with base mounts are not deduped, and Docker fails the create with
-`Duplicate mount point`.
+`devc` predate this and need the Feature line added by hand. **If you already
+wired the bridge yourself** — a `run` mount in `devc.json`, two bridge mounts
+copied into `devcontainer.json`, or a `devc-post-create.sh` that builds the
+client — remove it. Mounts are not deduped across those layers, and Docker fails
+the create with `Duplicate mount point`.
+
+Not supported on **Docker Compose** devcontainers: the Feature's mount strings
+land in the generated compose file, where `,readonly` is not compose's syntax.
 
 ## Development
 
@@ -528,8 +517,10 @@ deno task build                        # compile the `devc` binary (embeds defau
 bash tests/seed_link_test.sh default/scripts/agents-setup.sh                # devc:seed-link
 bash tests/shell_dirs_test.sh default/scripts/bashrc-additions.sh           # devc:shell-dirs
 bash tests/project_hook_test.sh default/scripts/project-hook.sh             # devc:project-hook
-bash tests/bridge_client_link_test.sh default/scripts/bridge-client-link.sh # devc:bridge-client-link
 bash tests/initialize_command_test.sh default/initialize-command.sh         # devc:bridge-placeholder
+
+# The bridge's PATH symlink is no longer devc's — it lives in the devc-bridge Feature:
+bash ../features/devc-bridge/test/install_link_test.sh   # devc:bridge-client-link
 ```
 
 ### `devc config`

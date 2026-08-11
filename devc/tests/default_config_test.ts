@@ -282,7 +282,6 @@ Deno.test('materializeDefaultConfig copies the embedded tree flat to cacheDir an
         'scripts/agents-setup.sh',
         'scripts/node-setup.sh',
         'scripts/git-setup.sh',
-        'scripts/bridge-client-link.sh',
         'scripts/project-hook.sh',
         'scripts/bashrc-additions.sh',
       ]
@@ -333,33 +332,61 @@ Deno.test('canonical default devcontainer.json has no Feature and a project-rela
   );
 });
 
-Deno.test('canonical default devcontainer.json mounts the devc-bridge run and client dirs read-only', async () => {
-  // These two binds are how the bridge reaches *every* devc container without per-project
-  // wiring, so they belong to the bundled config rather than a devc.json overlay — the
-  // overlay re-serializes `--mount` and drops `readonly`, while a string mount here is
-  // passed through verbatim. `readonly` is the point of putting them here, so assert it:
-  // a writable run/ lets a container write run/tray.pid and have the host's `devc-bridge
-  // stop` SIGTERM an arbitrary PID, and a writable client/ lets one container rewrite a
-  // binary the others execute.
+Deno.test('canonical default devcontainer.json gets the bridge from the Feature, not its own mounts', async () => {
+  // The bridge's container half is a published Feature (features/devc-bridge/), so any
+  // project — devc or not — opts in with one line. devc consumes the same Feature rather
+  // than carrying its own copy of the mounts: two mechanisms would collide, since Docker
+  // fails a create with `Duplicate mount point` when the same target is mounted twice.
   const text = await Deno.readTextFile(
     new URL('../default/devcontainer.json', import.meta.url),
   );
   const dc = JSON.parse(stripLineComments(text));
+
+  const feature = Object.keys(dc.features).find((id) =>
+    id.startsWith('ghcr.io/bmingles/devc-tools/devc-bridge:')
+  );
+  assertEquals(typeof feature, 'string', 'no devc-bridge Feature reference');
+
+  // ...and no leftover bridge mount of devc's own, at any target.
   const mounts: string[] = dc.mounts;
+  assertEquals(
+    mounts.filter((m) => m.includes('/.config/devc-bridge/')),
+    [],
+    'bridge mounts must come from the Feature only',
+  );
+});
+
+Deno.test('the devc-bridge Feature declares both bridge mounts as readonly strings', async () => {
+  // Guards the one thing this whole arrangement rests on, in the file devc now delegates
+  // to. A Feature mount written as a *string* is passed through to Docker verbatim, so
+  // `readonly` survives; the object form the published Feature schema documents is
+  // re-serialized through the CLI's `Mount` interface, which has no `readonly` field, and
+  // silently makes both mounts writable. A writable client/ lets one container rewrite a
+  // binary the others execute; a writable run/ lets a container pin the host's shared
+  // secret, since the host adopts an existing token rather than regenerating it.
+  const meta = JSON.parse(
+    await Deno.readTextFile(
+      new URL(
+        '../../features/devc-bridge/devcontainer-feature.json',
+        import.meta.url,
+      ),
+    ),
+  );
 
   for (
     const [source, target] of [
       ['${localEnv:HOME}/.config/devc-bridge/run', '/run/devc-bridge'],
       [
         '${localEnv:HOME}/.config/devc-bridge/client',
-        '/usr/local/share/devc/bridge-client',
+        '/usr/local/share/devc-bridge/client',
       ],
     ]
   ) {
-    const mount = mounts.find((m) =>
-      m.includes(`source=${source},`) && m.includes(`target=${target},`)
-    );
-    assertEquals(typeof mount, 'string', `no bind mount for ${target}`);
+    const mount = (meta.mounts as unknown[]).find((m) =>
+      typeof m === 'string' && m.includes(`source=${source},`) &&
+      m.includes(`target=${target},`)
+    ) as string | undefined;
+    assertEquals(typeof mount, 'string', `no string bind mount for ${target}`);
     assertEquals(mount!.startsWith('type=bind,'), true);
     assertEquals(
       mount!.split(',').includes('readonly'),
@@ -400,7 +427,6 @@ Deno.test('materializeDefaultConfig writes the embedded tree to real disk (defau
       'scripts/agents-setup.sh',
       'scripts/node-setup.sh',
       'scripts/git-setup.sh',
-      'scripts/bridge-client-link.sh',
       'scripts/project-hook.sh',
       'scripts/bashrc-additions.sh',
     ]

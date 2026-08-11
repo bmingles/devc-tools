@@ -5,6 +5,12 @@
     "context": "."
   },
   "features": {
+    // devc-bridge container half: two read-only bind mounts (the host bridge's token and
+    // Linux client) plus the PATH symlink. It lives in a Feature so that projects which
+    // do not use devc opt in with this same one line — one mechanism, not two. The mount
+    // sources are created host-side by initialize-command.sh, so this stays inert rather
+    // than fatal on a host that never installed the bridge.
+    "ghcr.io/bmingles/devc-tools/devc-bridge:0": {},
     "ghcr.io/devcontainers-community/features/deno:1": {},
     "ghcr.io/devcontainers/features/git-lfs:1": {
       "autoPull": false
@@ -53,16 +59,8 @@
     // new shell. initialize-command.sh creates the source, since a bind mount will not.
     "type=bind,source=${localEnv:HOME}/.config/devc/shell,target=/usr/local/share/devc/shell,consistency=cached,readonly",
 
-    // devc-bridge: token written by the host bridge. Read-only — the container only ever
-    // reads the token, and a writable run/ lets a container feed `devc-bridge stop` an
-    // arbitrary PID to SIGTERM on the host.
-    "type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,consistency=cached,readonly",
-
-    // devc-bridge: host-built Linux client. A *directory* mount so a rebuilt client shows
-    // through live (a file mount would pin the inode). scripts/bridge-client-link.sh puts it
-    // on PATH. initialize-command.sh creates both sources, so these binds are inert rather
-    // than fatal on a host that never installed the bridge.
-    "type=bind,source=${localEnv:HOME}/.config/devc-bridge/client,target=/usr/local/share/devc/bridge-client,consistency=cached,readonly",
+    // (The two devc-bridge mounts are declared by the devc-bridge Feature above — they must
+    // not also appear here, or Docker fails the create with `Duplicate mount point`.)
 
     "type=volume,source=go-cache-${localWorkspaceFolderBasename},target=/home/vscode/go/pkg",
     "type=volume,source=go-build-cache-${localWorkspaceFolderBasename},target=/root/.cache/go-build",

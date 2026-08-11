@@ -198,41 +198,66 @@ resolve to anything. So within this plan the order is: build the Feature →
 publish it → point `devc/default/devcontainer.json` at the published ref and
 delete devc's mounts. Doing the devc change first breaks every devc container.
 
+## Notes from the build — two deviations from the text above
+
+1. **The Feature is referenced as `:0`, not `:1`.** The repo's version is
+   `0.1.0` (`devc/help.ts`), and the devcontainers publish tooling tags a
+   `0.1.0` Feature `latest`/`0`/`0.1`/`0.1.0` — there is no `1` to resolve, so
+   the `:1` in this plan's Goal would fail to pull. It becomes `:1` when the
+   repo does.
+2. **`devcontainer features test` needs a collection layout this repo does not
+   use.** It insists on `<project>/src/<id>/` + `<project>/test/<id>/`, while
+   `devcontainer features publish` (and this plan) want the Feature
+   self-contained at `features/<id>/`. Rather than split one Feature across two
+   trees, `features/devc-bridge/test/run-features-test.sh` stages a throwaway
+   copy in the layout the test command expects and invokes it there.
+
+Also: the `bridge_client_link_test.sh` harness moved to
+`features/devc-bridge/test/install_link_test.sh` (alongside the container
+scenario, in the Feature it now tests) and defaults its argument to the
+Feature's own `install.sh`.
+
 ## Checklist
 
-- [ ] `features/devc-bridge/devcontainer-feature.json` — id/version/name + the
+- [x] `features/devc-bridge/devcontainer-feature.json` — id/version/name + the
       two **string** mounts with `readonly`
-- [ ] `features/devc-bridge/install.sh` — unconditional PATH symlink, fenced, no
+- [x] `features/devc-bridge/install.sh` — unconditional PATH symlink, fenced, no
       sudo branch
-- [ ] `features/devc-bridge/README.md` — host-bridge-first prerequisite, compose
+- [x] `features/devc-bridge/README.md` — host-bridge-first prerequisite, compose
       limitation
-- [ ] `devc/default/devcontainer.json` — bridge mounts removed, Feature added
+- [x] `devc/default/devcontainer.json` — bridge mounts removed, Feature added
       (same change)
-- [ ] `devc/default/scripts/bridge-client-link.sh` — deleted
-- [ ] `devc/default/post-create.sh` — link step dropped
-- [ ] `devc/default/initialize-command.sh` — placeholder block kept, comment
+- [x] `devc/default/scripts/bridge-client-link.sh` — deleted
+- [x] `devc/default/post-create.sh` — link step dropped
+- [x] `devc/default/initialize-command.sh` — placeholder block kept, comment
       updated to say the Feature consumes it
-- [ ] `devc-bridge/host/config.ts` — `pidfile` moves to `base/`
-- [ ] `devc/tests/default_config_test.ts` — mount assertions replaced by a
+- [x] `devc-bridge/host/config.ts` — `pidfile` moves to `base/`
+- [x] `devc/tests/default_config_test.ts` — mount assertions replaced by a
       Feature-reference assertion; `bridge-client-link.sh` out of both
       expected-file lists
-- [ ] `devc/tests/bridge_client_link_test.sh` — moved/retargeted at the Feature's
+- [x] `devc/tests/bridge_client_link_test.sh` — moved/retargeted at the Feature's
       `install.sh`
-- [ ] `features/devc-bridge/test/` — `devcontainer features test` scenario
+- [x] `features/devc-bridge/test/` — `devcontainer features test` scenario
       asserting substitution, read-only, and the PATH symlink
-- [ ] `.github/workflows/` — Feature publish workflow
-- [ ] `devc/README.md`, `devc-bridge/README.md` — one mechanism; the bridge
+- [x] `.github/workflows/` — Feature publish workflow
+- [x] `devc/README.md`, `devc-bridge/README.md` — one mechanism; the bridge
       section becomes "add the Feature"
-- [ ] `.plans/PLAN.md` — register
+- [x] `.plans/PLAN.md` — register
 
 ## Validation
 
-- [ ] `deno task check` / `test` / `fmt --check` clean
-- [ ] Feature `install.sh` harness passes (link created dangling, heals, is
-      idempotent, repoints a stale link)
-- [ ] `devcontainer features test` passes: populated `/run/devc-bridge`, a
-      failed write into it, and `devc-bridge` on `PATH` — the two findings this
-      design rests on
+- [x] `deno task check` / `test` / `fmt --check` clean — 269/269 in `devc/`,
+      `deno check` clean in `devc-bridge/host/`, `deno fmt --check` clean
+      repo-wide. The other three shell harnesses (`seed_link`, `shell_dirs`,
+      `project_hook`, `initialize_command`) still pass unchanged.
+- [x] Feature `install.sh` harness passes (link created dangling, heals, is
+      idempotent, repoints a stale link) — `features/devc-bridge/test/install_link_test.sh`,
+      all 5 cases
+- [ ] (user, needs Docker) `devcontainer features test` passes: populated
+      `/run/devc-bridge`, a failed write into it, and `devc-bridge` on `PATH` —
+      the two findings this design rests on. Written and syntax-checked
+      (`features/devc-bridge/test/test.sh`, run via `test/run-features-test.sh`);
+      not run — no Docker in the implementing environment.
 - [ ] (user) A **non-devc** project with only the Feature line and an
       image-based `devcontainer.json` → `devc-bridge ping test` prints `pong`.
       This is the whole point of the plan.
