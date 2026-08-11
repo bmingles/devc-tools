@@ -60,7 +60,7 @@ established is recorded here). The devcontainer CLI generated:
 2. **The client keeps arriving by read-only bind mount**, not by download at
    create time. Downloading was only ever a workaround for a `readonly`
    restriction that turned out not to exist, and it would make this plan depend
-   on [release-and-installer](../release-and-installer.md) shipping first, decouple
+   on [release-and-installer](release-and-installer.md) shipping first, decouple
    the client version from the host that installed it, and require network at
    create.
 3. **The Feature owns the namespace, not devc.** Mount target becomes
@@ -126,7 +126,7 @@ established is recorded here). The devcontainer CLI generated:
 ### `features/devc-bridge/` (new, repo root)
 
 `devcontainer-feature.json` — `id: devc-bridge`, version in lockstep with the
-repo tag (see [release-and-installer](../release-and-installer.md) decision 8), and
+repo tag (see [release-and-installer](release-and-installer.md) decision 8), and
 the two **string** mounts:
 
 ```jsonc
@@ -188,7 +188,7 @@ A GitHub Action publishing `features/devc-bridge/` to
 tooling. Separate workflow from the binary release, same tag trigger, and the
 same version guard: the Feature's `version` is bumped with the repo tag and the
 workflow fails if the two disagree — identical in spirit to
-[release-and-installer](../release-and-installer.md) decision 8, and for the same
+[release-and-installer](release-and-installer.md) decision 8, and for the same
 reason (a published artifact must not disagree with the commit it claims).
 
 **This must land before devc consumes the Feature.** An ordinary project can

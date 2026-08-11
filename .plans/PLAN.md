@@ -11,23 +11,54 @@
 
 ### Pending
 
-- [release-and-installer](release-and-installer.md) — Publish prebuilt binaries
-  from a tagged GitHub release and install them with one `curl | sh`, so nobody
-  needs Deno to _use_ these tools. Covers `devc` (4 targets), the devc-bridge
-  host CLI (macOS) and the Linux container client — the destination
-  [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) already fixed.
-  **Its prerequisite is done:**
-  [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md) made a
-  compiled `devc-bridge start` work, which removed this plan's first checklist
-  item and both `.app` assets with it — eight plain-binary archives now, no
-  bundle, no `--icon`, and nothing needing a second macOS artifact. Assets are
-  named by Deno's own target triples, built natively on a runner of each
-  architecture (which is also how "does this run on Apple Silicon" becomes a CI
-  assertion), verified against a `checksums.txt`, and installed without `sudo`
-  into `~/.local/bin`. The Linux client is arch-matched to the **host**, not the
-  installer's own platform.
+_None._ Every plan written so far is implemented and archived. New work starts
+with a new plan here (see the `plan-orchestrating` skill for the conventions).
 
 ### Completed
+
+- [release-and-installer](archived/release-and-installer.md) — Publish prebuilt
+  binaries from a tagged GitHub release and install them with one `curl | sh`, so
+  nobody needs Deno to _use_ these tools. Covers `devc` (4 targets), the
+  devc-bridge host CLI (macOS) and the Linux container client — the destination
+  [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) already fixed.
+  Eight plain-binary archives named by Deno's own target triples (one vocabulary
+  between the workflow and the installer, not two mappings to keep in step),
+  built natively on a runner of each architecture, verified against a
+  `checksums.txt`, and installed without `sudo` into `~/.local/bin`. The Linux
+  client is arch-matched to the **host**, not the installer's own platform — the
+  one selection here that is easy to get backwards, so it is what the installer
+  tests lead with. Both `devc-bridge` binaries gained a `VERSION` and
+  `version`/`--version`/`-V`, which is what makes each build job's smoke test an
+  assertion rather than a formality; the version guard requires all three
+  `VERSION` consts to agree and, on a tag, to equal it — **strict equality, so a
+  `v0.1.0-rc.1` tag needs `VERSION` to read `0.1.0-rc.1`**, documented in the
+  root README's new Releasing section. `install.sh` ships as a release asset with
+  the tag stamped in, not from `main`, so the `latest/download` URL always serves
+  the script that release was tested with.
+  **The release workflow has never been run against a real tag — or at all.**
+  There is no Actions access, no macOS host and no Docker here, so what was
+  verified is the workflow's own `run:` steps, extracted from the parsed YAML and
+  executed against the real tree: the version guard (passing on `v0.1.0`, failing
+  on `v9.9.9`, and synthesizing a version on a branch ref for `dry_run`), the
+  smoke test, the archive step, and the publish job's collect/checksums and
+  install.sh stamping. All four targets were cross-built locally through the new
+  `build:release` tasks, yielding exactly the eight expected archives with the
+  right architecture in each (ELF `e_machine`, Mach-O `cputype`) and mode 0755
+  surviving tar; `sha256sum -c` passed on the generated `checksums.txt`, and a
+  missing or extra asset each fails the collect step. Then the **stamped**
+  `install.sh` was run end to end against those archives over `file://` and
+  installed working binaries. A new `tests/install_test.sh` (34 cases, offline,
+  `uname` stubbed on PATH so the real detection code runs) pins the triple→asset
+  mapping for all four platforms, the four failure paths, all three
+  version-resolution sources, the `DEVC_TOOLS` knobs, the PATH warning and
+  upgrade-in-place; it also greps the workflow's spelled-out asset list, so the
+  installer and the workflow cannot drift apart on a name silently. Left for a
+  human, in the order that answers the most: a `workflow_dispatch` **dry run**
+  (the only thing that can tell us whether `ubuntu-24.04-arm` is available to
+  this repo, and the first time the macOS signing and the `macos-14` arm64 smoke
+  test run at all), then a prerelease tag, then installing it on a Mac to confirm
+  `devc-bridge start` from the installed binary with no `deno` on PATH and a
+  container `ping` through the host-matched client.
 
 - [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md) — Make
   `devc-bridge start` run the bridge as a plain detached background process: no
@@ -61,7 +92,7 @@
   all macOS-only: the real `caffeinate(8)`/`pmset` assertions, a container→host
   `ping`, and whether a menu-bar icon actually appears under `deno task dev`
   (this container's `deno desktop` never executes the bundle it builds). Also
-  updated [release-and-installer](release-and-installer.md) in the same change,
+  updated [release-and-installer](archived/release-and-installer.md) in the same change,
   as planned: its first checklist item and both `.app` assets are gone (ten
   archives → eight) and its decisions 5 and 6 are marked withdrawn.
 
@@ -366,4 +397,4 @@
 | devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](archived/devc-bridge-client-mount.md)           | complete |
 | devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](archived/devc-bridge-feature.md)                     | complete |
 | devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md)         | complete |
-| releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](release-and-installer.md)                          |          |
+| releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](archived/release-and-installer.md)                 | complete |

@@ -7,7 +7,7 @@
 an opt-in extra rather than the only way to run the thing.
 
 This is what makes the host binary shippable at all, and it deletes work from
-[release-and-installer](../release-and-installer.md) rather than adding to it.
+[release-and-installer](release-and-installer.md) rather than adding to it.
 
 ### Why
 
@@ -53,7 +53,7 @@ already runs without a tray. Only `start` insists otherwise.
    `Deno.execPath()` is the `deno` binary and the script path is needed;
    compiled, `execPath()` is the bridge itself. One helper returns the argv for
    both, rather than sprinkling the distinction through `start`. This is the
-   same source-vs-compiled question [release-and-installer](../release-and-installer.md)
+   same source-vs-compiled question [release-and-installer](release-and-installer.md)
    raised, answered once and in the one place that needs it.
 4. **Delete the settings-file mechanism entirely** — `Settings`, `SETTING_ENV`,
    `readSettings`, `persistEnvSettings`, `settingsFile`, and the stored-value

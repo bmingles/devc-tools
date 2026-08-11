@@ -16,7 +16,7 @@ After this, nobody needs Deno to _use_ these tools — only to develop them.
 Every install path today assumes a clone and a toolchain: `deno task build` for
 `devc`, `deno task build` again for the bridge host, `deno task build:client`
 for the container client, or `source scripts/bash_aliases.sh` to run all of it
-from source. [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) already
+from source. [devc-bridge-client-mount](devc-bridge-client-mount.md) already
 fixed the _destination_ the container client must land in
 (`~/.config/devc-bridge/client/devc-bridge`) and named this plan as the
 follow-on that fills it for a typical user. This is that plan, widened to cover
@@ -28,7 +28,7 @@ Four things were verified against the real toolchain (Deno 2.9.5) before
 writing this, because each one invalidates an obvious approach:
 
 1. **A compiled `devc-bridge` host binary could not `start`** — _fixed ahead of
-   this plan_ by [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md).
+   this plan_ by [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md).
    `start` used to shell out to `deno desktop … main.ts` with
    `cwd: dirname(fromFileUrl(Deno.mainModule))`, and in a compiled binary
    `Deno.mainModule` is a _virtual_ path — `file:///tmp/deno-compile-<name>/main.ts`
@@ -98,11 +98,11 @@ writing this, because each one invalidates an obvious approach:
 
    If `ubuntu-24.04-arm` is unavailable, cross-build the two aarch64 Linux
    assets from x86_64 — already proven, and the client has been built that way
-   since [devc-bridge-client-mount](archived/devc-bridge-client-mount.md). That is a
+   since [devc-bridge-client-mount](devc-bridge-client-mount.md). That is a
    contained fallback for one job, not a reason to design around.
 5. **Withdrawn** — this was "`start` builds the tray only when running from
    source", the prerequisite that unblocked finding 1.
-   [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md) answered it
+   [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md) answered it
    better by deleting the build outright: `start` spawns the same program
    detached, from source and compiled alike, so there is no from-source/compiled
    branch left for this plan to add. (Numbering kept — later decisions are
@@ -129,7 +129,7 @@ writing this, because each one invalidates an obvious approach:
    able to say what it is, and "which client is actually mounted in here" is a
    question the container currently cannot answer at all.
 10. **The Linux client is arch-matched to the _host_,** carrying decision 9 of
-    [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) into the installer:
+    [devc-bridge-client-mount](devc-bridge-client-mount.md) into the installer:
     an arm64 Mac gets the `aarch64-unknown-linux-gnu` client, because Docker
     Desktop runs containers matching the host. This is the one asset whose
     selection is **not** "the platform I am running on" in the usual sense, and
@@ -137,7 +137,7 @@ writing this, because each one invalidates an obvious approach:
 11. **Windows is out of scope (confirmed), and `devc-bridge` is macOS-only.** `devc` drives
     `tmux`/`tty` and POSIX paths, and the bridge's every shipped command is
     macOS (`caffeinate`). The bridge itself is no longer macOS-bound —
-    [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md) took
+    [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md) took
     `open -g`/LaunchServices out of `start`, and the whole daemon runs headless
     on Linux (its test suite starts and stops one there) — but nothing it could
     usefully _run_ on Linux is shipped, so a Linux host asset is a follow-on,
@@ -258,7 +258,7 @@ Behavior:
 
 - **The client is installed on every platform**, arch-matched to the host
   (decision 10) — that is the whole point of the destination
-  [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) established, and it
+  [devc-bridge-client-mount](devc-bridge-client-mount.md) established, and it
   overwrites devc's placeholder or any previous client unconditionally
   (decision 8 of that plan).
 - **Flags** (env vars, since it is piped): `DEVC_VERSION`, `DEVC_INSTALL_DIR`,
@@ -346,46 +346,99 @@ Add `/dist/` (workflow build output; also what a local dry run produces).
       The root README also gains a **Releasing** section: the three `VERSION`
       consts to bump, the tag, and what each workflow does — the guard is strict
       equality, so a `v0.1.0-rc.1` tag needs `VERSION` to be `0.1.0-rc.1` too
-- [ ] `.plans/PLAN.md` — register
+- [x] `.plans/PLAN.md` — register
 
 ## Validation
+
+Run on Linux, in this devcontainer: no macOS host, no Docker, and no ability to
+push a tag or trigger a real Actions run. Where the workflow itself could not be
+run, its `run:` steps were **extracted from the parsed YAML and executed here**
+against the real tree — that exercises the actual shell in the file, not a
+paraphrase of it, but it does not exercise the runners, the matrix expansion or
+the actions the steps sit between.
 
 - [x] A cross-built `x86_64-apple-darwin` binary runs on an Intel Mac —
       **verified**: unsigned, executes, `devc 0.1.0`
 - [ ] `aarch64-apple-darwin` on Apple Silicon — now a CI assertion rather than a
-      manual check: the `macos-14` job must execute what it built
-- [ ] `deno task test` / `check` / `fmt --check` clean across the repo (devc
-      **and** devc-bridge/host)
+      manual check: the `macos-14` job must execute what it built. **Not run**;
+      what is verified here is that the archive contains a Mach-O with
+      `cputype=0100000c` (arm64), which is not the same as executing it
+- [x] `deno task test` / `check` / `fmt --check` clean across the repo (devc
+      **and** devc-bridge/host) — 269/269 and 10/10, `deno fmt --check` clean
+      over 108 files, plus the client's new `check` task
 - [ ] `workflow_dispatch` with `dry_run` produces all eight archives and a
-      `checksums.txt` whose hashes verify
+      `checksums.txt` whose hashes verify — **not run** (no Actions access).
+      Locally equivalent: all four targets built through the three
+      `build:release` tasks and archived by the workflow's own `Archive` step
+      produced exactly the eight expected names; the `Collect + checksums` step
+      accepted the set, wrote `checksums.txt` and `sha256sum -c` passed all
+      eight. Each archive was confirmed to hold the right architecture (ELF
+      `e_machine` 0x3e/0xb7, Mach-O `cputype` 01000007/0100000c) with mode 0755
+      surviving the tar round-trip. The negative cases were run too: one asset
+      missing, and one extra, each fail the step with a diff
 - [ ] Every build job's smoke test runs the binary it produced and sees the
       release version — in particular `macos-14`, which is the arm64 evidence
-      this plan could not otherwise get
+      this plan could not otherwise get. **The `ubuntu-24.04` job's smoke step
+      was run here verbatim and passed** (`devc 0.1.0`, `devc-bridge 0.1.0`);
+      the other three runners are untested
 - [ ] `ubuntu-24.04-arm` is actually available to this repo; if not, the
-      aarch64 Linux assets fall back to a cross-build from `ubuntu-24.04`
-- [ ] Tag a prerelease (`v0.1.0-rc.1`) → release created with every asset
-- [ ] A tag disagreeing with `VERSION` fails the workflow before building
+      aarch64 Linux assets fall back to a cross-build from `ubuntu-24.04` —
+      unanswerable from here, and the first dispatch will answer it
+- [ ] Tag a prerelease (`v0.1.0-rc.1`) → release created with every asset.
+      **Note for whoever does:** the guard is strict equality, so the three
+      `VERSION` consts must read `0.1.0-rc.1` for that tag. `gh release create`
+      passes `--prerelease` for any tag with a `-suffix`, so `latest` keeps
+      pointing at the last stable release
+- [x] A tag disagreeing with `VERSION` fails the workflow before building —
+      the extracted guard step exits 1 on `refs/tags/v9.9.9` against
+      `VERSION=0.1.0`, exits 0 on `refs/tags/v0.1.0`, and on a branch ref
+      (dispatch) emits `version=0.1.0` / `tag=v0.1.0` without requiring a tag
 - [ ] `install.sh` run against the prerelease on macOS: `devc --version` and
       `devc-bridge --version` both report it; `devc-bridge status` reports
-      `client: installed`
+      `client: installed`. **Not run** (no macOS). The Linux equivalent was, end
+      to end and for real: the **stamped** `install.sh` the publish job produced,
+      pointed at the eight locally built archives over `file://`, installed
+      `devc` and the client into a scratch `HOME`, and both report `0.1.0`
 - [ ] `devc-bridge start` from the **installed** binary comes up on a macOS host
       with no `deno` on PATH — finding 1's case, already proven on Linux from a
-      compiled binary, confirmed here on the platform that ships
+      compiled binary, confirmed here on the platform that ships. **Not run**
 - [ ] The installed client is the **host-matched Linux** binary: on an arm64
       Mac, `file` reports `aarch64` ELF, and `devc build` in an unrelated repo
-      → `devc-bridge ping test` prints `pong`
-- [ ] A corrupted `checksums.txt` entry aborts the install with nothing written
-- [ ] Re-running the installer upgrades in place
-- [ ] `DEVC_INSTALL_DIR` off `PATH` produces the warning and the `export` line
+      → `devc-bridge ping test` prints `pong`. The **selection** is pinned by
+      `tests/install_test.sh` (a stubbed `Darwin`/`arm64` gets
+      `devc-bridge-client-aarch64-unknown-linux-gnu`, and inverting that in the
+      script fails the case); the container round-trip needs Docker and a Mac
+- [x] A corrupted `checksums.txt` entry aborts the install with nothing written
+      — plus a tampered archive, an asset absent from `checksums.txt`, and a
+      missing asset, each aborting with nothing installed and no temp dir left
+- [x] Re-running the installer upgrades in place — and overwrites devc's
+      placeholder client unconditionally
+- [x] `DEVC_INSTALL_DIR` off `PATH` produces the warning and the `export` line,
+      and exits 0 — a PATH warning never blocks
+
+### Left for a human
+
+Everything above that is unchecked needs either a macOS host, Docker, or push
+access to this repo. The cheapest order:
+
+1. **Run `release.yml` from the Actions tab with `dry_run`.** That answers the
+   `ubuntu-24.04-arm` availability question, exercises all four runners, and is
+   the first time the `macos-14` smoke test and the macOS ad-hoc signing step
+   run at all. Nothing is published.
+2. **Tag a prerelease** and check the release carries all ten assets.
+3. **Install it on a Mac** and run the last three unchecked boxes there.
 
 ## Relevant Files
 
 - `devc-bridge/host/main.ts` — the `version` subcommand (its `start` no longer
   needs anything from this plan)
-- `devc-bridge/host/version.ts` — new
+- `devc-bridge/host/version.ts`, `devc-bridge/client/version.ts` — new; the
+  guard requires all three to agree and, on a tag, to equal it
 - `devc/help.ts` — existing `VERSION`, the guard's reference point
+- `tests/install_test.sh` — new: the installer's shell harness (repo root, since
+  `install.sh` is)
 - `.github/workflows/release.yml` — new (alongside `publish-feature.yml`, added by
-  [devc-bridge-feature](archived/devc-bridge-feature.md))
+  [devc-bridge-feature](devc-bridge-feature.md))
 - `install.sh` — new
 - `devc/deno.json`, `devc-bridge/host/deno.json`, `devc-bridge/client/deno.json`
   — release build tasks
