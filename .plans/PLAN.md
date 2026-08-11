@@ -11,7 +11,60 @@
 
 ### Pending
 
-- [devc-bridge-client-mount](devc-bridge-client-mount.md) — Ship the devc-bridge
+- [devc-bridge-feature](devc-bridge-feature.md) — Repackage the container half
+  of devc-bridge as a published devcontainer Feature, so any project (devc or
+  not) opts in with one line, and devc's bundled config consumes the same
+  Feature instead of carrying its own mounts — one mechanism, not two. Two
+  assumptions were tested rather than assumed, with a throwaway Feature under
+  `test/`: `${localEnv:HOME}` **is** substituted in Feature mounts, and a mount
+  written as a **string** is passed through verbatim so `readonly` survives
+  (`RW=false`), while the object form is re-serialized and drops it. The string
+  form is unspecified by the published schema, so the probe is kept as a
+  regression harness. Features cannot declare `initializeCommand`, so the
+  Feature cannot create its own mount sources: standalone users must install the
+  host bridge first (documented), while devc keeps its own host-side hook and
+  stays inert-when-absent. Docker Compose is out of scope — the string form
+  emits the wrong syntax there — which is why the pidfile also moves out of
+  `run/`, making a writable token mount harmless rather than a way to feed
+  `devc-bridge stop` an arbitrary PID.
+
+- [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md) — Make
+  `devc-bridge start` run the bridge as a plain detached background process:
+  no `.app`, no `deno desktop`, no LaunchServices, with the menu-bar tray
+  demoted to an opt-in extra. This is what makes the host binary shippable —
+  a compiled binary's `start` fails today because it shells out to
+  `deno desktop … main.ts` with a cwd derived from `Deno.mainModule`, which in a
+  compiled binary is a virtual `/tmp/deno-compile-*` path (verified), and it
+  needs a `deno` on PATH that a released binary must not assume. Nothing of
+  substance is lost: `core.ts` owns the server, dispatch and keepawake,
+  `tray.ts` already degrades headless when `Deno.Tray` is absent, and `serve.ts`
+  is already a headless entrypoint. It also deletes the settings-file mechanism
+  outright, which exists only because `open -g` starts the tray under launchd
+  without the shell's environment. Sequenced **before**
+  [release-and-installer](release-and-installer.md): it removes that plan's
+  first checklist item and two of its ten assets rather than adding to them.
+
+- [release-and-installer](release-and-installer.md) — Publish prebuilt binaries
+  from a tagged GitHub release and install them with one `curl | sh`, so nobody
+  needs Deno to _use_ these tools. Covers `devc` (4 targets), the devc-bridge
+  host CLI + tray `.app` (macOS), and the Linux container client — the
+  destination [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) already
+  fixed. **Blocked on a prerequisite it also fixes:** a compiled
+  `devc-bridge start` cannot work today, because it shells out to
+  `deno desktop … main.ts` with a cwd derived from `Deno.mainModule`, which in a
+  compiled binary is a virtual `/tmp/deno-compile-*` path that does not exist
+  (verified) — so `start` must build only when running from source and otherwise
+  require the installed app. Two other findings shape it: `deno desktop`
+  cross-compiles darwin targets from Linux (one `ubuntu-latest` job builds
+  everything, subject to code-signing), and the tray bundle's executable is a
+  generic `laufey_webview`, so macOS needs both a plain CLI binary and the
+  `.app`. Assets are named by Deno's own target triples, verified against a
+  `checksums.txt`, and installed without `sudo` into `~/.local/bin`. The Linux
+  client is arch-matched to the **host**, not the installer's own platform.
+
+### Completed
+
+- [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) — Ship the devc-bridge
   container client by **read-only bind mount** from devc's bundled
   `devcontainer.json`, so every devc container gets it with no per-project
   wiring — the current `.devc/devc-post-create.sh` builds from source that only
@@ -32,26 +85,9 @@
   — this repo's overlay mounts the same target (Docker fails on duplicate mount
   points) and its `.devc/devc-post-create.sh` is deleted, leaving devc-tools
   consuming the bridge like any other project.
-
-- [release-and-installer](release-and-installer.md) — Publish prebuilt binaries
-  from a tagged GitHub release and install them with one `curl | sh`, so nobody
-  needs Deno to *use* these tools. Covers `devc` (4 targets), the devc-bridge
-  host CLI + tray `.app` (macOS), and the Linux container client — the
-  destination [devc-bridge-client-mount](devc-bridge-client-mount.md) already
-  fixed. **Blocked on a prerequisite it also fixes:** a compiled
-  `devc-bridge start` cannot work today, because it shells out to
-  `deno desktop … main.ts` with a cwd derived from `Deno.mainModule`, which in a
-  compiled binary is a virtual `/tmp/deno-compile-*` path that does not exist
-  (verified) — so `start` must build only when running from source and otherwise
-  require the installed app. Two other findings shape it: `deno desktop`
-  cross-compiles darwin targets from Linux (one `ubuntu-latest` job builds
-  everything, subject to code-signing), and the tray bundle's executable is a
-  generic `laufey_webview`, so macOS needs both a plain CLI binary and the
-  `.app`. Assets are named by Deno's own target triples, verified against a
-  `checksums.txt`, and installed without `sudo` into `~/.local/bin`. The Linux
-  client is arch-matched to the **host**, not the installer's own platform.
-
-### Completed
+  Merged and in use; its remaining end-to-end checks were deliberately not run
+  standalone, because [devc-bridge-feature](devc-bridge-feature.md) replaces
+  this mechanism and re-tests the same behaviors more thoroughly.
 
 - [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) —
   Restore the project create-time hook as `devc-post-create.sh`, found at
@@ -264,34 +300,36 @@
 
 ## Development Phases
 
-| Phase                                                                                    | Plan                                                                       | Status      |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------- |
-| Host command bridge (socket server + client + tray)                                      | [host-command-bridge](archived/host-command-bridge.md)                     | complete    |
-| Host `devc-bridge` lifecycle CLI + zero-setup seeding                                    | [host-lifecycle-cli](archived/host-lifecycle-cli.md)                       | complete    |
-| devc-tui core — scan, model, fenced-region file surgery                                  | [devc-tui-core](archived/devc-tui-core.md)                                 | complete    |
-| devc-tui interactive UI — checkbox project tree                                          | [devc-tui-ui](archived/devc-tui-ui.md)                                     | complete    |
-| devc-tui tree reshape — folder tree, collapsed by default                                | [devc-tui-folder-tree](archived/devc-tui-folder-tree.md)                   | complete    |
-| devc-tui workspace folders — host paths, not container paths                             | [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md)       | complete    |
-| devc-tui home directory support — `$HOME` in config, `${localEnv:HOME}` in mounts        | [devc-tui-home-paths](archived/devc-tui-home-paths.md)                     | complete    |
-| devc lifecycle core — container commands + bundled default (ported)                      | [devc-lifecycle-core](archived/devc-lifecycle-core.md)                     | complete    |
-| devc baseline as a devcontainer Feature — composable postCreate                          | [devc-container-feature](archived/devc-container-feature.md)               | complete    |
-| devc global config + wizard TUI foundation                                               | [devc-global-config](archived/devc-global-config.md)                       | complete    |
-| devc config wizard — project `.devcontainer/` via managed fences                         | [devc-config-wizard](archived/devc-config-wizard.md)                       | complete    |
-| devc help output — clap-style `--help`/`--version` + per-command help                    | [devc-help-output](archived/devc-help-output.md)                           | complete    |
-| devc container baseline fix — out-of-tree Feature + drop in-container tmux               | [devc-container-feature-fix](archived/devc-container-feature-fix.md)       | complete    |
-| devc wizard modernize — inline sequential flow + multi-select folder picker              | [devc-wizard-modernize](archived/devc-wizard-modernize.md)                 | complete    |
-| devc worktree-aware mounts — root-relative source targets + primary `.git` mount         | [devc-worktree-mounts](archived/devc-worktree-mounts.md)                   | complete    |
-| devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate        | [devc-claude-seed-dir](archived/devc-claude-seed-dir.md)                   | complete    |
-| devc `init` command — scaffold the bundled default `.devcontainer/` into a project       | [devc-init-command](archived/devc-init-command.md)                         | complete    |
-| devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook   | [devc-drop-feature](archived/devc-drop-feature.md)                         | complete    |
-| devc `build` command + change-aware `config` rebuild prompt                              | [devc-build-command](archived/devc-build-command.md)                       | complete    |
-| devc wizard screens — picker chrome per `.plans/design/wizard/` mockups                  | [devc-wizard-screens](archived/devc-wizard-screens.md)                     | complete    |
-| devc picker derived mounts — implied primary `.git` shown in the picks list              | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md)       | complete    |
-| devc picker free navigation — roots as shortcuts + worktree mirror base                  | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md)     | complete    |
-| devc config overlay — `devc.json` in both modes + user template layer                    | [devc-config-overlay](archived/devc-config-overlay.md)                     | complete    |
-| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                         | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)                 | complete    |
-| devc attach exit-code handling — stop crashing on non-zero `docker exec`                 | [devc-attach-exit-code](archived/devc-attach-exit-code.md)                 | complete    |
-| devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md)               | complete    |
-| devc project post-create hook — restore `devc-post-create.sh` for zero-config projects   | [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) | complete    |
-| devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](devc-bridge-client-mount.md)                    |             |
-| releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](release-and-installer.md)                          |             |
+| Phase                                                                                    | Plan                                                                       | Status   |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------- |
+| Host command bridge (socket server + client + tray)                                      | [host-command-bridge](archived/host-command-bridge.md)                     | complete |
+| Host `devc-bridge` lifecycle CLI + zero-setup seeding                                    | [host-lifecycle-cli](archived/host-lifecycle-cli.md)                       | complete |
+| devc-tui core — scan, model, fenced-region file surgery                                  | [devc-tui-core](archived/devc-tui-core.md)                                 | complete |
+| devc-tui interactive UI — checkbox project tree                                          | [devc-tui-ui](archived/devc-tui-ui.md)                                     | complete |
+| devc-tui tree reshape — folder tree, collapsed by default                                | [devc-tui-folder-tree](archived/devc-tui-folder-tree.md)                   | complete |
+| devc-tui workspace folders — host paths, not container paths                             | [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md)       | complete |
+| devc-tui home directory support — `$HOME` in config, `${localEnv:HOME}` in mounts        | [devc-tui-home-paths](archived/devc-tui-home-paths.md)                     | complete |
+| devc lifecycle core — container commands + bundled default (ported)                      | [devc-lifecycle-core](archived/devc-lifecycle-core.md)                     | complete |
+| devc baseline as a devcontainer Feature — composable postCreate                          | [devc-container-feature](archived/devc-container-feature.md)               | complete |
+| devc global config + wizard TUI foundation                                               | [devc-global-config](archived/devc-global-config.md)                       | complete |
+| devc config wizard — project `.devcontainer/` via managed fences                         | [devc-config-wizard](archived/devc-config-wizard.md)                       | complete |
+| devc help output — clap-style `--help`/`--version` + per-command help                    | [devc-help-output](archived/devc-help-output.md)                           | complete |
+| devc container baseline fix — out-of-tree Feature + drop in-container tmux               | [devc-container-feature-fix](archived/devc-container-feature-fix.md)       | complete |
+| devc wizard modernize — inline sequential flow + multi-select folder picker              | [devc-wizard-modernize](archived/devc-wizard-modernize.md)                 | complete |
+| devc worktree-aware mounts — root-relative source targets + primary `.git` mount         | [devc-worktree-mounts](archived/devc-worktree-mounts.md)                   | complete |
+| devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate        | [devc-claude-seed-dir](archived/devc-claude-seed-dir.md)                   | complete |
+| devc `init` command — scaffold the bundled default `.devcontainer/` into a project       | [devc-init-command](archived/devc-init-command.md)                         | complete |
+| devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook   | [devc-drop-feature](archived/devc-drop-feature.md)                         | complete |
+| devc `build` command + change-aware `config` rebuild prompt                              | [devc-build-command](archived/devc-build-command.md)                       | complete |
+| devc wizard screens — picker chrome per `.plans/design/wizard/` mockups                  | [devc-wizard-screens](archived/devc-wizard-screens.md)                     | complete |
+| devc picker derived mounts — implied primary `.git` shown in the picks list              | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md)       | complete |
+| devc picker free navigation — roots as shortcuts + worktree mirror base                  | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md)     | complete |
+| devc config overlay — `devc.json` in both modes + user template layer                    | [devc-config-overlay](archived/devc-config-overlay.md)                     | complete |
+| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                         | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)                 | complete |
+| devc attach exit-code handling — stop crashing on non-zero `docker exec`                 | [devc-attach-exit-code](archived/devc-attach-exit-code.md)                 | complete |
+| devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md)               | complete |
+| devc project post-create hook — restore `devc-post-create.sh` for zero-config projects   | [devc-project-post-create-hook](archived/devc-project-post-create-hook.md) | complete |
+| devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](archived/devc-bridge-client-mount.md)           | complete |
+| devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](devc-bridge-feature.md)                              |          |
+| devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](devc-bridge-tray-decouple.md)                  |          |
+| releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](release-and-installer.md)                          |          |

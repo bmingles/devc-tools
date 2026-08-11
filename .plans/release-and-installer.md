@@ -16,7 +16,7 @@ After this, nobody needs Deno to _use_ these tools — only to develop them.
 Every install path today assumes a clone and a toolchain: `deno task build` for
 `devc`, `deno task build` again for the bridge host, `deno task build:client`
 for the container client, or `source scripts/bash_aliases.sh` to run all of it
-from source. [devc-bridge-client-mount](devc-bridge-client-mount.md) already
+from source. [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) already
 fixed the _destination_ the container client must land in
 (`~/.config/devc-bridge/client/devc-bridge`) and named this plan as the
 follow-on that fills it for a typical user. This is that plan, widened to cover
@@ -94,7 +94,7 @@ writing this, because each one invalidates an obvious approach:
 
    If `ubuntu-24.04-arm` is unavailable, cross-build the two aarch64 Linux
    assets from x86_64 — already proven, and the client has been built that way
-   since [devc-bridge-client-mount](devc-bridge-client-mount.md). That is a
+   since [devc-bridge-client-mount](archived/devc-bridge-client-mount.md). That is a
    contained fallback for one job, not a reason to design around.
 5. **`start` builds the tray only when running from source.** This is the
    change that unblocks finding 1, and it must preserve the dev property that
@@ -132,7 +132,7 @@ writing this, because each one invalidates an obvious approach:
    able to say what it is, and "which client is actually mounted in here" is a
    question the container currently cannot answer at all.
 10. **The Linux client is arch-matched to the _host_,** carrying decision 9 of
-    [devc-bridge-client-mount](devc-bridge-client-mount.md) into the installer:
+    [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) into the installer:
     an arm64 Mac gets the `aarch64-unknown-linux-gnu` client, because Docker
     Desktop runs containers matching the host. This is the one asset whose
     selection is **not** "the platform I am running on" in the usual sense, and
@@ -272,7 +272,7 @@ Behavior:
 
 - **The client is installed on every platform**, arch-matched to the host
   (decision 10) — that is the whole point of the destination
-  [devc-bridge-client-mount](devc-bridge-client-mount.md) established, and it
+  [devc-bridge-client-mount](archived/devc-bridge-client-mount.md) established, and it
   overwrites devc's placeholder or any previous client unconditionally
   (decision 8 of that plan).
 - **Flags** (env vars, since it is piped): `DEVC_VERSION`, `DEVC_INSTALL_DIR`,
