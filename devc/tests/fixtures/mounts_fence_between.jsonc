@@ -4,6 +4,7 @@
     "type=bind,source=/run/host-services/ssh-auth.sock,target=/ssh-agent",
     // >>> devc:projects (managed - do not edit)
     "type=bind,source=/old/projecta,target=/workspaces/projecta",
+    // <<< devc:projects
     // and my dotfiles
     "type=bind,source=/home/me/.dotfiles,target=/home/vscode/.dotfiles"
   ]
