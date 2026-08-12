@@ -107,9 +107,30 @@ Feature otherwise, far from the cause). It walks the collection, reports every
 offender, and fails on an empty glob — a guard that finds nothing to check must
 not pass.
 
-`publish-feature.yml` runs it twice: once over the whole collection before the
-matrix, and once per Feature with `--feature`, so one Feature's failed guard
-cannot fail another Feature's publish.
+`publish-feature.yml` runs it three times: once over the whole collection before
+the matrix, once per Feature with `--feature` so one Feature's failed guard
+cannot fail another Feature's publish, and once more in the `collection-index`
+job below.
+
+## The collection index package
+
+`ghcr.io/bmingles/devc-tools` — no trailing `/<id>` — is **not** a Feature and
+not an image. It is a metadata-only OCI artifact holding one
+`devcontainer-collection.json` layer that lists what is in this collection.
+`devcontainer features publish` pushes it on every run and there is no flag to
+suppress it.
+
+Because each Feature publishes from its own job, every one of those runs would
+otherwise overwrite that document with a one-Feature view — so it would name
+whichever Feature published last as the whole collection. The `collection-index`
+job repairs it: it runs after the matrix, `needs: publish` so it is skipped
+unless **every** Feature published cleanly, and re-publishes the whole
+collection. Every Feature is already at its current version by then, so the CLI
+skips them all and only the index document is rewritten.
+
+Nothing in this repo reads it — `devc` never resolves a Feature version, and
+`devcontainer features info` goes through a Feature's own OCI annotations. It is
+kept honest because it is visible on the repo's Packages page.
 
 ## Running a Feature's tests
 

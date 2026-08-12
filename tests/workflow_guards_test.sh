@@ -61,12 +61,41 @@ echo 'publishing steps are gated on the expected ref AND on dry_run'
 check 'release.yml — Publish release' \
   guards_both .github/workflows/release.yml 'Publish release' \
   "startsWith(github.ref, 'refs/tags/v')"
-check 'publish-feature.yml — Publish' \
-  guards_both .github/workflows/publish-feature.yml 'Publish' \
+check 'publish-feature.yml — Publish Feature' \
+  guards_both .github/workflows/publish-feature.yml 'Publish Feature' \
   "github.ref == 'refs/heads/main'"
-check 'publish-feature.yml — Log in to ghcr.io' \
-  guards_both .github/workflows/publish-feature.yml 'Log in to ghcr.io' \
+check 'publish-feature.yml — Log in to ghcr.io (Feature)' \
+  guards_both .github/workflows/publish-feature.yml 'Log in to ghcr.io (Feature)' \
   "github.ref == 'refs/heads/main'"
+check 'publish-feature.yml — Publish collection index' \
+  guards_both .github/workflows/publish-feature.yml 'Publish collection index' \
+  "github.ref == 'refs/heads/main'"
+check 'publish-feature.yml — Log in to ghcr.io (collection)' \
+  guards_both .github/workflows/publish-feature.yml 'Log in to ghcr.io (collection)' \
+  "github.ref == 'refs/heads/main'"
+
+echo
+echo 'every `features publish` invocation is one of the steps checked above'
+
+# The checks above name their steps, so a publish step added later under a new name would be
+# silently uncovered — the same shape as the bug features-collection removed, where a guard
+# that named one Feature let the next one publish unguarded. Counting the invocations is
+# crude, but it makes adding a third one impossible to do quietly: this fails until someone
+# adds a guards_both check for it and bumps the count deliberately.
+# Comment lines are stripped first: this file explains itself at length, and the prose names
+# the command it is explaining. Counting those would make the check fail on a docs edit.
+GUARDED_PUBLISH_STEPS=2
+publish_invocations_are_all_guarded() {
+  local n
+  n="$(grep -vE '^[[:space:]]*#' .github/workflows/publish-feature.yml \
+       | grep -c 'features publish')"
+  [ "$n" -eq "$GUARDED_PUBLISH_STEPS" ] && return 0
+  echo "       ($n \`features publish\` invocations, but $GUARDED_PUBLISH_STEPS are guarded above)"
+  echo '       (add a guards_both check for the new step, then bump GUARDED_PUBLISH_STEPS)'
+  return 1
+}
+check 'publish-feature.yml — no unguarded `features publish`' \
+  publish_invocations_are_all_guarded
 
 echo
 echo 'both workflows still declare the dry_run input they are gated on'

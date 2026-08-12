@@ -88,9 +88,10 @@ jobs:
   # to remove, so `fail-fast: false` here is load-bearing rather than hygiene.
   #
   # `features publish <one Feature dir>` lands on the identical ghcr.io/<ns>/<id> ref the
-  # collection publish would produce; nothing about the published artifact changes. The one
-  # cost is recorded in the plan: every run also pushes a devcontainer-collection.json
-  # describing only what that run packaged, which nothing here reads.
+  # collection publish would produce; nothing about the published artifact changes. Its one
+  # cost is that every run also pushes a devcontainer-collection.json describing only what
+  # *that* run packaged — so each job here overwrites the shared collection index with a
+  # one-Feature view of it. That is what the collection-index job below exists to repair.
   publish:
     needs: discover
     runs-on: ubuntu-latest
@@ -105,7 +106,7 @@ jobs:
       # a devc-tools release must not ship pinned to a release nobody has tagged. Scoped to
       # this job's own Feature, which is what keeps devc-bridge's unmet pin out of
       # node-nvmrc's job. Ungated — a dry run must still check.
-      - name: Release pin guard
+      - name: Release pin guard (Feature)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash tests/features_test.sh --check-release-pins --feature "${{ matrix.feature }}"
@@ -117,17 +118,66 @@ jobs:
 
       # Plain `docker login` rather than a third-party action: one less thing in the path that
       # produces an artifact people pull into their containers.
-      - name: Log in to ghcr.io
+      #
+      # The step names in this file are deliberately non-overlapping — no name is a substring
+      # of another. tests/workflow_guards_test.sh finds a step's `if:` by the first line
+      # containing `- name: <name>`, so two steps whose names share a prefix would let the
+      # harness check one of them twice and the other never.
+      - name: Log in to ghcr.io (Feature)
         if: ${{ github.ref == 'refs/heads/main' && !inputs.dry_run }}
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       # → ghcr.io/bmingles/devc-tools/<id>, tagged latest / <major> / <major>.<minor> /
       # <version> from this Feature's own version. A version already in the registry is
       # skipped, so re-running this on a push that changed nothing pushes nothing.
-      - name: Publish
+      - name: Publish Feature
         if: ${{ github.ref == 'refs/heads/main' && !inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npx --yes "$DEVCONTAINERS_CLI" features publish "./features/${{ matrix.feature }}" \
+            --namespace "${{ github.repository }}"
+
+  # Repairs the shared collection index at ghcr.io/bmingles/devc-tools — a metadata-only
+  # artifact (one `devcontainer-collection.json` layer) that lists what is in the collection.
+  # `features publish` pushes it on every run and there is no flag to suppress it, so each
+  # per-Feature job above leaves it describing only that Feature. Left alone it does not just
+  # go stale, it *alternates*: whichever Feature published last is the whole collection
+  # according to it. It is decorative — `devc` never reads it and `devcontainer features
+  # info` resolves a Feature through its own OCI annotations — but it is visible on the
+  # repo's Packages page, so wrong-and-alternating is worth one more job.
+  #
+  # `needs: publish` is the safety, not a convenience: a job whose needs did not all succeed
+  # is skipped, so this runs only when EVERY Feature published cleanly. That matters because
+  # the repair is a whole-collection publish, which would otherwise push a Feature whose
+  # release pin the matrix just rejected. When it is skipped the index simply keeps its
+  # previous value — stale, which is what it already was.
+  #
+  # By the time this runs every Feature is already published at its current version, so the
+  # CLI skips all of them and only the collection document is rewritten — this time listing
+  # the whole collection.
+  collection-index:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # Strictly redundant — every pin was checked per-Feature above, and this job does not
+      # run unless those passed. Kept because this is the one place a *whole-collection*
+      # publish happens, and that is the operation the pin guard exists to stop.
+      - name: Release pin guard (collection)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash tests/features_test.sh --check-release-pins
+
+      - name: Log in to ghcr.io (collection)
+        if: ${{ github.ref == 'refs/heads/main' && !inputs.dry_run }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish collection index
+        if: ${{ github.ref == 'refs/heads/main' && !inputs.dry_run }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx --yes "$DEVCONTAINERS_CLI" features publish ./features \
             --namespace "${{ github.repository }}"

@@ -279,6 +279,28 @@ devc-tools release this Feature pins.
    final job running the whole-collection publish after the matrix — by then
    every Feature is already published, so the CLI skips them all and only the
    collection document is rewritten. **Do not add that job speculatively.**
+
+   **Superseded after the first real publish — this paragraph was wrong twice.**
+   The `collection-index` job now exists in `publish-feature.yml`. Both errors
+   are worth keeping on the record:
+
+   1. **"Nothing reads it" was true of tooling and false of people.** The
+      artifact is listed on the repo's Packages page as
+      `ghcr.io/bmingles/devc-tools`, and it was found there and had to be
+      explained. Being decorative to `devc` is not the same as being invisible.
+   2. **"Stale" understated it — it _alternates_.** Whichever Feature published
+      last becomes the entire collection according to the document. It was
+      measured after the first publish: one layer, 2001 bytes, listing only
+      `node-nvmrc`. Once `devc-bridge` publishes, its run would overwrite the
+      same document to list only `devc-bridge`. Wrong-and-alternating is a worse
+      resting state than wrong-and-fixed.
+
+   The fix as sketched above also had a hole: an unconditional final job runs a
+   **whole-collection** publish, which would push a Feature whose release pin the
+   matrix had just rejected — defeating the pin guard. `needs: publish` closes
+   it, because a job whose needs did not all succeed is skipped. So the repair
+   runs only when every Feature published cleanly, and while `devc-bridge` is
+   red the index simply keeps its previous value.
 7. **No `generate-docs`, no documentation PR.** The starter's step emits a fixed
    `| Options Id | Description | Type | Default Value |` table from the manifest,
    using each `description` verbatim; this repo's manifest descriptions are
