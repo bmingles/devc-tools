@@ -18,6 +18,13 @@ The tag tracks **each Feature's own** version line: `:0` while that Feature is
 pre-1.0, `:1` at its first 1.x release. It is not the repo's version — see
 [Versions](#versions).
 
+`node-nvmrc` is **published and public** — `0.1.0` pushed `0`, `0.1`, `0.1.0` and
+`latest`, and an unauthenticated pull resolves, so the `:0` refs in the tables
+above and in `devc/README.md` work today. `devc-bridge` is **not published yet**:
+it pins `DEVC_TOOLS_RELEASE='v0.1.0'`, and until that release is tagged its
+publish job fails the pin guard by design. Nothing else is blocked by that — see
+[Versions](#versions) for why each Feature publishes on its own.
+
 ## Layout
 
 ```

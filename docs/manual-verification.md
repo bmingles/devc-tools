@@ -155,22 +155,34 @@ ordering the pin guard imposes: `devc-bridge` pins `DEVC_TOOLS_RELEASE='v0.1.0'`
 so its job stays red until a **stable** `v0.1.0` release exists — an `rc` tag is
 not it. `node-nvmrc` has no such dependency and publishes immediately.
 
-- [ ] Merge a `features/` change to `main` (or dispatch from `main` with
+**A push to `main` is the real publish, not a rehearsal.** `dry_run` exists only
+as a `workflow_dispatch` input, so on a push the `inputs` context is empty,
+`!inputs.dry_run` is true, and the gated steps run. There is no separate
+"publish for real" trigger — if you want a rehearsal, dispatch it with `dry_run`
+checked _before_ merging.
+
+- [x] Merge a `features/` change to `main` (or dispatch from `main` with
       `dry_run` **unchecked**). `node-nvmrc` publishes; `devc-bridge` fails its
-      pin guard until `v0.1.0` is out
-- [ ] **Write down which tags it actually created.** A `0.1.0` publish should
+      pin guard until `v0.1.0` is out — **confirmed on the first push, exactly
+      this split**
+- [x] **Write down which tags it actually created.** A `0.1.0` publish should
       yield `latest`/`0`/`0.1`/`0.1.0`, and `:0` is what `devc/README.md` and this
-      repo's docs tell people to reference. Feature versions are plain stable
-      semver even when the repo's own tag is a prerelease, so the old worry about
-      a prerelease suppressing the rolling tags no longer applies here — but
-      confirm it rather than assume it
+      repo's docs tell people to reference.
+      **Measured against the registry: `["0","0.1","0.1.0","latest"]`** — all four,
+      so the documented `:0` opt-in resolves. This closes the open question
+      `devc-bridge-feature` left about whether `:0` would exist at all.
 - [ ] **Re-run with nothing changed.** The second run must print
       `Version 0.1.0 already exists, skipping` and push nothing. That idempotence
       is what makes publish-on-push safe, and it is pinned to
       `@devcontainers/cli@0.88.0` in the workflow — re-check it whenever that pin
-      moves
-- [ ] Make each package public in the repo's Packages settings, or an anonymous
-      `devcontainer up` cannot pull it
+      moves.
+      _The commit that ticked the two items above is itself the test: it touches
+      `features/` (so the workflow fires) and does **not** bump `node-nvmrc`'s
+      `version` (so the publish must be a no-op)._
+- [x] Make each package public in the repo's Packages settings, or an anonymous
+      `devcontainer up` cannot pull it — **`node-nvmrc` verified public**: an
+      unauthenticated `GET /v2/bmingles/devc-tools/node-nvmrc/tags/list` returns
+      200. Still to do for `devc-bridge` once it publishes.
 
 ---
 
