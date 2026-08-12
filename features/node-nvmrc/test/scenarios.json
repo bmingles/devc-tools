@@ -1,0 +1,21 @@
+{
+  "with_nvmrc": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "onCreateCommand": "echo 20 > ${containerWorkspaceFolder}/.nvmrc",
+    "features": {
+      "ghcr.io/devcontainers/features/node:1": {
+        "version": "lts"
+      },
+      "node-nvmrc": {}
+    }
+  },
+  "no_nvmrc": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "ghcr.io/devcontainers/features/node:1": {
+        "version": "lts"
+      },
+      "node-nvmrc": {}
+    }
+  }
+}

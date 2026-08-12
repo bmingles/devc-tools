@@ -1,0 +1,31 @@
+{
+  "id": "node-nvmrc",
+  "version": "0.1.0",
+  "name": "Node from .nvmrc",
+  "description": "Installs the Node version your workspace pins in .nvmrc at container-create time, and selects it in every interactive shell (including on `cd`). Drives an nvm that is already in the image — it does not install Node or nvm itself; pair it with ghcr.io/devcontainers/features/node or anything else that provides nvm.",
+  "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/node-nvmrc",
+  "options": {
+    "nvmDir": {
+      "type": "string",
+      "default": "/usr/local/share/nvm",
+      "description": "Directory holding nvm.sh. The default is where ghcr.io/devcontainers/features/node puts it."
+    },
+    "installOnCreate": {
+      "type": "boolean",
+      "default": true,
+      "description": "Run `nvm install` for the workspace's .nvmrc at create time."
+    },
+    "autoUseOnCd": {
+      "type": "boolean",
+      "default": true,
+      "description": "Append an ~/.bashrc block that runs `nvm use` on shell start and on `cd` into a directory with a .nvmrc."
+    },
+    "fixNodeModulesOwnership": {
+      "type": "boolean",
+      "default": true,
+      "description": "Before installing, chown an existing ./node_modules to the create-time user. Repairs a named volume mounted there, which first mounts root-owned."
+    }
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/node"],
+  "postCreateCommand": "bash /usr/local/share/devc-features/node-nvmrc/post-create.sh"
+}

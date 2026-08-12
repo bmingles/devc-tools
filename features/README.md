@@ -8,9 +8,10 @@ collection rather than naming its members, and so does its version guard.
 
 ## Published Features
 
-| Feature                              | Ref                                       | What it does                                                                |
-| ------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------- |
-| [devc-bridge](devc-bridge/README.md) | `ghcr.io/bmingles/devc-tools/devc-bridge` | Installs the devc-bridge client so container code can invoke host commands. |
+| Feature                              | Ref                                       | What it does                                                                    |
+| ------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------- |
+| [devc-bridge](devc-bridge/README.md) | `ghcr.io/bmingles/devc-tools/devc-bridge` | Installs the devc-bridge client so container code can invoke host commands.     |
+| [node-nvmrc](node-nvmrc/README.md)   | `ghcr.io/bmingles/devc-tools/node-nvmrc`  | Installs the Node version a workspace pins in `.nvmrc`, and selects it on `cd`. |
 
 The tag tracks the repo's version line: `:0` while devc-tools is pre-1.0, `:1`
 at the first 1.x release.
@@ -25,7 +26,8 @@ features/
     README.md                   # what a bare `{}` gives you, plus any mount recipe
     scripts/                    # optional; whatever install.sh installs
     test/
-      test.sh                   # the `devcontainer features test` scenario
+      test.sh                   # the default `devcontainer features test` scenario
+      scenarios.json            # optional; extra scenarios, one <name>.sh each
       run-features-test.sh      # wrapper for the above (see below)
       *_test.sh                 # offline harnesses over blocks of install.sh
 ```
@@ -75,9 +77,19 @@ The wrapper exists because `devcontainer features test` insists on a collection
 laid out as `<project>/src/<id>/` + `<project>/test/<id>/`, while `publish` wants
 the flat `features/<id>/` this repo keeps. Rather than split one Feature across
 two trees, the wrapper stages a throwaway copy in a tempdir: the whole Feature
-directory minus its `test/`, plus `test/test.sh` in the place the command looks
-for it. Copy it into a new Feature unchanged — it derives the id from its own
+directory minus its `test/`, plus the whole `test/` minus the wrapper itself, in
+the place the command looks for it. Both copies are wholesale on purpose — a
+per-file list drops a Feature's `scripts/` from the build, or its
+`scenarios.json` from the test run, and both failures surface far from the
+omission. Copy it into a new Feature unchanged — it derives the id from its own
 path and has nothing per-Feature in it.
+
+A Feature with a `test/scenarios.json` gets those scenarios run too, each from
+its own `test/<name>.sh`. A scenario may name external Features by their full
+`ghcr.io/...` ref, and its own `onCreateCommand` runs before **every**
+`postCreateCommand` — which is the only way to have a workspace fixture in place
+before a Feature's own create-time hook looks for one, since the command
+generates the workspace folder itself.
 
 Most Features also have offline harnesses under `test/` that extract a fenced
 block from the real `install.sh` and run it directly. Those need no Docker and

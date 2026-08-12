@@ -17,8 +17,8 @@ settles, once, which pieces **can** be a Feature (a Feature can declare no
 `initializeCommand`, no read-only mount, and no string mount) and the rules all
 five plans inherit.
 
-Three of the four Features have a host-coupled half that the Feature cannot
-declare. That does **not** make them devc-only: a host bind mount and an
+All three Features still pending have a host-coupled half that the Feature
+cannot declare. That does **not** make them devc-only: a host bind mount and an
 `initializeCommand` belong to the **consumer's `devcontainer.json`**, which every
 devcontainer project has. devc is one consumer — it writes those lines for you.
 The shipped `devc-bridge` Feature already works exactly this way (it declares no
@@ -35,16 +35,11 @@ reverse once.
 
 The machinery they land on is already generalized —
 [features-collection](archived/features-collection.md) made `features/` a real
-collection, so each of the four below only adds a directory: no edit to
+collection, so each of the three below only adds a directory: no edit to
 `publish-feature.yml`, and `features/README.md` gains a row. Order among them
-does not matter.
+does not matter — [feature-node-nvmrc](archived/feature-node-nvmrc.md) went
+first and is done.
 
-- [feature-node-nvmrc](feature-node-nvmrc.md) — the clean case, and the only one
-  of the four that does not split: `.nvmrc` → `nvm install` at create time, plus
-  `nvm use` on `cd`. No host coupling and no mounts. Two deviations from devc's
-  copy are forced by not owning the image: the `cd()` override becomes conditional
-  on nvm having loaded, and the block must not leave a non-zero `$?` at the first
-  prompt.
 - [feature-shell-dirs](feature-shell-dirs.md) — the sourcing **mechanism** for
   `*.sh` directories becomes the Feature. A bare `{}` gives the **project layer**
   (the repo's own `.devcontainer/shell/`), which is the layer most consumers
@@ -78,6 +73,68 @@ does not matter.
 
 ### Completed
 
+- [feature-node-nvmrc](archived/feature-node-nvmrc.md) — Publish
+  `ghcr.io/bmingles/devc-tools/node-nvmrc`: the Node version a workspace pins in
+  `.nvmrc`, installed at create time and selected in every interactive shell,
+  including on `cd`. The first of the four splits and the only one with **no host
+  coupling at all** — it reads the workspace, writes the container, declares no
+  mounts — so a bare `{}` is the whole Feature rather than half of it. Copied out of
+  `devc/default/scripts/node-setup.sh` and the nvm lines in `bashrc-additions.sh`;
+  **both devc copies are untouched and still running**, per the copy-don't-move rule.
+  The generalizations that mattered were the ones about not owning the image:
+  hardcoded `vscode` becomes `id -u`/`id -g` (whoever the hook runs as), `sudo`
+  becomes `command -v sudo` plus `sudo -n` so an image whose sudo wants a password
+  fails instantly instead of hanging create on a prompt nobody can answer, and every
+  failure mode is graded — **no `.nvmrc` is silent success** (the Feature has to be
+  safe to leave enabled in a repo that pins nothing, or the one-line opt-in is
+  worthless), **missing nvm warns and exits 0** (failing create over a documented
+  prerequisite turns a one-line misconfiguration into a container you cannot open to
+  fix it), and **`nvm install` failing is fatal** (a container quietly on the wrong
+  Node is worse than one that fails while you are watching). `installsAfter`, not
+  `dependsOn`: `dependsOn` would install the upstream node Feature with _this_
+  Feature choosing its `version`/`pnpmVersion`/`nvmVersion`, which are exactly what a
+  consumer wants to choose, so the prerequisite is documented and only the ordering
+  is declared. The manifest's `postCreateCommand` takes no arguments, so `install.sh`
+  bakes the four options into the copies it places by rewriting their
+  `VAR="${VAR:-default}"` lines and **failing the build if a rewrite does not take** —
+  a rename upstream would otherwise leave an option silently unwired with the default
+  standing in for whatever the consumer asked for.
+  **Three deviations from devc's copy, not two.** The plan specifies two, both
+  implemented: the `cd()` override is conditional on nvm having actually loaded (devc
+  redefines `cd` unconditionally, which in an image with no nvm leaves every directory
+  change calling a missing command), and the block cannot leave a non-zero `$?` at the
+  first prompt. The third is the plan being wrong: it copies devc's `cd` one-liner
+  verbatim, and that one-liner returns **1 from every `cd` into a directory without a
+  `.nvmrc`**, so `cd somewhere && make` silently stops before `make`. That is the same
+  wart as the `$?` one the plan does fix, for the same reason (devc's PS1 only colors
+  the status), so `cd` now preserves the builtin's status on failure and returns 0 on
+  success. Recorded and pinned by tests rather than done quietly.
+  Verified here: the offline `nvm_use_test.sh` (31 checks over the `devc:nvm-use`
+  block **extracted from the real `install.sh`**, so the test cannot drift from what
+  lands in `~/.bashrc`), `tests/workflow_guards_test.sh` (10 checks, now covering the
+  new Feature's id/version), `deno fmt --check` (121 files), and — beyond the plan —
+  `install.sh` and the installed `post-create.sh` run offline with `SHARE_DIR` and
+  `_REMOTE_USER_HOME` in temp dirs, covering all four options, append idempotency and
+  all four create-time paths, plus the appended block sourced against the **real** nvm
+  in this devcontainer.
+  **Not verified here (no Docker):** every `devcontainer features test` scenario. All
+  three are written — the autogenerated default is `{}` on a base image with no nvm
+  (which is both the hostile case and the design doc's bare-`{}` case), and
+  `test/scenarios.json` adds `with_nvmrc` (pinning `20` while the node Feature installs
+  `lts`, so "the pinned version won" is observable) and `no_nvmrc` — but none has been
+  run. **The plan's one must-measure item is still unmeasured:** the cwd of a
+  Feature-declared `postCreateCommand`. What is recorded in
+  [design/devc-feature-split.md](design/devc-feature-split.md) open question 1 is a
+  **source read**, not a measurement — the CLI computes
+  `remoteCwd = remoteWorkspaceFolder || homeFolder` once and passes it to every
+  lifecycle hook, Feature-contributed ones included — so `${PROJECT_PATH:-$PWD}` stays
+  and the `with_nvmrc` scenario is what will actually settle it, since its first check
+  fails if the hook did not find a `.nvmrc` written at the workspace root.
+  One change outside this Feature: `test/run-features-test.sh` now stages the whole
+  `test/` directory minus itself instead of only `test.sh`, or a `scenarios.json`
+  would never reach the command; `devc-bridge`'s copy was updated identically, because
+  that file is meant to be byte-identical in every Feature, and `features/README.md`
+  documents both the widened staging and the scenario conventions.
 - [features-collection](archived/features-collection.md) — Make `features/` a
   real collection before four more Features arrive, rather than a directory that
   happens to contain one. `features publish ./features` already walked the whole
@@ -567,7 +624,7 @@ does not matter.
 | devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md)         | complete |
 | releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](archived/release-and-installer.md)                 | complete |
 | `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](archived/features-collection.md)                     | complete |
-| `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](feature-node-nvmrc.md)                                | pending  |
+| `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](archived/feature-node-nvmrc.md)                       | complete |
 | `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](feature-shell-dirs.md)                                | pending  |
 | `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                | pending  |
 | `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                          | pending  |

@@ -164,6 +164,19 @@ all block calling it done.
 1. **cwd of a Feature-declared `postCreateCommand`.** Assumed to be the workspace
    folder. Every script here uses `${PROJECT_PATH:-$PWD}` so it survives either
    answer, but the `.nvmrc` lookup is only correct under one of them.
+
+   **Read from the CLI's source, not yet measured** ([feature-node-nvmrc](../archived/feature-node-nvmrc.md)).
+   `runLifecycleHook` in `src/spec-common/injectHeadless.ts` computes
+   `remoteCwd = containerProperties.remoteWorkspaceFolder || containerProperties.homeFolder`
+   once and passes it as the cwd of every lifecycle command; Feature-contributed
+   commands reach it through the same `runLifecycleCommands` loop as the ones from
+   `devcontainer.json` (they differ only in the `origin` used for logging). So the
+   answer is **the workspace folder whenever there is one**, and the remote user's
+   home otherwise. Nobody has run a container to confirm it — no Docker in the
+   environment where node-nvmrc was written — so `${PROJECT_PATH:-$PWD}` stays, and
+   `features/node-nvmrc/test/scenarios.json`'s `with_nvmrc` scenario is what will
+   actually measure it: its first check fails if the hook did not find the `.nvmrc`
+   an `onCreateCommand` wrote at the workspace root.
 2. **Substitution inside Feature `mounts`.** `${localEnv:HOME}` is measured
    working (devc-bridge-feature findings). `${localWorkspaceFolderBasename}` and
    `${containerWorkspaceFolder}` are **not** — and the `claude-config` volumes
