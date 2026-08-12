@@ -162,9 +162,12 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      # Strictly redundant — every pin was checked per-Feature above, and this job does not
-      # run unless those passed. Kept because this is the one place a *whole-collection*
-      # publish happens, and that is the operation the pin guard exists to stop.
+      # Redundant *only* because `needs: publish` holds: every pin was already checked
+      # per-Feature above, and this job is skipped unless those passed. That is exactly why
+      # it stays — the redundancy rests on one `needs:` line, and an `if: always()` added
+      # here later would silently turn this into an unguarded whole-collection publish,
+      # which is the one operation in this file that can push a Feature whose release does
+      # not exist. Cheap, and it fails closed if the reasoning above ever stops being true.
       - name: Release pin guard (collection)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
