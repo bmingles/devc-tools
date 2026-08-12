@@ -11,8 +11,76 @@
 
 ### Pending
 
-_None._ Every plan written so far is implemented and archived. New work starts
-with a new plan here (see the `plan-orchestrating` skill for the conventions).
+Splitting pieces of devc's baseline out as publishable devcontainer Features.
+Read [design/devc-feature-split.md](design/devc-feature-split.md) first — it
+settles, once, which pieces **can** be a Feature (a Feature can declare no
+`initializeCommand`, no read-only mount, and no string mount) and the rules all
+five plans inherit.
+
+Three of the four Features have a host-coupled half that the Feature cannot
+declare. That does **not** make them devc-only: a host bind mount and an
+`initializeCommand` belong to the **consumer's `devcontainer.json`**, which every
+devcontainer project has. devc is one consumer — it writes those lines for you.
+The shipped `devc-bridge` Feature already works exactly this way (it declares no
+mounts; non-devc projects copy one line from its README). Hence the rule every
+plan inherits and proves with a scenario: **`"<feature>": {}` must install
+cleanly and do something useful**, and no option may default to a devc path.
+
+The other big rule: **copy, don't move.** Every plan below leaves
+`devc/default/` running exactly as it does today; swapping devc onto the
+published Features is a later plan, deliberately not written yet, because a
+baseline that references an unpublished `ghcr.io` ref breaks every `devc up` —
+the failure [devc-bridge-feature](archived/devc-bridge-feature.md) already had to
+reverse once.
+
+Order matters only for the first: it generalizes the machinery the other four
+land on.
+
+- [features-collection](features-collection.md) — **first.** Make `features/` a
+  real collection instead of a directory that happens to contain one Feature.
+  `publish-feature.yml`'s version guard names `devc-bridge` literally while
+  `features publish` walks the whole tree, so a second Feature would publish
+  **unguarded**. One loop over `features/*/devcontainer-feature.json`, per-Feature
+  error messages, `id` == directory basename, and the baked `FEATURE_VERSION`
+  checked only where one exists (only the bridge needs it — it names a release
+  asset). Plus a `features/README.md` and a staging wrapper that copies a whole
+  Feature directory rather than a per-Feature file list.
+- [feature-node-nvmrc](feature-node-nvmrc.md) — the clean case, and the only one
+  of the four that does not split: `.nvmrc` → `nvm install` at create time, plus
+  `nvm use` on `cd`. No host coupling and no mounts. Two deviations from devc's
+  copy are forced by not owning the image: the `cd()` override becomes conditional
+  on nvm having loaded, and the block must not leave a non-zero `$?` at the first
+  prompt.
+- [feature-shell-dirs](feature-shell-dirs.md) — the sourcing **mechanism** for
+  `*.sh` directories becomes the Feature. A bare `{}` gives the **project layer**
+  (the repo's own `.devcontainer/shell/`), which is the layer most consumers
+  want. A second layer of _personal host_ scripts needs a read-only bind the
+  Feature cannot declare, so the consumer declares it and passes `userDir` —
+  devc writes those lines for its own containers, and the README gives everyone
+  else the same two lines pointing at a path of their choosing.
+  The Feature's copy keeps the `devc:shell-dirs` markers and the two
+  `*_SHELL_DIR` assignment names so `devc/tests/shell_dirs_test.sh` runs against
+  it **unmodified** — that is what stops the two copies drifting. Carries a real
+  ordering finding: Features install after the Dockerfile, so a Feature's
+  `~/.bashrc` block lands _after_ devc's `DEVC_ATTACH` `PROMPT_COMMAND` snapshot,
+  which the swap plan has to deal with.
+- [feature-git-config](feature-git-config.md) — LFS filters,
+  `worktree.useRelativePaths` and `safe.directory` are pure container scope and
+  become the Feature — three of the four settings, working from a bare `{}`. The
+  fourth, your **identity**, is the one thing here a container genuinely cannot
+  invent: `user.name`/`user.email` live on the host. A Feature can neither read
+  nor mount them, but a consumer's `initializeCommand` + read-only bind can, so
+  the README ships that recipe with the devc paths taken out. The seam is a dumb
+  `identityIncludePath` option the Feature never parses.
+- [feature-claude-config](feature-claude-config.md) — the largest split, and the
+  only plan with a question that **must be measured before it can be finished**:
+  whether `${localWorkspaceFolderBasename}` substitutes inside Feature `mounts`.
+  If it does, the two per-workspace volumes move into the Feature; if it does
+  not, declaring them would give every project **one shared** Claude auth/history
+  volume — worse than declaring nothing. `${localEnv:HOME}` is measured working,
+  but that is a different variable class, so the plan says measure it rather than
+  reason about it. The `devc:seed-link` block is copied verbatim so
+  `devc/tests/seed_link_test.sh` runs against the Feature unchanged.
 
 ### Completed
 
@@ -461,3 +529,8 @@ with a new plan here (see the `plan-orchestrating` skill for the conventions).
 | devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](archived/devc-bridge-feature.md)                     | complete |
 | devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md)         | complete |
 | releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](archived/release-and-installer.md)                 | complete |
+| `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](features-collection.md)                              | pending  |
+| `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](feature-node-nvmrc.md)                                | pending  |
+| `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](feature-shell-dirs.md)                                | pending  |
+| `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                | pending  |
+| `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                          | pending  |
