@@ -49,7 +49,9 @@ three mounts keep working.
 ```jsonc
 {
   "id": "claude-config",
-  "version": "<repo version>",
+  // Its own version, independent of the repo tag and of the other Features —
+  // see .plans/feature-independent-versions.md.
+  "version": "0.1.0",
   "name": "Claude Code config",
   "options": {
     "installClaudeCli": { "type": "boolean", "default": true },

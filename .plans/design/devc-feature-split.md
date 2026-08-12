@@ -152,9 +152,20 @@ reaches full parity by pasting two lines. Not by installing devc.
   `sudo` that exists.
 - **Every option is opt-outable and defaults to today's devc behavior**, so the
   eventual swap is a no-op in observable terms.
-- **One repo, one tag.** `publish-feature.yml` packages `./features` as a
+- ~~**One repo, one tag.** `publish-feature.yml` packages `./features` as a
   collection and its version guard demands tag == every Feature's `version`, the
-  same rule the binaries follow. New Features join at the repo's current version.
+  same rule the binaries follow. New Features join at the repo's current
+  version.~~ **Superseded by
+  [feature-independent-versions](../feature-independent-versions.md).** The
+  decision this borrowed from ([release-and-installer](../archived/release-and-installer.md)
+  decision 8) is about the **installer** resolving one version across the eight
+  tarballs it fetches; Features are pulled from ghcr by a consumer's
+  `devcontainer.json` and `devc` never resolves a Feature version at all. Each
+  Feature now carries its own `version`, bumped when that Feature changes, and
+  publishes on a push to `main` under `features/`. `publish-feature.yml` still
+  packages `./features` as a collection and its guard still walks the collection
+  rather than naming a Feature; it no longer compares anything to a tag. **A new
+  Feature starts at `0.1.0`, not at the repo's version.**
 
 ## Open questions the plans must measure, not assume
 

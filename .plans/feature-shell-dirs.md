@@ -44,7 +44,9 @@ as-is.
 ```jsonc
 {
   "id": "shell-dirs",
-  "version": "<repo version>",
+  // Its own version, independent of the repo tag and of the other Features —
+  // see .plans/feature-independent-versions.md.
+  "version": "0.1.0",
   "name": "Shell script directories",
   "options": {
     "projectDir": { "type": "string", "default": ".devcontainer/shell" },

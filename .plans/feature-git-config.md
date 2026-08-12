@@ -42,7 +42,9 @@ where the file landed.
 ```jsonc
 {
   "id": "git-container-config",
-  "version": "<repo version>",
+  // Its own version, independent of the repo tag and of the other Features —
+  // see .plans/feature-independent-versions.md.
+  "version": "0.1.0",
   "name": "Git container config",
   "options": {
     "identityIncludePath": { "type": "string", "default": "" },

@@ -36,10 +36,53 @@ reverse once.
 The machinery they land on is already generalized —
 [features-collection](archived/features-collection.md) made `features/` a real
 collection, so each of the three below only adds a directory: no edit to
-`publish-feature.yml`, and `features/README.md` gains a row. Order among them
-does not matter — [feature-node-nvmrc](archived/feature-node-nvmrc.md) went
-first and is done.
+`publish-feature.yml`, and `features/README.md` gains a row. Order among the
+three does not matter — [feature-node-nvmrc](archived/feature-node-nvmrc.md) went
+first and is done. **But
+[feature-independent-versions](feature-independent-versions.md) should land
+before all three**, so a new Feature joins at its own `0.1.0` rather than at the
+repo's version and then needing a correction. Its manifest contract in each of
+the three has already been updated to say so.
 
+- [feature-independent-versions](feature-independent-versions.md) — **Reverses a
+  stated decision**, `design/devc-feature-split.md`'s "One repo, one tag": every
+  Feature currently republishes at the repo's version on every `v*` tag. The
+  decision that was borrowed from ([release-and-installer](archived/release-and-installer.md)
+  decision 8) is about the **installer** resolving one version across the eight
+  tarballs it fetches, and it never mentions Features — nothing in the repo
+  needs the coupling, since `devc` detects devc-bridge by Feature name at any tag
+  (`default_config_test.ts:857-860` pins bare, `:0`, `:1` and `:0.1.0` all
+  matching). What it costs is churn (a byte-identical `node-nvmrc` gets a new
+  digest because devc's tmux handling changed), misleading semver (`:0.1` freezes
+  forever when devc goes 0.2.0, so anyone pinned to it silently stops getting
+  fixes), and a one-line Feature fix needing a full four-runner binary release.
+  Each Feature gets its own `version`, and publishing moves to a push on `main`
+  under `features/` — measured safe: `@devcontainers/cli@0.88.0` skips a version
+  already in the registry and only advances the floating tags when the new
+  version is the max satisfying one, so a run that changes nothing publishes
+  nothing. **Nothing is published yet, so there is no migration** — both Features
+  keep `0.1.0` and stop moving in lockstep from here. The 40-line inline version
+  guard leaves YAML for `tests/features_test.sh`, which takes most of
+  `tests/workflow_guards_test.sh` with it: the `awk` that scrapes the guard's
+  `run:` block out of the workflow by indentation, and the checks asserting the
+  extracted bash iterates a glob and names no Feature, exist only because the
+  guard was not callable. `guards_both` stays — whether a publish step is gated
+  on both the ref and `!inputs.dry_run` can only be read off the YAML, and it
+  guards the one mistake here that cannot be walked back. One guard is **added**,
+  covering a hazard the tag trigger was accidentally handling: `devc-bridge`'s
+  `FEATURE_VERSION` becomes `DEVC_TOOLS_RELEASE` (it names a release to download
+  from, not a Feature version — the two were only ever equal because the rule
+  forced it), and publishing checks that release exists. That guard is **why the
+  workflow publishes one Feature per matrix job** rather than the collection in
+  one command: `features publish ./features` is all-or-nothing, so devc-bridge's
+  unmet pin would block `node-nvmrc` — which downloads nothing and pins nothing —
+  until a devc release was tagged, reintroducing in CI the exact coupling this
+  plan removes. Measured to make that possible: `features publish` accepts a
+  single Feature directory and lands on the identical `ghcr.io/<ns>/<id>` ref.
+  The cost is recorded, not hidden — every run also pushes a
+  `devcontainer-collection.json` describing only what that run packaged, which
+  nothing here reads. Explicitly **not** adopted from
+  `devcontainers/feature-starter`: `generate-docs` and its documentation PR.
 - [feature-shell-dirs](feature-shell-dirs.md) — the sourcing **mechanism** for
   `*.sh` directories becomes the Feature. A bare `{}` gives the **project layer**
   (the repo's own `.devcontainer/shell/`), which is the layer most consumers
@@ -625,6 +668,7 @@ first and is done.
 | releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](archived/release-and-installer.md)                 | complete |
 | `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](archived/features-collection.md)                     | complete |
 | `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](archived/feature-node-nvmrc.md)                       | complete |
+| Features version independently — unpin the collection from the repo tag                  | [feature-independent-versions](feature-independent-versions.md)            | pending  |
 | `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](feature-shell-dirs.md)                                | pending  |
 | `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                | pending  |
 | `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                          | pending  |
