@@ -43,6 +43,15 @@ jobs:
             echo "::error::tag $tag disagrees with devcontainer-feature.json version $version"
             exit 1
           fi
+          # install.sh carries the same version so it can name its release asset without a
+          # JSON parser in the container. Duplicated, therefore guarded: a Feature that
+          # downloads a client from a *different* release than it claims to be is worse than
+          # a failed publish.
+          baked="$(sed -n "s/^FEATURE_VERSION='\(.*\)'$/\1/p" features/devc-bridge/install.sh)"
+          if [ "$baked" != "$version" ]; then
+            echo "::error::install.sh FEATURE_VERSION ($baked) disagrees with devcontainer-feature.json version ($version)"
+            exit 1
+          fi
 
       # The Feature is a collection of one, so `features/` is the collection folder and
       # `features/devc-bridge/` the Feature within it.

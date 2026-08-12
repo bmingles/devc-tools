@@ -333,26 +333,67 @@ is what makes devc containers build on a host that never installed the bridge.
 
 ## Checklist
 
-- [ ] `features/devc-bridge/devcontainer-feature.json` — `mounts` removed,
+- [x] `features/devc-bridge/devcontainer-feature.json` — `mounts` removed,
       `clientVersion` option added
-- [ ] `features/devc-bridge/install.sh` — versioned, arch-matched,
+- [x] `features/devc-bridge/install.sh` — versioned, arch-matched,
       checksum-verified download ahead of the unchanged symlink block
-- [ ] `devc/default/devcontainer.json` — readonly `run/` string mount, comment
+- [x] `devc/default/devcontainer.json` — readonly `run/` string mount, comment
       inverted
-- [ ] `devc-bridge/host/token.ts` — `ensureToken` → `resetToken`, always
+- [x] `devc-bridge/host/token.ts` — `ensureToken` → `resetToken`, always
       regenerate, symlink-safe temp+`rename` write
-- [ ] `devc-bridge/host/main.ts` — rename call site; `clientStatus` re-scoped
-- [ ] `devc-bridge/host/config.ts` — pidfile comment's premise updated
-- [ ] `devc/default/initialize-command.sh` — client placeholder dropped, `run/`
-      kept
-- [ ] `devc/tests/default_config_test.ts` — retargeted at devc's own mount; the
-      Feature declares no mounts
-- [ ] `devc-bridge/host/tests/` — replace-not-adopt; symlink target untouched
-- [ ] `features/devc-bridge/test/` — client ownership/version; offline
+- [x] `devc-bridge/host/main.ts` — rename call site; `clientStatus` re-scoped
+- [x] `devc-bridge/host/config.ts` — pidfile comment's premise updated
+- [x] `devc/tests/default_config_test.ts` — inverted: asserts the Feature
+      declares **no** `mounts` key
+- [x] `devc-bridge/host/tests/` — replace-not-adopt; symlink target untouched
+- [x] `features/devc-bridge/test/` — client ownership/version; offline
       checksum-mismatch case
-- [ ] `features/devc-bridge/README.md`, `devc-bridge/README.md`,
-      `devc/README.md`, root `README.md` — re-scoped
+- [x] `features/devc-bridge/README.md`, `devc-bridge/README.md` — re-scoped
+- [ ] **BLOCKED** `devc/default/devcontainer.json` — the token mount for devc
+      users (decision 6). See "Blocked: who declares devc's token mount" below.
+- [ ] BLOCKED `devc/default/initialize-command.sh` — depends on the above
+- [ ] BLOCKED `devc/README.md`, root `README.md` — the devc wiring story depends
+      on the above
 - [ ] `.plans/PLAN.md` — move to Completed, plan doc to `archived/`
+
+## Blocked: who declares devc's token mount
+
+**Decision 6 cannot be implemented as written.** It says devc carries the mount
+in its bundled `devcontainer.json` "so devc users still wire up nothing", and
+implementation item `initialize-command.sh` says to **keep** the `run/` mkdir
+that makes a devc container build on a bridge-less host. That mkdir does not
+exist: commit `0d46b51` ("devc: stop creating devc-bridge directories on every
+host") deleted it three commits before this plan was written, deliberately —
+*"A host that never uses the bridge should not carry directories for it… This
+also removes the last devc-only shortcut around the Feature — a devc project and
+a non-devc project now have exactly the same prerequisite."*
+
+Adding the mount without the mkdir makes **every devc container fail to create**
+on a host that never ran `devc-bridge start` (`--mount type=bind` errors on a
+missing source, and `devc/default/devcontainer.json` is copied verbatim into
+projects — mounts are not filtered by source existence). Three places encode the
+opposite invariant: that commit, the `:61-63` comment in the file itself, and
+`devc/tests/default_config_test.ts:335`, whose stated rationale is *"a devc
+container must come up on a host that never installed the bridge."*
+
+The devc.json overlay is **not** an escape hatch: `MOUNT_SPEC_RE`
+(`devc/overlay.ts:50-68`) rejects `readonly` for the same CLI re-serialization
+reason that rules out Feature mounts. A read-only mount can only live in a
+`devcontainer.json` `mounts` array.
+
+So it is one of these, and it is a product call:
+
+- **(A) devc baseline carries the mount, and `initialize-command.sh` re-creates
+  `~/.config/devc-bridge/run`.** devc keeps zero-config for the bridge. Reverses
+  `0d46b51`'s stated goal and re-creates a directory on hosts that never use the
+  bridge. Also requires relaxing `default_config_test.ts:335`.
+- **(B) devc does not carry it; every project declares the mount itself.**
+  Honors `0d46b51` and leaves both tests untouched — but devc **zero-config**
+  users have no `devcontainer.json` to put it in (devc materializes one into a
+  cache), so this may not be workable for them without a new mechanism.
+
+(A) looks right on those grounds, but reversing a deliberate three-commit-old
+decision is the user's call, not the implementer's.
 
 ## Validation
 

@@ -360,14 +360,25 @@ Deno.test('canonical default devcontainer.json does not install devc-bridge', as
   );
 });
 
-Deno.test('the devc-bridge Feature declares both bridge mounts as readonly strings', async () => {
-  // Guards the one thing this whole arrangement rests on, in the file devc now delegates
-  // to. A Feature mount written as a *string* is passed through to Docker verbatim, so
-  // `readonly` survives; the object form the published Feature schema documents is
-  // re-serialized through the CLI's `Mount` interface, which has no `readonly` field, and
-  // silently makes both mounts writable. A writable client/ lets one container rewrite a
-  // binary the others execute; a writable run/ lets a container pin the host's shared
-  // secret, since the host adopts an existing token rather than regenerating it.
+Deno.test('the devc-bridge Feature declares no mounts at all', async () => {
+  // The inverse of what this test used to assert, and deliberately so.
+  //
+  // The Feature used to carry both bridge mounts as *strings*, because a string mount is
+  // passed to Docker verbatim so `readonly` survives, while the object form the published
+  // Feature schema allows is re-serialized as `type=,src=,dst=` and silently drops it. That
+  // worked, but it put a security guarantee on undocumented CLI behavior: a future CLI that
+  // normalized string mounts would quietly make them writable.
+  //
+  // So the Feature stopped needing mounts. The client is downloaded into an image layer at
+  // build time (root-owned, and no shared host file for another container to reach), and the
+  // token mount belongs to whoever consumes the Feature — in a `devcontainer.json` `mounts`
+  // array, where the string form is in the published schema (`anyOf: [Mount, string]`) and is
+  // specified to be Docker's own `--mount` syntax, so `readonly` is a promise rather than an
+  // accident.
+  //
+  // Re-adding a `mounts` key here would reintroduce the off-schema dependency AND collide
+  // with the consumer's own mount as Docker's `Duplicate mount point`. See
+  // .plans/archived/devc-bridge-client-download.md.
   const meta = JSON.parse(
     await Deno.readTextFile(
       new URL(
@@ -377,27 +388,11 @@ Deno.test('the devc-bridge Feature declares both bridge mounts as readonly strin
     ),
   );
 
-  for (
-    const [source, target] of [
-      ['${localEnv:HOME}/.config/devc-bridge/run', '/run/devc-bridge'],
-      [
-        '${localEnv:HOME}/.config/devc-bridge/client',
-        '/usr/local/share/devc-bridge/client',
-      ],
-    ]
-  ) {
-    const mount = (meta.mounts as unknown[]).find((m) =>
-      typeof m === 'string' && m.includes(`source=${source},`) &&
-      m.includes(`target=${target},`)
-    ) as string | undefined;
-    assertEquals(typeof mount, 'string', `no string bind mount for ${target}`);
-    assertEquals(mount!.startsWith('type=bind,'), true);
-    assertEquals(
-      mount!.split(',').includes('readonly'),
-      true,
-      `${target} must be mounted readonly`,
-    );
-  }
+  assertEquals(
+    Object.hasOwn(meta, 'mounts'),
+    false,
+    'the Feature must declare no mounts — the consumer owns the token mount',
+  );
 });
 
 Deno.test('materializeDefaultConfig overwrites an existing copy without erroring', async () => {

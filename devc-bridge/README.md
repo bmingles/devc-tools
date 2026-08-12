@@ -99,21 +99,23 @@ power _and_ an external display to avoid. Verify what is held with
 ## Setup (macOS host)
 
 ```sh
-# 1. Install. Puts the host `devc-bridge` in ~/.local/bin and the Linux *container
-#    client* in ~/.config/devc-bridge/client/ — the dir every devcontainer with the
-#    bridge Feature mounts. No Deno, no sudo.
+# 1. Install. Puts the host `devc-bridge` in ~/.local/bin, plus a copy of the Linux
+#    *container client* in ~/.config/devc-bridge/client/ (a developer override —
+#    containers get their own from the Feature). No Deno, no sudo.
 curl -fsSL https://github.com/bmingles/devc-tools/releases/latest/download/install.sh | sh
 
 # 2. Start it in the background. First run auto-creates ~/.config/devc-bridge/ (run/,
 #    state/, commands/, client/), seeds the example command scripts, and writes the token.
+#    This is also what creates the run/ dir your devcontainer.json will bind-mount.
 devc-bridge start                   # -> started (pid N)
-devc-bridge status                  # -> running (pid N) — idle / client: installed
+devc-bridge status                  # -> running (pid N) — idle / client override: none
 
-# 3. `devc up` any repo. The client is already on PATH inside.
+# 3. Add the Feature *and* the token mount to a repo's devcontainer.json, then bring it
+#    up. See ../features/devc-bridge/README.md for the two lines.
 ```
 
 `--version` on either binary reports which one you have — including from inside
-a container, which is how you tell whether the mounted client is current.
+a container, which is how you tell which client a container actually got.
 
 The installer places **both** `devc-bridge` binaries, which are two different
 programs sharing a name: the host CLI on your `PATH`, and the container client
@@ -186,30 +188,43 @@ line:
 }
 ```
 
-The Feature declares two read-only bind mounts (`~/.config/devc-bridge/run` →
-`/run/devc-bridge` for the token, `~/.config/devc-bridge/client` →
-`/usr/local/share/devc-bridge/client` for the binary) and symlinks
-`/usr/local/bin/devc-bridge` at the mounted client. No env vars are needed
-either — `DEVC_BRIDGE_ADDR` and `DEVC_BRIDGE_TOKEN_FILE` default to exactly the
-address and mount target it sets up (see [Commands](#commands)); set them only
-to override. See [its README](../features/devc-bridge/README.md) for the full
-rationale, including why the mounts must stay JSON _strings_ and why Docker
-Compose devcontainers are unsupported.
+…plus the token mount, which is **yours to declare** and not the Feature's:
 
-[devc](../devc/README.md#devc-bridge-the-feature) containers reference that same
-Feature from devc's bundled config, so every devc container has the bridge
-already — one mechanism, not two.
+```jsonc
+"mounts": [
+  "type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly"
+]
+```
 
-**Install the host bridge before adding the Feature.** A Feature has no
-host-side hook, so it cannot create its own mount sources, and
-`--mount type=bind` errors on a missing source: a standalone project adding the
-Feature on a host with no `~/.config/devc-bridge/` fails to build. devc
-containers are the exception — devc's own `initializeCommand` creates the dirs
-and a placeholder client, so they stay inert instead.
+The Feature itself declares no mounts at all. It downloads the Linux client for
+the container's architecture from the matching release, verifies it against the
+release `checksums.txt`, and symlinks `/usr/local/bin/devc-bridge` at it. No env
+vars are needed either — `DEVC_BRIDGE_ADDR` and `DEVC_BRIDGE_TOKEN_FILE` default
+to exactly the address and mount target above (see [Commands](#commands)); set
+them only to override.
 
-**The client is installed, not built on the fly.** `devc-bridge start` never
-compiles one. `~/.config/devc-bridge/client/devc-bridge` is a plain destination
-that two paths write to:
+The mount lives in your `devcontainer.json` because a Feature **cannot** express
+`readonly` — its schema's `Mount` has no such field — whereas a string mount in
+`devcontainer.json` is in the published schema and defers to Docker's own
+`--mount` syntax. See [its README](../features/devc-bridge/README.md) for the
+full rationale, including the Docker Compose caveat.
+
+[devc](../devc/README.md#devc-bridge-the-feature) projects opt in the same way,
+with `additionalFeatures` in a devc.json — the bridge is not part of devc's
+baseline, so a devc container comes up on a host that never heard of it. One
+mechanism, not two.
+
+**Install the host bridge before adding the mount.** Nothing in the container can
+create `~/.config/devc-bridge/run`: a Feature has no host-side hook, and
+`--mount type=bind` errors on a missing source rather than creating it. So a
+project that declares the mount on a host with no `~/.config/devc-bridge/` fails
+to build. Run `devc-bridge start` once first.
+
+**The client is downloaded by the Feature, not built on the fly and not taken
+from the host.** `devc-bridge start` never compiles one, and what sits in
+`~/.config/devc-bridge/client/devc-bridge` no longer reaches any container by
+itself — it is a *developer override*, used only when a project bind-mounts that
+directory over `/usr/local/share/devc-bridge/client`. Two paths write to it:
 
 | Path         | How                                                                                 |
 | ------------ | ----------------------------------------------------------------------------------- |
@@ -453,23 +468,41 @@ commands, but anything that can read that token file — i.e. anything with acce
 to your home dir — can. It is a convenience boundary for a single-user machine,
 not a hardened multi-tenant control.
 
-**Both container mounts are read-only**, and that is load-bearing in each case:
+**Only one thing is mounted now — the token — and the host no longer assumes it
+is read-only.**
 
-- `run/` carries the token, which the container only ever _reads_ — so read-only
-  costs nothing. Writable, a container could rewrite `run/token`: `ensureToken`
-  _adopts_ an existing token file rather than regenerating, so it could pin the
-  host's shared secret to a value of its choosing across host restarts, and
-  deleting the file would no longer rotate it.
-- `client/` is executed by every container that has the Feature. Writable, one
-  container could rewrite the binary the others run — lateral movement between
-  containers, and tampering with host-managed state.
+The client used to be mounted too, read-only, so that one container could not
+rewrite the binary every other container executes. It is now downloaded into each
+image instead: there is no shared host artifact left to rewrite, which is a
+stronger answer than a mount flag and does not depend on undocumented CLI
+behavior.
 
-The **pidfile lives in `base/`, not in the mounted `run/`** — `stop` reads
-it and `Deno.kill`s whatever positive integer it finds, so a container able to
-write it could pick the host process that gets SIGTERM. Read-only already closes
-that; keeping the file out of the mounted dir is what keeps it closed for Docker
-Compose devcontainers, where the Feature's `readonly` does not survive into the
-generated compose file. (That is also why the Feature is unsupported there.)
+`run/` still crosses as a mount, because the token is a runtime secret. Declaring
+it `readonly` is worth doing and the docs say so — but the bridge does not *rely*
+on it, because the consumer owns that mount and Docker Compose drops `readonly`
+regardless. Two host-side properties carry the weight instead:
+
+- **The token is regenerated on every `start`, never adopted.** `resetToken`
+  replaces whatever is in the file. Adoption was the one way a writable `run/`
+  became an escalation — a container could pin a secret of its choosing and have
+  the next start take it up, handing access to something never given the mount.
+  Costless to drop: the client re-reads the token on every invocation, so running
+  containers pick up a new one with nothing restarted.
+- **The token is never written through a symlink.** A container that can write
+  the directory can replace `token` with a link to any host path, and a plain
+  write would follow it and overwrite that file. Every write goes to a temp file
+  in the same directory and is renamed into place, which replaces the link
+  instead of following it (and is atomic, so no client reads a half-written
+  token).
+
+The **pidfile lives in `base/`, not in the mounted `run/`** — `stop` reads it and
+`Deno.kill`s whatever positive integer it finds, so a container able to write it
+could pick the host process that gets SIGTERM. That placement is now the *only*
+thing closing it, rather than a second layer behind `readonly`: never move a file
+the host acts on into `run/`.
+
+The residual, accepted: a writable `run/` is a shared directory between the
+containers that mount it. The bridge's real boundary is the command allowlist.
 
 > Pre-release change with no migration: the pidfile moved from
 > `run/tray.pid` to `tray.pid` (the name is unchanged, and still what a tray

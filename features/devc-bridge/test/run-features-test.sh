@@ -7,23 +7,16 @@
 # wants. Rather than split one Feature across two trees to satisfy one command, stage a
 # throwaway copy in the layout it expects.
 #
-# Needs Docker, and a host with the bridge installed — so this is run deliberately, not from
-# `deno task test`.
+# Needs Docker and a network (the Feature downloads its client from the release), so this is
+# run deliberately, not from `deno task test`.
+#
+# It no longer needs the host bridge installed: the Feature declares no mounts, so there are
+# no bind sources to exist. The token mount is the consumer's to declare — see ../README.md.
 set -euo pipefail
 
 FEATURE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ID="$(basename "$FEATURE_DIR")"
 CLI="${DEVCONTAINER_CLI:-devcontainer}"
-
-# The Feature cannot create its own mount sources (no host-side hook), so a missing one is a
-# Docker "bind source path does not exist" at create. Say so up front instead.
-for dir in run client; do
-  [ -d "$HOME/.config/devc-bridge/$dir" ] || {
-    echo "error: $HOME/.config/devc-bridge/$dir does not exist." >&2
-    echo "       Install and start the host bridge first — see ../README.md." >&2
-    exit 1
-  }
-done
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT

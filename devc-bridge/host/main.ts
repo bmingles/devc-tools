@@ -28,7 +28,7 @@ import {
   loadConfig,
 } from './config.ts';
 import { startServer } from './core.ts';
-import { ensureToken } from './token.ts';
+import { resetToken } from './token.ts';
 import { runTray } from './tray.ts';
 import { VERSION } from './version.ts';
 
@@ -144,7 +144,7 @@ async function run(cfg: Config, args: string[]): Promise<void> {
     return;
   }
 
-  const token = await ensureToken(cfg.token);
+  const token = await resetToken(cfg.token);
   const server = await startServer({
     hostname: cfg.hostname,
     port: cfg.port,
@@ -217,10 +217,11 @@ async function stop(cfg: Config): Promise<void> {
 }
 
 async function status(cfg: Config): Promise<void> {
-  // Report the client too: the bridge running says nothing about whether a container
-  // can actually reach it, and "why doesn't the container see devc-bridge" should be
-  // answerable from the host. With no menu-bar icon by default, the idle/active
-  // suffix below is also *the* way to answer "is it doing anything".
+  // Report the dev-override client too. It no longer answers "can a container reach the
+  // bridge" — the Feature ships its own client now — but a local build sitting here does
+  // change what a container runs when it is mounted, so it should not be invisible. With
+  // no menu-bar icon by default, the idle/active suffix below is also *the* way to answer
+  // "is it doing anything".
   const client = await clientStatus(cfg);
   const pid = await readPid(cfg);
   if (pid !== null && await pidAlive(pid)) {
@@ -338,21 +339,25 @@ export function spawnDetached(argv: string[], logfile: string): void {
 
 // --- helpers -------------------------------------------------------------------
 
-/** Text from the placeholder devc's initialize-command.sh writes; keep the two in step. */
+/** Text from the placeholder older devc versions wrote here; recognized so a leftover
+ * one is not reported as a real client. Nothing writes it any more. */
 const PLACEHOLDER_MARKER = 'devc-bridge: no client binary';
 
 /**
- * A line describing what the container would find on PATH.
+ * A line describing the *dev override* client, which is all this directory is now.
  *
- * The client dir is bind-mounted into every devc container, and devc's
- * initialize-command.sh drops a placeholder script there when it is empty — so the
- * mount and the PATH symlink always resolve. That makes "a file is present" too weak
- * a test: the interesting states are *nothing installed yet* and *still only the
- * placeholder*, which look identical from the container until you run it.
+ * Containers no longer get their client from here: the devc-bridge Feature downloads it
+ * from the matching release at image build time, so the host has no say in what a
+ * container runs. What remains is the developer path — `deno task build:client` writes
+ * here, and bind-mounting this directory over /usr/local/share/devc-bridge/client in a
+ * container shadows the downloaded copy with a local build.
  *
- * Detected by content, not size or mtime: the placeholder is a tiny `#!/bin/sh` script
- * and the real client is a compiled binary, so the shebang plus its own message is the
- * one signal that stays true however either is produced.
+ * Reported anyway because "which client is in play" is still a host-answerable question,
+ * and an override that is silently in effect is worse than one that is named.
+ *
+ * Detected by content, not size or mtime: a leftover placeholder is a tiny `#!/bin/sh`
+ * script and a real client is a compiled binary, so the shebang plus its own message is
+ * the one signal that stays true however either was produced.
  */
 async function clientStatus(cfg: Config): Promise<string> {
   let head: Uint8Array;
@@ -362,13 +367,13 @@ async function clientStatus(cfg: Config): Promise<string> {
     const n = await file.read(buf) ?? 0;
     head = buf.subarray(0, n);
   } catch {
-    return 'client: not installed';
+    return "client override: none (containers use the Feature's client)";
   }
   const text = new TextDecoder('utf-8', { fatal: false }).decode(head);
   if (text.startsWith('#!') && text.includes(PLACEHOLDER_MARKER)) {
-    return 'client: not installed (placeholder)';
+    return 'client override: none (leftover placeholder — safe to delete)';
   }
-  return 'client: installed';
+  return "client override: present (shadows the Feature's client where mounted)";
 }
 
 async function readPid(cfg: Config): Promise<number | null> {

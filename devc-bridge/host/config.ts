@@ -24,11 +24,16 @@ export interface Config {
   /** Editable, allowlisted command scripts (seeded on first start). */
   commands: string;
   /**
-   * Bind-mounted client dir: holds the Linux `devc-bridge` the container runs.
+   * Dev-override client dir: a Linux `devc-bridge` a container can be pointed at.
+   *
+   * No longer how containers get their client — the devc-bridge Feature downloads that
+   * from the matching release into the image. What is written here only matters if a
+   * project bind-mounts this directory over /usr/local/share/devc-bridge/client, which
+   * is the developer path for testing a local build.
    *
    * Nothing here is built on the fly — this is a *destination* that the release
-   * installer (typical user) or `deno task build:client` (developer) writes to.
-   * Unlike `commands`, the binary is never user-owned: both paths overwrite it.
+   * installer or `deno task build:client` writes to. Unlike `commands`, the binary is
+   * never user-owned: both paths overwrite it.
    */
   client: string;
   /** The client binary itself, inside `client`. */
@@ -41,10 +46,14 @@ export interface Config {
    *
    * In `base/`, deliberately *not* in the bind-mounted `run/`. `stop` `Deno.kill`s
    * whatever PID it reads here, so a container that can write the file can pick the
-   * host process that gets SIGTERM. The mount is read-only, which already closes
-   * that — but the devc-bridge Feature is unsupported on Docker Compose
-   * devcontainers, where `readonly` does not survive into the generated compose
-   * file, and this is what keeps the worst of that from being reachable.
+   * host process that gets SIGTERM.
+   *
+   * This is now the *only* thing closing that, so it is load-bearing rather than
+   * belt-and-braces. `readonly` on the run mount is no longer a guarantee the bridge
+   * makes: the mount is declared by the consumer's devcontainer.json (a Feature cannot
+   * express `readonly`), and a Docker Compose devcontainer cannot have it at all — the
+   * CLI drops it when generating the compose file. Never move a file the host acts on
+   * into `run/`.
    */
   pidfile: string;
   /** Log file the detached daemon's stdout/stderr is appended to. */
@@ -110,8 +119,9 @@ export async function ensureConfig(cfg: Config): Promise<void> {
   await ensureDir(cfg.run);
   await ensureDir(cfg.state);
   await ensureDir(cfg.commands);
-  // The bind-mount source for the container's client. Created (never filled) here so the
-  // mount resolves; `start` deliberately builds no client — see `Config.client`.
+  // The dev-override destination. Created (never filled) so `build:client` and the release
+  // installer have somewhere to land; `start` deliberately builds no client — see
+  // `Config.client`.
   await ensureDir(cfg.client);
   await seedCommands(cfg.commands);
 }

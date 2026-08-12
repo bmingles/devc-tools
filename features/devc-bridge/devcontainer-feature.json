@@ -2,10 +2,13 @@
   "id": "devc-bridge",
   "version": "0.1.0",
   "name": "devc-bridge (container client)",
-  "description": "Lets a devcontainer invoke allowlisted commands on the host via devc-bridge. Mounts the host bridge's token and Linux client read-only and puts `devc-bridge` on PATH. Requires the host bridge to be installed first.",
+  "description": "Installs the devc-bridge client so a devcontainer can invoke allowlisted commands on the host. Downloads the Linux client from the matching devc-tools release and puts `devc-bridge` on PATH. The host bridge must be installed, and the token bind mount is declared by your devcontainer.json — see the README.",
   "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/devc-bridge",
-  "mounts": [
-    "type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,consistency=cached,readonly",
-    "type=bind,source=${localEnv:HOME}/.config/devc-bridge/client,target=/usr/local/share/devc-bridge/client,consistency=cached,readonly"
-  ]
+  "options": {
+    "clientVersion": {
+      "type": "string",
+      "default": "",
+      "description": "Release version of the Linux client to install. Empty means the version this Feature was published with."
+    }
+  }
 }

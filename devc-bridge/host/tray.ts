@@ -11,7 +11,7 @@
 // in-container without a GUI.
 
 import { startServer } from './core.ts';
-import { ensureToken } from './token.ts';
+import { resetToken } from './token.ts';
 import { appendLog, type Config, errMsg } from './config.ts';
 
 // Icons are embedded (base64) rather than read from disk: the compiled binary runs
@@ -47,7 +47,7 @@ async function runTrayInner(cfg: Config): Promise<void> {
   // server can emit active-set changes safely from the moment it starts.
   let paint: (active: string[]) => void = () => {};
 
-  const token = await ensureToken(cfg.token);
+  const token = await resetToken(cfg.token);
   const server = await startServer({
     hostname: cfg.hostname,
     port: cfg.port,
