@@ -38,15 +38,50 @@ The machinery they land on is already generalized —
 collection, so each of the three below only adds a directory: no edit to
 `publish-feature.yml`, and `features/README.md` gains a row. Order among the
 three does not matter — [feature-node-nvmrc](archived/feature-node-nvmrc.md) went
-first and is done. **But
-[feature-independent-versions](feature-independent-versions.md) should land
-before all three**, so a new Feature joins at its own `0.1.0` rather than at the
-repo's version and then needing a correction. Its manifest contract in each of
-the three has already been updated to say so.
+first and is done. **A new Feature starts at its own `0.1.0`**, not at the repo's
+version: [feature-independent-versions](archived/feature-independent-versions.md)
+landed first and unpinned Features from the `v*` tag, and each of the three
+manifest contracts below already says so. Bump a Feature's `version` in the
+commit that changes it; a push to `main` under `features/` publishes it from its
+own matrix job.
 
-- [feature-independent-versions](feature-independent-versions.md) — **Reverses a
-  stated decision**, `design/devc-feature-split.md`'s "One repo, one tag": every
-  Feature currently republishes at the repo's version on every `v*` tag. The
+- [feature-shell-dirs](feature-shell-dirs.md) — the sourcing **mechanism** for
+  `*.sh` directories becomes the Feature. A bare `{}` gives the **project layer**
+  (the repo's own `.devcontainer/shell/`), which is the layer most consumers
+  want. A second layer of _personal host_ scripts needs a read-only bind the
+  Feature cannot declare, so the consumer declares it and passes `userDir` —
+  devc writes those lines for its own containers, and the README gives everyone
+  else the same two lines pointing at a path of their choosing.
+  The Feature's copy keeps the `devc:shell-dirs` markers and the two
+  `*_SHELL_DIR` assignment names so `devc/tests/shell_dirs_test.sh` runs against
+  it **unmodified** — that is what stops the two copies drifting. Carries a real
+  ordering finding: Features install after the Dockerfile, so a Feature's
+  `~/.bashrc` block lands _after_ devc's `DEVC_ATTACH` `PROMPT_COMMAND` snapshot,
+  which the swap plan has to deal with.
+- [feature-git-config](feature-git-config.md) — LFS filters,
+  `worktree.useRelativePaths` and `safe.directory` are pure container scope and
+  become the Feature — three of the four settings, working from a bare `{}`. The
+  fourth, your **identity**, is the one thing here a container genuinely cannot
+  invent: `user.name`/`user.email` live on the host. A Feature can neither read
+  nor mount them, but a consumer's `initializeCommand` + read-only bind can, so
+  the README ships that recipe with the devc paths taken out. The seam is a dumb
+  `identityIncludePath` option the Feature never parses.
+- [feature-claude-config](feature-claude-config.md) — the largest split, and the
+  only plan with a question that **must be measured before it can be finished**:
+  whether `${localWorkspaceFolderBasename}` substitutes inside Feature `mounts`.
+  If it does, the two per-workspace volumes move into the Feature; if it does
+  not, declaring them would give every project **one shared** Claude auth/history
+  volume — worse than declaring nothing. `${localEnv:HOME}` is measured working,
+  but that is a different variable class, so the plan says measure it rather than
+  reason about it. The `devc:seed-link` block is copied verbatim so
+  `devc/tests/seed_link_test.sh` runs against the Feature unchanged.
+
+### Completed
+
+- [feature-independent-versions](archived/feature-independent-versions.md) — **Reversed a
+  stated decision**, `design/devc-feature-split.md`'s "One repo, one tag" (now
+  struck through there, with a pointer here): every Feature republished at the
+  repo's version on every `v*` tag. The
   decision that was borrowed from ([release-and-installer](archived/release-and-installer.md)
   decision 8) is about the **installer** resolving one version across the eight
   tarballs it fetches, and it never mentions Features — nothing in the repo
@@ -82,40 +117,37 @@ the three has already been updated to say so.
   The cost is recorded, not hidden — every run also pushes a
   `devcontainer-collection.json` describing only what that run packaged, which
   nothing here reads. Explicitly **not** adopted from
-  `devcontainers/feature-starter`: `generate-docs` and its documentation PR.
-- [feature-shell-dirs](feature-shell-dirs.md) — the sourcing **mechanism** for
-  `*.sh` directories becomes the Feature. A bare `{}` gives the **project layer**
-  (the repo's own `.devcontainer/shell/`), which is the layer most consumers
-  want. A second layer of _personal host_ scripts needs a read-only bind the
-  Feature cannot declare, so the consumer declares it and passes `userDir` —
-  devc writes those lines for its own containers, and the README gives everyone
-  else the same two lines pointing at a path of their choosing.
-  The Feature's copy keeps the `devc:shell-dirs` markers and the two
-  `*_SHELL_DIR` assignment names so `devc/tests/shell_dirs_test.sh` runs against
-  it **unmodified** — that is what stops the two copies drifting. Carries a real
-  ordering finding: Features install after the Dockerfile, so a Feature's
-  `~/.bashrc` block lands _after_ devc's `DEVC_ATTACH` `PROMPT_COMMAND` snapshot,
-  which the swap plan has to deal with.
-- [feature-git-config](feature-git-config.md) — LFS filters,
-  `worktree.useRelativePaths` and `safe.directory` are pure container scope and
-  become the Feature — three of the four settings, working from a bare `{}`. The
-  fourth, your **identity**, is the one thing here a container genuinely cannot
-  invent: `user.name`/`user.email` live on the host. A Feature can neither read
-  nor mount them, but a consumer's `initializeCommand` + read-only bind can, so
-  the README ships that recipe with the devc paths taken out. The seam is a dumb
-  `identityIncludePath` option the Feature never parses.
-- [feature-claude-config](feature-claude-config.md) — the largest split, and the
-  only plan with a question that **must be measured before it can be finished**:
-  whether `${localWorkspaceFolderBasename}` substitutes inside Feature `mounts`.
-  If it does, the two per-workspace volumes move into the Feature; if it does
-  not, declaring them would give every project **one shared** Claude auth/history
-  volume — worse than declaring nothing. `${localEnv:HOME}` is measured working,
-  but that is a different variable class, so the plan says measure it rather than
-  reason about it. The `devc:seed-link` block is copied verbatim so
-  `devc/tests/seed_link_test.sh` runs against the Feature unchanged.
-
-### Completed
-
+  `devcontainers/feature-starter`: `generate-docs` and its documentation PR — its
+  table would be generated from the manifest `description` paragraphs and read
+  worse than the hand-written ones, and it commits docs _after_ publishing, so
+  the README in the published artifact would sit permanently one release behind.
+  Verified here: `tests/features_test.sh` (8 checks on this tree, plus a
+  synthesized collection covering an empty glob, an `id`/directory mismatch, a
+  non-semver `version` and a missing `name` — **all three offenders reported in
+  one run**, not just the first), `tests/workflow_guards_test.sh` (5 checks, and
+  confirmed to fail when the `Publish` gate is edited down to the ref alone), the
+  installer harness (ALL PASS), `install_download_test.sh` against the renamed
+  constant, both other Feature harnesses, and `deno fmt --check` (122 files). The
+  workflow was parsed as real YAML and its `Discover Features` step **executed**
+  against this tree, emitting `["devc-bridge","node-nvmrc"]`; a throwaway
+  `features/zz-throwaway/` appeared in both the matrix and the guard with no edit
+  to either, which is the walk-don't-enumerate property. Both Features were
+  packaged **individually** — the CLI logs `Packaging single feature...` — which
+  is the single-Feature mode the per-Feature matrix rests on, and the resulting
+  `devcontainer-collection.json` listed only `["node-nvmrc"]`, confirming the
+  recorded cost rather than assuming it. **The decoupling itself is pinned by a
+  test:** with a `gh` stub reporting _every_ release missing,
+  `--feature node-nvmrc --check-release-pins` passes while `--feature devc-bridge`
+  fails naming `v0.1.0` — a Feature that fetches nothing cannot be blocked by one
+  that does.
+  **Not verified here (no Actions):** the workflow has never run. Two things need
+  a real dispatch, both in `docs/manual-verification.md` §1 and §3 — a dry run
+  from `main` showing `node-nvmrc`'s matrix job green beside `devc-bridge`'s
+  failing pin guard with `fail-fast: false` holding, and a real publish of
+  `node-nvmrc` **with no devc release tagged**, followed by a no-change re-run
+  that must print `Version 0.1.0 already exists, skipping` and push nothing.
+  Until a stable `v0.1.0` exists, `devc-bridge`'s job is expected to be red; that
+  is the pin guard working, and it no longer holds `node-nvmrc` back.
 - [feature-node-nvmrc](archived/feature-node-nvmrc.md) — Publish
   `ghcr.io/bmingles/devc-tools/node-nvmrc`: the Node version a workspace pins in
   `.nvmrc`, installed at create time and selected in every interactive shell,
@@ -668,7 +700,7 @@ the three has already been updated to say so.
 | releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](archived/release-and-installer.md)                 | complete |
 | `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](archived/features-collection.md)                     | complete |
 | `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](archived/feature-node-nvmrc.md)                       | complete |
-| Features version independently — unpin the collection from the repo tag                  | [feature-independent-versions](feature-independent-versions.md)            | pending  |
+| Features version independently — unpin the collection from the repo tag                  | [feature-independent-versions](archived/feature-independent-versions.md)   | complete |
 | `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](feature-shell-dirs.md)                                | pending  |
 | `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                | pending  |
 | `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                          | pending  |

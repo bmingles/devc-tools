@@ -218,7 +218,7 @@ does not publish, and the run says so.
 
 ```sh
 # The devc-tools release this Feature downloads its client from. NOT this Feature's own
-# version — the two are independent (see .plans/feature-independent-versions.md). Pinned
+# version — the two are independent (see .plans/archived/feature-independent-versions.md). Pinned
 # deliberately: bumping it is a Feature change, and ships a client that has been tested
 # with this install.sh. Duplicated from nothing — the manifest is JSON and no `jq` is
 # guaranteed in an arbitrary base image.

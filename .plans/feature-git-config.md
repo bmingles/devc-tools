@@ -43,7 +43,7 @@ where the file landed.
 {
   "id": "git-container-config",
   // Its own version, independent of the repo tag and of the other Features —
-  // see .plans/feature-independent-versions.md.
+  // see .plans/archived/feature-independent-versions.md.
   "version": "0.1.0",
   "name": "Git container config",
   "options": {

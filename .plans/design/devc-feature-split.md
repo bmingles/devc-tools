@@ -156,7 +156,7 @@ reaches full parity by pasting two lines. Not by installing devc.
   collection and its version guard demands tag == every Feature's `version`, the
   same rule the binaries follow. New Features join at the repo's current
   version.~~ **Superseded by
-  [feature-independent-versions](../feature-independent-versions.md).** The
+  [feature-independent-versions](../archived/feature-independent-versions.md).** The
   decision this borrowed from ([release-and-installer](../archived/release-and-installer.md)
   decision 8) is about the **installer** resolving one version across the eight
   tarballs it fetches; Features are pulled from ghcr by a consumer's
