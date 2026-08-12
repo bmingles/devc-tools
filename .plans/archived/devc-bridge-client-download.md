@@ -7,11 +7,11 @@ behavior**. Today both guarantees it offers rest on `readonly` surviving into
 `docker run --mount`, which the published Feature schema cannot express and the
 CLI honors only as an accident of string passthrough.
 
-| What                        | Today                                | After                                                    |
-| --------------------------- | ------------------------------------ | -------------------------------------------------------- |
-| Client binary               | read-only bind mount, string form    | **downloaded at image build time** — no mount            |
-| Token                       | read-only bind mount, string form    | mount declared by the **consumer's `devcontainer.json`** |
-| `devcontainer-feature.json` | two off-schema string mounts         | **no `mounts` key at all**                               |
+| What                        | Today                             | After                                                    |
+| --------------------------- | --------------------------------- | -------------------------------------------------------- |
+| Client binary               | read-only bind mount, string form | **downloaded at image build time** — no mount            |
+| Token                       | read-only bind mount, string form | mount declared by the **consumer's `devcontainer.json`** |
+| `devcontainer-feature.json` | two off-schema string mounts      | **no `mounts` key at all**                               |
 
 The Feature ends up doing one thing — install the client — and declaring nothing
 the spec does not sanction. The single mount the arrangement still needs moves to
@@ -23,7 +23,7 @@ The Feature declares its mounts as JSON **strings** because
 `generateMountCommand` passes a string to Docker verbatim but rebuilds an object
 from scratch as `type=,src=,dst=`, dropping every other field. The published
 Feature `Mount` schema has `additionalProperties: false` and no `readonly`, so
-the supported form *cannot* carry it. The string form works, is off-schema, and
+the supported form _cannot_ carry it. The string form works, is off-schema, and
 is load-bearing for security — a combination with no good failure mode: a future
 CLI that normalizes string mounts would silently make both mounts writable.
 
@@ -35,7 +35,7 @@ Two independent moves remove the dependency rather than defending it:
   one container rewriting a binary every other container executes — stops
   existing rather than being blocked.
 - The **token** must cross at runtime, so it stays a mount. But nothing requires
-  the *Feature* to declare it. In `devcontainer.json` the string form is in the
+  the _Feature_ to declare it. In `devcontainer.json` the string form is in the
   schema and `readonly` is real, so the consumer declares it and gets a
   guarantee the spec actually makes.
 
@@ -55,8 +55,8 @@ devcontainer.
    `type=…,src=…,dst=…`. No object form keeps `readonly`.
 
 2. **`devcontainer.json` is different, and says so.** `devContainer.base.schema.json`
-   types `mounts` as `anyOf: [Mount, string]` and describes it as *"See Docker's
-   documentation for the --mount option for the supported syntax."* The string
+   types `mounts` as `anyOf: [Mount, string]` and describes it as _"See Docker's
+   documentation for the --mount option for the supported syntax."_ The string
    form is not tolerated there, it is specified, and it is specified to be
    Docker's syntax — which is what makes `readonly` a promise rather than an
    accident. This is the whole basis for the plan.
@@ -98,23 +98,49 @@ devcontainer.
 
 9. **Feature-declared mounts collide with consumer-declared ones.**
    `devc/default/devcontainer.json:61-63` records it: declaring the bridge mounts
-   there *as well* fails the create with Docker's `Duplicate mount point`. So
+   there _as well_ fails the create with Docker's `Duplicate mount point`. So
    today a consumer who wants to adjust the mount cannot — the Feature owns it and
    any attempt to override is a hard failure. Moving it out removes the footgun.
 
-10. **`${localEnv:HOME}` in Feature mounts is the same substitution pass** as
+10. **devc's baseline cannot carry the mount, and its overlay cannot either.**
+    Found while implementing, and the reason decision 6 was revised.
+
+    `0d46b51` ("devc: stop creating devc-bridge directories on every host")
+    deleted the `mkdir -p ~/.config/devc-bridge/{run,client}` from
+    `initialize-command.sh` on purpose: _"A host that never uses the bridge should
+    not carry directories for it… a devc project and a non-devc project now have
+    exactly the same prerequisite."_ An unconditional mount in the bundled default
+    would therefore make **every** devc create fail on a bridge-less host —
+    `--mount type=bind` errors on a missing source, and `default/devcontainer.json`
+    is copied verbatim into projects with no filtering by source existence.
+    `devc/tests/default_config_test.ts:336` pins that invariant and **must keep
+    passing unchanged**; do not re-propose relaxing it or restoring the mkdir.
+
+    The devc.json overlay is not the escape hatch either: overlay mounts become
+    `devcontainer up --mount` args, and `MOUNT_SPEC_RE` (`devc/overlay.ts:50-68`,
+    `devc/README.md:222-228`) rejects `readonly` for the same re-serialization
+    reason that rules out Feature mounts. A `devcontainer.json` `mounts` array is
+    the only place a read-only bind can be expressed at all.
+
+    What remains is the config devc _materializes_ for zero-config mode
+    (`default_config.ts:117` picks the mode, `:252` writes the file) — devc's own
+    artifact, and the one surface it may write to. devc has deliberately no code
+    path that writes into a project's `.devcontainer/` (`wizard_apply.ts:8-13`);
+    that stays true.
+
+11. **`${localEnv:HOME}` in Feature mounts is the same substitution pass** as
     `devcontainer.json` (`imageMetadata.ts:310` → `variableSubstitution.ts:97`).
     Undocumented for Features, documented for `devcontainer.json` — and after this
     plan the Feature has no mounts, so the question is moot.
 
-11. **The client is already a release asset.** `release.yml:228` publishes
+12. **The client is already a release asset.** `release.yml:228` publishes
     `devc-bridge-client-$VERSION-{x86_64,aarch64}-unknown-linux-gnu.tar.gz`, and
     `install.sh:277` already fetches and checksum-verifies exactly that name.
 
-12. **Arch detection inside the container is the easy direction.** `uname -m` in
+13. **Arch detection inside the container is the easy direction.** `uname -m` in
     the build is the image's own architecture, which is what the client must
     match. Contrast `install.sh:65-93`, where `CLIENT_TRIPLE` must be derived from
-    the *host* and is flagged as the easy thing to get backwards.
+    the _host_ and is flagged as the easy thing to get backwards.
 
 ## Decisions
 
@@ -148,15 +174,37 @@ devcontainer.
    post-create step before the Feature existed, and the line is now
    security-relevant text the consumer should see rather than inherit invisibly.
 
-6. **devc carries the mount in its bundled `devcontainer.json`,** so devc users
-   still wire up nothing. It rejoins the three readonly string mounts already
-   there (`claude-seed`, `gitconfig-identity`, `shell`) rather than inventing a
-   pattern. Drop `consistency=cached` while moving it — `devc/README.md:237`
-   already records it as an osxfs-era no-op.
+6. **devc injects the mount into the config it _materializes_, when and only when
+   the Feature is opted into.** (Revised during implementation — the original
+   decision said devc's _bundled default_ carries it, which cannot work; see
+   finding 13.)
+
+   The bundled default stays bridge-free, so a devc container still comes up on a
+   host that never installed the bridge, and `initialize-command.sh` still creates
+   no bridge directories. In **zero-config** mode devc materializes its own
+   `devcontainer.json` into `~/.cache/devc/default`; that file is devc's artifact,
+   so injecting there touches neither the bundled default nor a project's config.
+   In **project mode** devc uses the project's own `devcontainer.json` and must not
+   write to it — those users declare the mount themselves, exactly like a non-devc
+   project. That asymmetry is the one wrinkle in "a devc project and a non-devc
+   project have the same prerequisite", and it is documented in `devc/README.md`.
+
+   Injection fires on the resolved overlay's `additionalFeatures` containing the
+   Feature id, tag ignored, matched on the last path segment — so `:0`, `:1`, a
+   pinned `:0.1.0`, a bare id and a local `./features/devc-bridge` all count. A
+   Feature named `devc-bridge` from any registry counts too: it needs the same
+   token mount whoever published it, and guessing otherwise would silently
+   withhold it.
+
+   This _is_ a devc-only shortcut, of the kind `0d46b51` set out to remove, so it
+   has to earn itself: it is materialization-time only (no host-side side
+   effects, nothing created on disk outside devc's own cache), opt-in only, and
+   unavoidable — `readonly` cannot survive any other route (findings 1 and 13),
+   and without it a container can pin the host's token.
 
 7. **The host regenerates the token on every `start` instead of adopting it.**
    Kept even though `readonly` is back, because it closes the pinning bug that
-   exists *today* (finding 6) and because the security must not depend on every
+   exists _today_ (finding 6) and because the security must not depend on every
    consumer remembering `readonly` — compose consumers cannot have it at all
    (finding 5). Safe because of finding 7.
 
@@ -174,8 +222,8 @@ devcontainer.
    write-triggers-itself hazard. Recorded here so it is not re-proposed.
 
 10. **A forgotten mount fails at runtime, not at build.** The client already says
-    it well (`client/devc-bridge.ts:88-90`: *"is the host server running and the
-    run dir bind-mounted?"*). Do not add a build-time probe: the mount does not
+    it well (`client/devc-bridge.ts:88-90`: _"is the host server running and the
+    run dir bind-mounted?"_). Do not add a build-time probe: the mount does not
     exist at build time, so a Feature check could only guess. Document the
     expected failure instead.
 
@@ -252,17 +300,43 @@ its account of where the client comes from.
 
 ### `devc/default/devcontainer.json`
 
-Add to `mounts`, replacing the "no devc-bridge mounts here, by design" comment at
-`:61-63` with the opposite rationale — it lives here because a Feature cannot
-express `readonly`:
+Still declares **no** bridge mount — `default_config_test.ts:336` keeps passing.
+Replace the "no devc-bridge mounts here, by design" comment at `:61-63` with why
+the baseline carries nothing and where the mount comes from instead, ending in the
+insertion anchor (keep it the _last_ line of the block, or the injected mount
+splits the comment):
 
 ```jsonc
-// devc-bridge shared-secret token. Read-only: a writable run/ lets a container pin the
-// host's token and hands the host a symlink to write through. A Feature cannot declare
-// this — its schema has no `readonly` — so it belongs here, next to the other read-only
-// binds.
-"type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly",
+// … why the baseline is bridge-free, and why the overlay cannot carry it …
+// The marker below is the insertion anchor. Keep it last in this block.
+// devc:bridge-mount
 ```
+
+### `devc/default_config.ts`
+
+Two additions:
+
+- `declaresBridgeFeature(additionalFeatures: Record<string, unknown>): boolean` —
+  exported. Strips an OCI tag (a trailing `:…` with no `/` after it) and compares
+  the last `/` segment to `devc-bridge`.
+- `materializeDefaultConfig(cacheDir?, templatesDir?, opts?: { bridge?: boolean })`
+  — a third positional argument, defaulting to no injection, applied _after_ the
+  template overlay like the existing path rewrites. Injection inserts the mount
+  string after the `// devc:bridge-mount` anchor line, matching its indentation.
+
+  Text insertion, not parse-and-serialize: the config is JSONC and its comments
+  are worth keeping. Two guards: skip entirely if the text already contains
+  `target=/run/devc-bridge` (a user template that declared it wins — two mounts on
+  one target is Docker's `Duplicate mount point`), and if the anchor is missing
+  (only reachable when a template replaced `devcontainer.json` wholesale) warn to
+  stderr with the exact line to add rather than failing or silently skipping.
+
+### `devc/container.ts`
+
+Load the overlay **before** materializing, and pass
+`{ bridge: declaresBridgeFeature(overlay.additionalFeatures) }`. Project mode
+(`ownConfig !== null`) never materializes, so it never injects — which is the
+requirement, not an accident.
 
 ### `devc-bridge/host/token.ts`
 
@@ -293,18 +367,20 @@ guarantee, which makes the move load-bearing — say so.
 
 ### `devc/default/initialize-command.sh`
 
-Drop the client placeholder block and the `client/` mkdir — nothing mounts that
-directory any more. **Keep** the `run/` mkdir: devc's own mount needs it, and it
-is what makes devc containers build on a host that never installed the bridge.
+**Unchanged.** The plan originally said to keep a `run/` mkdir here; there is
+none to keep — `0d46b51` removed it deliberately (finding 13) and it stays
+removed. devc creates no bridge directories in either mode, so a devc project and
+a non-devc project keep exactly the same host prerequisite.
 
 ### Tests
 
 - `devc/tests/default_config_test.ts` — the assertion at `:363` currently reads
-  the Feature's mounts. Retarget it at `devc/default/devcontainer.json`: the
-  `run/` bind is present, is a string, and carries `readonly`. That guarantee is
-  now *devc's*, and it is exactly the kind of thing that gets "cleaned up" by
-  someone normalizing mounts to objects. Add the negative: the Feature file
-  declares no `mounts` key at all.
+  the Feature's mounts; invert it to "the Feature declares no `mounts` key". Leave
+  `:336` (the baseline carries no bridge mount) **untouched and passing**. Add, for
+  the injection: id matching across tag spellings and a local path, the mount
+  present only when opted in (and absent by default), that it is a _string_
+  carrying `readonly`, that surrounding comments and other mounts survive, and
+  that an already-declared mount is not doubled.
 - `devc-bridge/host/tests/` — `resetToken` replaces rather than adopts; **a
   symlinked token path is replaced and the symlink's target is left untouched**
   (the regression test for decision 8).
@@ -326,8 +402,9 @@ is what makes devc containers build on a host that never installed the bridge.
 - `devc-bridge/README.md` — the architecture diagram shows the client arriving by
   mount; it now arrives with the image. `host/config.ts:46`'s compose/`readonly`
   comment goes.
-- `devc/README.md` — the bridge client mount description; the new `run/` mount
-  joins the documented list of read-only binds.
+- `devc/README.md` — the bridge client mount description, plus a table of which
+  mode declares the token mount and the project-mode snippet. The asymmetry is
+  the one wrinkle in "same prerequisite", so name it rather than bury it.
 - Root `README.md` / `docs/` — check the setup narrative still reads correctly now
   that `devc-bridge start` is not what puts a client where containers can see it.
 
@@ -337,8 +414,8 @@ is what makes devc containers build on a host that never installed the bridge.
       `clientVersion` option added
 - [x] `features/devc-bridge/install.sh` — versioned, arch-matched,
       checksum-verified download ahead of the unchanged symlink block
-- [x] `devc/default/devcontainer.json` — readonly `run/` string mount, comment
-      inverted
+- [x] `devc/default/devcontainer.json` — bridge-free, plus the `devc:bridge-mount`
+      insertion anchor and why the baseline carries nothing
 - [x] `devc-bridge/host/token.ts` — `ensureToken` → `resetToken`, always
       regenerate, symlink-safe temp+`rename` write
 - [x] `devc-bridge/host/main.ts` — rename call site; `clientStatus` re-scoped
@@ -349,62 +426,53 @@ is what makes devc containers build on a host that never installed the bridge.
 - [x] `features/devc-bridge/test/` — client ownership/version; offline
       checksum-mismatch case
 - [x] `features/devc-bridge/README.md`, `devc-bridge/README.md` — re-scoped
-- [ ] **BLOCKED** `devc/default/devcontainer.json` — the token mount for devc
-      users (decision 6). See "Blocked: who declares devc's token mount" below.
-- [ ] BLOCKED `devc/default/initialize-command.sh` — depends on the above
-- [ ] BLOCKED `devc/README.md`, root `README.md` — the devc wiring story depends
-      on the above
-- [ ] `.plans/PLAN.md` — move to Completed, plan doc to `archived/`
+- [x] `devc/default_config.ts` — `declaresBridgeFeature` + materialization-time
+      injection of the readonly token mount
+- [x] `devc/container.ts` — overlay loaded before materialization; project mode
+      passes no injection
+- [x] `devc/tests/default_config_test.ts` — id matching by tag/path, injected only
+      when opted in, string + `readonly`, comments intact, no double-mount
+- [x] `devc/default/initialize-command.sh` — **unchanged on purpose**: `0d46b51`
+      stands, devc creates no bridge directories
+- [x] `devc/README.md`, root `README.md` — the wiring story for both modes
+- [x] `.plans/PLAN.md` — move to Completed, plan doc to `archived/`
 
-## Blocked: who declares devc's token mount
+## Resolved: who declares devc's token mount
 
-**Decision 6 cannot be implemented as written.** It says devc carries the mount
-in its bundled `devcontainer.json` "so devc users still wire up nothing", and
-implementation item `initialize-command.sh` says to **keep** the `run/` mkdir
-that makes a devc container build on a bridge-less host. That mkdir does not
-exist: commit `0d46b51` ("devc: stop creating devc-bridge directories on every
-host") deleted it three commits before this plan was written, deliberately —
-*"A host that never uses the bridge should not carry directories for it… This
-also removes the last devc-only shortcut around the Feature — a devc project and
-a non-devc project now have exactly the same prerequisite."*
+The plan originally said devc's _bundled default_ carries the mount (decision 6 as
+written). That is not implementable — see finding 13 — and the discovery stopped
+implementation for a call. The resolution, now folded into decision 6:
 
-Adding the mount without the mkdir makes **every devc container fail to create**
-on a host that never ran `devc-bridge start` (`--mount type=bind` errors on a
-missing source, and `devc/default/devcontainer.json` is copied verbatim into
-projects — mounts are not filtered by source existence). Three places encode the
-opposite invariant: that commit, the `:61-63` comment in the file itself, and
-`devc/tests/default_config_test.ts:335`, whose stated rationale is *"a devc
-container must come up on a host that never installed the bridge."*
+**devc injects the mount into the `devcontainer.json` it materializes, when and
+only when the devc-bridge Feature is opted into.** Zero-config users wire up
+nothing; project-mode users declare the mount themselves, like any non-devc
+project; the bundled default and `initialize-command.sh` are untouched, so
+`0d46b51` stands and `default_config_test.ts:336` passes unchanged.
 
-The devc.json overlay is **not** an escape hatch: `MOUNT_SPEC_RE`
-(`devc/overlay.ts:50-68`) rejects `readonly` for the same CLI re-serialization
-reason that rules out Feature mounts. A read-only mount can only live in a
-`devcontainer.json` `mounts` array.
+Two options were rejected:
 
-So it is one of these, and it is a product call:
-
-- **(A) devc baseline carries the mount, and `initialize-command.sh` re-creates
-  `~/.config/devc-bridge/run`.** devc keeps zero-config for the bridge. Reverses
-  `0d46b51`'s stated goal and re-creates a directory on hosts that never use the
-  bridge. Also requires relaxing `default_config_test.ts:335`.
-- **(B) devc does not carry it; every project declares the mount itself.**
-  Honors `0d46b51` and leaves both tests untouched — but devc **zero-config**
-  users have no `devcontainer.json` to put it in (devc materializes one into a
-  cache), so this may not be workable for them without a new mechanism.
-
-(A) looks right on those grounds, but reversing a deliberate three-commit-old
-decision is the user's call, not the implementer's.
+- **devc baseline carries the mount + re-add the `run/` mkdir.** Reverses
+  `0d46b51`'s stated goal, re-creates directories on hosts that never use the
+  bridge, and needs a tested invariant relaxed.
+- **Every project declares its own mount.** Honors `0d46b51`, but devc
+  zero-config users have no `devcontainer.json` to put it in — devc materializes
+  one into a cache — so it is not workable for them without new mechanism.
 
 ## Validation
 
-- [ ] `deno task check` / `test` / `fmt --check` clean across `devc/` and
-      `devc-bridge/host/`
-- [ ] `devcontainer-feature.json` validates against the **published Feature
-      schema** with no warnings, and `devc/default/devcontainer.json` against the
-      base schema — the point of the exercise, so assert it rather than eyeball it
-- [ ] Feature `install.sh` harness passes offline against a `file://` fixture:
-      right asset per stubbed `uname -m`, checksum mismatch aborts with nothing
-      installed, symlink resolves
+- [x] `deno task check` / `test` / `fmt --check` clean across `devc/` (274
+      passed) and `devc-bridge/host/` (16 passed), plus `devc-bridge/client/`
+- [x] `devcontainer-feature.json` validates against the **published Feature
+      schema** with no errors — and the _old_ manifest is rejected by the same
+      check (`'type=bind,…' is not of type 'object'`), so the assertion has teeth
+- [x] Feature `install.sh` harnesses pass offline against a `file://` fixture:
+      right asset per stubbed `uname -m`, checksum mismatch / missing asset /
+      missing checksums entry / unsupported arch all abort with nothing installed,
+      symlink resolves, `clientVersion` override reaches the URL
+- [x] `devc/tests/default_config_test.ts:336` — the bundled default still declares
+      nothing about the bridge — passes **unchanged**
+- [x] The materialized config gains the mount only when opted in, as a string
+      carrying `readonly`, with comments and sibling mounts intact
 - [ ] (user, needs Docker) `devcontainer features test` passes: client present,
       executable, correct version
 - [ ] (user, needs Docker) a **non-devc** project with the Feature line **and**
@@ -412,9 +480,14 @@ decision is the user's call, not the implementer's.
 - [ ] (user, needs Docker) the same project **without** the mount line: creation
       succeeds, and `devc-bridge ping` fails with the client's bind-mount message.
       This is the ergonomic cost of the plan, so confirm it reads well
-- [ ] (user, needs Docker) a devc project: works with no wiring, and
-      `touch /run/devc-bridge/x` fails with `Read-only file system` — devc's
-      `readonly` is real
+- [ ] (user, needs Docker) a **zero-config devc** project that opts in via
+      `devc.json`: works with no mount wiring, and `touch /run/devc-bridge/x`
+      fails with `Read-only file system` — the injected `readonly` is real
+- [ ] (user, needs Docker) a **zero-config devc** project that does _not_ opt in,
+      on a host with no `~/.config/devc-bridge/`: still creates fine. The
+      invariant `0d46b51` protects, and the one this plan most risks breaking
+- [ ] (user, needs Docker) a **project-mode devc** project: no mount is injected,
+      and adding it by hand to the project's own `devcontainer.json` works
 - [ ] (user, needs Docker) restart the host bridge after a container has written
       the token file — the new token is **not** the container's value
 - [ ] (user) with a deliberately **writable** token mount, replace

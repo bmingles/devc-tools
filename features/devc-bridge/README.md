@@ -30,7 +30,7 @@ above.
 does as soon as you have run `devc-bridge start` once — see
 [devc-bridge Setup](../../devc-bridge/README.md#setup-macos-host).
 
-If it does not, container creation **fails** on *your* mount with a Docker error
+If it does not, container creation **fails** on _your_ mount with a Docker error
 like:
 
 ```
@@ -42,6 +42,10 @@ bind source path does not exist: /Users/you/.config/devc-bridge/run
 nothing in the container can fix that: a Feature's five lifecycle hooks all run
 _inside_ the container, and Features cannot declare an `initializeCommand`, the
 one hook that runs on the host.
+
+devc projects have the same prerequisite — devc creates no bridge directories
+either. What devc does do is write the mount line for you, in zero-config mode
+only; see [devc and the bridge](../../devc/README.md#the-token-mount-and-the-one-place-devc-does-something-for-you).
 
 **If you omit the mount line entirely,** the container builds fine and
 `devc-bridge` is on PATH, but the first call fails with:
@@ -67,12 +71,12 @@ Deliberate details:
 
 - **The client is a root-owned file in an image layer, not a shared host file.**
   That is what replaced `readonly` on the old client mount: rather than blocking
-  one container from rewriting a binary every *other* container executes, there
+  one container from rewriting a binary every _other_ container executes, there
   is no longer any shared artifact to rewrite.
 - **A failed or unverifiable download fails the build.** Better than a container
   that looks fine until the first `devc-bridge` call.
 - **The install path is unchanged from when it was a mount,** so the developer
-  override still works: bind-mount a locally built client *directory* over
+  override still works: bind-mount a locally built client _directory_ over
   `/usr/local/share/devc-bridge/client` and it shadows the downloaded copy, live.
 
 Smoke test, from inside the container:
@@ -89,14 +93,14 @@ read-only.
 The published Feature schema types `mounts` as objects only, and its `Mount` is
 `additionalProperties: false` over `source`/`target`/`type` — there is no
 `readonly` field. The CLI matches: an object mount is re-serialized as
-`type=…,src=…,dst=…`, dropping everything else. A *string* mount does survive
+`type=…,src=…,dst=…`, dropping everything else. A _string_ mount does survive
 verbatim, which is how this Feature used to do it — but that is off-schema and
 undocumented, so a CLI that ever normalized string mounts would silently make the
 token writable.
 
 `devcontainer.json` is different, and says so: its schema takes
-`anyOf: [Mount, string]` and defers to *"Docker's documentation for the --mount
-option"*. There, `readonly` is specified rather than accidental. So the mount
+`anyOf: [Mount, string]` and defers to _"Docker's documentation for the --mount
+option"_. There, `readonly` is specified rather than accidental. So the mount
 belongs to you, not to the Feature.
 
 Two bonuses: you can adjust the mount without fighting the Feature (a
@@ -122,7 +126,7 @@ between containers that mount it.
 ## Maintainer notes
 
 **Do not add a `mounts` key to `devcontainer-feature.json`.** It would
-reintroduce the off-schema dependency this Feature was rewritten to shed *and*
+reintroduce the off-schema dependency this Feature was rewritten to shed _and_
 collide with the consumer's own mount. `devc/tests/default_config_test.ts`
 asserts the key is absent.
 

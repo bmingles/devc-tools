@@ -495,34 +495,68 @@ Opt in for **every project** (user level, `~/.config/devc/devc.json`) or for
 Project level wins per feature id. A project that does not use devc at all opts
 in with the same reference in its own `devcontainer.json` `features` block.
 
-One mechanism, not two. The Feature owns the two read-only bind mounts
-(`~/.config/devc-bridge/run` → `/run/devc-bridge` for the token,
-`~/.config/devc-bridge/client` → `/usr/local/share/devc-bridge/client` for the
-binary) and the `/usr/local/bin/devc-bridge` symlink; devc's config declares
-none of them. See
-[the Feature's README](../../features/devc-bridge/README.md) for what it does
-and why it does it that way.
+The Feature installs the client: it downloads the arch-matched Linux binary from
+the matching release, verifies it, and symlinks `/usr/local/bin/devc-bridge` at
+it. Nothing is mounted for the client, and nothing is compiled in the container.
+See [the Feature's README](../features/devc-bridge/README.md) for what it does
+and why.
+
+### The token mount, and the one place devc does something for you
+
+The bridge also needs the host's shared-secret token, which does have to cross as
+a bind mount — and it must be **read-only**, or a container can pin the host's
+token for the next restart. That is the whole reason this is not simply another
+`additionalFeatures` line:
+
+- A **Feature** cannot declare it. The Feature schema's `Mount` has no `readonly`
+  field, and the CLI re-serializes object mounts without one.
+- A **devc.json overlay** cannot declare it either. Overlay mounts become
+  `devcontainer up --mount` arguments, whose validation rejects `readonly` — see
+  [Mount specs](#mount-specs-what-an-overlay-mount-can-say) above.
+
+A `devcontainer.json` `mounts` array is the only place a read-only bind can be
+expressed at all. So the two modes differ, and this is the one asymmetry between
+a devc project and a non-devc one:
+
+| Mode                                              | Who declares the token mount                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Zero-config** (no `.devcontainer/` of your own) | **devc**, into the config it materializes into its cache — automatically, when you opt into the Feature |
+| **Project mode** (you have a `devcontainer.json`) | **You**, in your own config — exactly like a non-devc project                                           |
+
+In project mode, add it yourself:
+
+```jsonc
+"mounts": [
+  "type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly"
+]
+```
+
+devc does not write into a project's `.devcontainer/` — not here, not anywhere.
+The zero-config injection touches only devc's own cached artifact, happens only
+when you opted in, and has no host-side side effects; that is what keeps it from
+being the kind of devc-only shortcut the Feature exists to avoid.
 
 **Install the host bridge first.** A Feature cannot create its own mount sources
 — its lifecycle hooks all run inside the container, and `--mount type=bind`
 errors on a missing source — so opting in on a host with no
 `~/.config/devc-bridge/` fails the create with Docker's `bind source path does
 not exist`. Running `devc-bridge start` once seeds that directory. devc does
-**not** pre-create it: a host that never uses the bridge should not carry
-directories for it. This is the same prerequisite a non-devc project has, which
-is the point — one mechanism, no devc-only shortcut.
+**not** pre-create it, in either mode: a host that never uses the bridge should
+not carry directories for it. That prerequisite is identical for devc and
+non-devc projects; only who writes the mount line differs.
 
-**Nothing is compiled in the container.** The client is installed on the host
-into `~/.config/devc-bridge/client/devc-bridge` — see
-[devc-bridge's Setup](../devc-bridge/README.md#setup-macos-host).
-
-**If you already wired the bridge yourself** — a `run` mount in `devc.json`, two
-bridge mounts copied into `devcontainer.json`, or a `devc-post-create.sh` that
+**If you already wired the bridge yourself** — a `run` mount in `devc.json`, a
+client mount copied into `devcontainer.json`, or a `devc-post-create.sh` that
 builds the client — remove it before opting in. Mounts are not deduped across
-those layers, and Docker fails the create with `Duplicate mount point`.
+those layers, and Docker fails the create with `Duplicate mount point`. (A token
+mount already present in a project-mode `devcontainer.json` is the one safe case:
+zero-config injection skips a config that declares the target already.)
 
-Not supported on **Docker Compose** devcontainers: the Feature's mount strings
-land in the generated compose file, where `,readonly` is not compose's syntax.
+On **Docker Compose** devcontainers the CLI drops `readonly` when it rewrites
+mounts into the generated compose file, so the token mount ends up writable
+whichever way it is declared. The bridge is hardened against that — it
+regenerates the token on every start and never writes through a symlink — so this
+is a caveat, not an exclusion.
 
 ## Development
 

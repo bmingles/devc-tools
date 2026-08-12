@@ -11,9 +11,11 @@ curl -fsSL https://github.com/bmingles/devc-tools/releases/latest/download/insta
 
 Installs the prebuilt binaries for your machine into `~/.local/bin` — **no Deno
 needed**, and never `sudo`. On macOS that is `devc` and the `devc-bridge` host
-CLI; on Linux, `devc`. Both get the Linux `devc-bridge` **container client**,
-which lands in `~/.config/devc-bridge/client/` where every devcontainer with the
-[bridge Feature](features/devc-bridge/README.md) mounts it from.
+CLI; on Linux, `devc`. Both also get a copy of the Linux `devc-bridge`
+**container client** in `~/.config/devc-bridge/client/`, which is a _developer
+override_ only — a container with the
+[bridge Feature](features/devc-bridge/README.md) downloads its own client at
+image build time rather than mounting one from the host.
 
 Every archive is checked against the release's own `checksums.txt` before
 anything is written. The script itself is a release asset, so the URL above
@@ -88,9 +90,13 @@ To cut a release:
 
 1. Bump the version in **all four**: `VERSION` in `devc/help.ts`,
    `devc-bridge/host/version.ts` and `devc-bridge/client/version.ts`, plus
-   `"version"` in `features/devc-bridge/devcontainer-feature.json`. The first
-   three are guarded by `release.yml`, the fourth by `publish-feature.yml` —
-   miss it and the binaries publish while the Feature does not. Prereleases are
+   `"version"` in `features/devc-bridge/devcontainer-feature.json` — and
+   `FEATURE_VERSION` in `features/devc-bridge/install.sh`, which must match the
+   Feature's own version because it names the client asset the Feature
+   downloads. The first three are guarded by `release.yml`, the last two by
+   `publish-feature.yml` — miss the Feature version and the binaries publish
+   while the Feature does not; miss `FEATURE_VERSION` and the Feature would
+   install a client from a different release than it claims to be. Prereleases are
    no exception — to tag `v0.1.0-rc.1`, every one of them must be `0.1.0-rc.1`,
    so nothing claims a version its release does not have.
 2. Commit, then `git tag v0.1.0 && git push --tags`.

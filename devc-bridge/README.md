@@ -209,7 +209,7 @@ The mount lives in your `devcontainer.json` because a Feature **cannot** express
 `--mount` syntax. See [its README](../features/devc-bridge/README.md) for the
 full rationale, including the Docker Compose caveat.
 
-[devc](../devc/README.md#devc-bridge-the-feature) projects opt in the same way,
+[devc](../devc/README.md#devc-bridge-the-opt-in-feature) projects opt in the same way,
 with `additionalFeatures` in a devc.json — the bridge is not part of devc's
 baseline, so a devc container comes up on a host that never heard of it. One
 mechanism, not two.
@@ -223,7 +223,7 @@ to build. Run `devc-bridge start` once first.
 **The client is downloaded by the Feature, not built on the fly and not taken
 from the host.** `devc-bridge start` never compiles one, and what sits in
 `~/.config/devc-bridge/client/devc-bridge` no longer reaches any container by
-itself — it is a *developer override*, used only when a project bind-mounts that
+itself — it is a _developer override_, used only when a project bind-mounts that
 directory over `/usr/local/share/devc-bridge/client`. Two paths write to it:
 
 | Path         | How                                                                                 |
@@ -478,7 +478,7 @@ stronger answer than a mount flag and does not depend on undocumented CLI
 behavior.
 
 `run/` still crosses as a mount, because the token is a runtime secret. Declaring
-it `readonly` is worth doing and the docs say so — but the bridge does not *rely*
+it `readonly` is worth doing and the docs say so — but the bridge does not _rely_
 on it, because the consumer owns that mount and Docker Compose drops `readonly`
 regardless. Two host-side properties carry the weight instead:
 
@@ -497,7 +497,7 @@ regardless. Two host-side properties carry the weight instead:
 
 The **pidfile lives in `base/`, not in the mounted `run/`** — `stop` reads it and
 `Deno.kill`s whatever positive integer it finds, so a container able to write it
-could pick the host process that gets SIGTERM. That placement is now the *only*
+could pick the host process that gets SIGTERM. That placement is now the _only_
 thing closing it, rather than a second layer behind `readonly`: never move a file
 the host acts on into `run/`.
 

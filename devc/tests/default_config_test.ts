@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
 import { fromFileUrl } from 'jsr:@std/path@^1';
 import {
+  declaresBridgeFeature,
   ensureClaudeSeedDir,
   findOwnDevcontainerConfig,
   installBundledAssets,
@@ -826,6 +827,171 @@ Deno.test('ensureClaudeSeedDir rejects a dangling symlink at the seed path', asy
       () => ensureClaudeSeedDir(seed),
       Error,
       'is not a directory',
+    );
+  });
+});
+
+// --- the devc-bridge token mount ---------------------------------------------------------
+//
+// devc injects it into the config it *materializes*, and only when a devc.json opts into the
+// Feature. Everything below defends one boundary or the other: the baseline must stay
+// bridge-free (a devc container has to come up on a host that never installed the bridge —
+// `0d46b51` removed the mkdir that used to paper over a missing mount source), and the mount
+// must stay a *string* carrying `readonly`, which is the only reason it lives in a
+// devcontainer.json at all rather than in the devc.json overlay.
+
+Deno.test('declaresBridgeFeature matches the Feature by id, whatever the tag', async (t) => {
+  const yes = [
+    'ghcr.io/bmingles/devc-tools/devc-bridge',
+    'ghcr.io/bmingles/devc-tools/devc-bridge:0',
+    'ghcr.io/bmingles/devc-tools/devc-bridge:1',
+    'ghcr.io/bmingles/devc-tools/devc-bridge:0.1.0',
+    // A local path reference — how this repo consumes its own Feature in development.
+    './features/devc-bridge',
+    '../devc-tools/features/devc-bridge',
+  ];
+  const no = [
+    'ghcr.io/devcontainers/features/node:1',
+    'ghcr.io/bmingles/devc-tools/devc-bridge-client:0', // near-miss, different Feature
+    './features/devc',
+    '',
+  ];
+
+  for (const id of yes) {
+    await t.step(`opts in: ${id || '(empty)'}`, () => {
+      assertEquals(declaresBridgeFeature({ [id]: {} }), true);
+    });
+  }
+  for (const id of no) {
+    await t.step(`does not: ${id || '(empty)'}`, () => {
+      assertEquals(declaresBridgeFeature({ [id]: {} }), false);
+    });
+  }
+
+  assertEquals(declaresBridgeFeature({}), false);
+  // Found among others, not only when it is the sole entry.
+  assertEquals(
+    declaresBridgeFeature({
+      'ghcr.io/devcontainers/features/go:1': {},
+      'ghcr.io/bmingles/devc-tools/devc-bridge:0': {},
+    }),
+    true,
+  );
+});
+
+Deno.test('materializeDefaultConfig injects the bridge mount only when opted in', async () => {
+  await withTempDir(async (cacheDir) => {
+    await materializeDefaultConfig(cacheDir, NO_TEMPLATES, { bridge: true });
+    const withBridge = JSON.parse(
+      stripLineComments(
+        await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
+      ),
+    );
+    const mounts: string[] = withBridge.mounts;
+    const mount = mounts.filter((m) => m.includes('/run/devc-bridge'));
+    assertEquals(mount.length, 1, 'want exactly one bridge mount');
+
+    // A *string*, and read-only. Both halves matter: an object mount cannot express
+    // `readonly` (the CLI re-serializes it as type=/src=/dst=), and without `readonly` a
+    // container can pin the host's token for the next restart. Do not "normalize" this.
+    assertEquals(typeof mount[0], 'string');
+    assertEquals(mount[0].startsWith('type=bind,'), true);
+    assertEquals(mount[0].split(',').includes('readonly'), true);
+    assertEquals(
+      mount[0].includes('source=${localEnv:HOME}/.config/devc-bridge/run'),
+      true,
+    );
+  });
+
+  await withTempDir(async (cacheDir) => {
+    await materializeDefaultConfig(cacheDir, NO_TEMPLATES, { bridge: false });
+    const without = JSON.parse(
+      stripLineComments(
+        await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
+      ),
+    );
+    assertEquals(
+      (without.mounts as string[]).filter((m) =>
+        m.includes('/.config/devc-bridge/')
+      ),
+      [],
+      'no opt-in means no bridge mount',
+    );
+  });
+
+  // The default is off — a caller that forgets the option must not silently mount.
+  await withTempDir(async (cacheDir) => {
+    await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
+    const dc = JSON.parse(
+      stripLineComments(
+        await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
+      ),
+    );
+    assertEquals(
+      (dc.mounts as string[]).filter((m) =>
+        m.includes('/.config/devc-bridge/')
+      ),
+      [],
+    );
+  });
+});
+
+Deno.test('the injected bridge mount leaves the rest of the config intact', async () => {
+  // Text insertion into JSONC: the risk is a broken array or lost comments, neither of which a
+  // parse of the mounts array alone would catch.
+  await withTempDir(async (cacheDir) => {
+    await materializeDefaultConfig(cacheDir, NO_TEMPLATES, { bridge: true });
+    const text = await Deno.readTextFile(`${cacheDir}/devcontainer.json`);
+    const dc = JSON.parse(stripLineComments(text));
+
+    assertEquals(
+      typeof dc.image === 'string' || typeof dc.build === 'object',
+      true,
+    );
+    assertEquals(Array.isArray(dc.mounts), true);
+    // The comments survive — this is JSONC on purpose.
+    assertEquals(text.includes('// devc:bridge-mount'), true);
+    // And the other mounts are still there, unduplicated.
+    const claudeSeed = (dc.mounts as string[]).filter((m) =>
+      m.includes('claude-seed')
+    );
+    assertEquals(claudeSeed.length, 1);
+  });
+});
+
+Deno.test('bridge injection is skipped when the config already declares the mount', async () => {
+  // A user template that wrote the mount itself wins: two mounts on the same target is
+  // Docker's `Duplicate mount point`, a hard create failure.
+  await withTempDir(async (tmp) => {
+    const templates = `${tmp}/templates`;
+    const cacheDir = `${tmp}/cache`;
+    await mkdir(templates);
+    await Deno.writeTextFile(
+      `${templates}/devcontainer.json`,
+      JSON.stringify(
+        {
+          name: 'mine',
+          image: 'ubuntu',
+          mounts: [
+            'type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly',
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    await materializeDefaultConfig(cacheDir, templates, { bridge: true });
+    const dc = JSON.parse(
+      stripLineComments(
+        await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
+      ),
+    );
+    assertEquals(
+      (dc.mounts as string[]).filter((m) => m.includes('/run/devc-bridge'))
+        .length,
+      1,
+      'must not double up on the same mount target',
     );
   });
 });

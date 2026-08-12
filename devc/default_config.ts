@@ -237,12 +237,16 @@ async function overlayDirFrom(
  * These rewrites are why the project-mode config can reference clean in-project paths (so edits
  * apply on recreate) while the hidden zero-config copy still resolves.
  *
+ * With `opts.bridge`, a fifth step injects the devc-bridge token mount — see
+ * {@link injectBridgeMount}. It runs after the overlay for the same reason the rewrites do.
+ *
  * `cacheDir` / `templatesDir` default to the real `~/.cache/devc/default` and
  * {@link TEMPLATES_DIR}, and only need overriding in tests.
  */
 export async function materializeDefaultConfig(
   cacheDir: string = `${homeDir()}/.cache/devc/default`,
   templatesDir: string = TEMPLATES_DIR,
+  opts: { bridge?: boolean } = {},
 ): Promise<string> {
   // Remove any prior copy so files dropped between versions don't linger.
   await Deno.remove(cacheDir, { recursive: true }).catch(() => {});
@@ -260,9 +264,85 @@ export async function materializeDefaultConfig(
       '${containerWorkspaceFolder}/.devcontainer/post-create.sh',
       '/usr/local/share/devc/post-create.sh',
     );
-  if (rewritten !== raw) await Deno.writeTextFile(configPath, rewritten);
+  const final = opts.bridge
+    ? injectBridgeMount(rewritten, configPath)
+    : rewritten;
+  if (final !== raw) await Deno.writeTextFile(configPath, final);
 
   return configPath;
+}
+
+/** The token bind mount the devc-bridge Feature needs, and the anchor it is inserted after. */
+const BRIDGE_MOUNT =
+  'type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly';
+const BRIDGE_MOUNT_ANCHOR = '// devc:bridge-mount';
+/** Enough of the mount to recognize one the user already wrote themselves. */
+const BRIDGE_MOUNT_TARGET = 'target=/run/devc-bridge';
+
+/**
+ * True when `additionalFeatures` opts into the devc-bridge Feature, by any spelling.
+ *
+ * Matched on the id's last path segment with the tag stripped, so `…/devc-bridge`,
+ * `…/devc-bridge:0`, `:1`, a pinned `:0.1.0` and a local `./features/devc-bridge` all count.
+ * A registry other than ghcr.io/bmingles counts too — a Feature *named* devc-bridge needs the
+ * same token mount whoever published it, and guessing otherwise would silently withhold it.
+ */
+export function declaresBridgeFeature(
+  additionalFeatures: Record<string, unknown>,
+): boolean {
+  return Object.keys(additionalFeatures).some((id) => {
+    // Strip an OCI tag, but not a `:` that belongs to a path or a port.
+    const colon = id.lastIndexOf(':');
+    const untagged = colon >= 0 && !id.slice(colon + 1).includes('/')
+      ? id.slice(0, colon)
+      : id;
+    return untagged.replace(/\/+$/, '').split('/').pop() === 'devc-bridge';
+  });
+}
+
+/**
+ * Insert the devc-bridge token mount into the materialized config's `mounts` array.
+ *
+ * Only ever applied to the **cache copy**, and only when a devc.json opted in. The bundled
+ * default stays bridge-free so a devc container still comes up on a host that never installed
+ * the bridge, and devc still never writes into a project's `.devcontainer/` — project-mode users
+ * declare this mount themselves, exactly like a non-devc project.
+ *
+ * A string mount, and `readonly` is why all of this exists: the devc.json overlay cannot carry
+ * it (overlay mounts become `devcontainer up --mount` args, which reject the field and re-serialize
+ * without it — see `MOUNT_SPEC_RE`), and a Feature cannot declare it either (the Feature schema's
+ * `Mount` has no such field). A `mounts` array in a `devcontainer.json` is the only place a
+ * read-only bind can be expressed, which is what makes injecting here the only route rather than
+ * merely the tidiest.
+ *
+ * Text insertion rather than parse-and-serialize, matching the path rewrites above: the config is
+ * JSONC and its comments are worth keeping.
+ */
+function injectBridgeMount(text: string, configPath: string): string {
+  // A user template that already declares it wins — two of the same target is Docker's
+  // `Duplicate mount point`, a hard create failure.
+  if (text.includes(BRIDGE_MOUNT_TARGET)) return text;
+
+  const at = text.indexOf(BRIDGE_MOUNT_ANCHOR);
+  if (at < 0) {
+    // Only reachable when a user template replaced devcontainer.json wholesale. Warn rather
+    // than fail: their config is theirs, but a silently absent mount would surface much later
+    // as an unexplained `cannot read token` from inside the container.
+    console.error(
+      `devc: could not add the devc-bridge token mount to ${configPath} — no ` +
+        `"${BRIDGE_MOUNT_ANCHOR}" anchor in your templates/devcontainer.json. Add this to its ` +
+        `"mounts" array yourself:\n  "${BRIDGE_MOUNT}"`,
+    );
+    return text;
+  }
+
+  const eol = text.indexOf('\n', at);
+  const insertAt = eol < 0 ? text.length : eol + 1;
+  // Match the anchor line's indentation so the result still reads as hand-written JSONC.
+  const indent = /(^|\n)([ \t]*)$/.exec(text.slice(0, at))?.[2] ?? '    ';
+  return text.slice(0, insertAt) +
+    `${indent}"${BRIDGE_MOUNT}",\n` +
+    text.slice(insertAt);
 }
 
 /**

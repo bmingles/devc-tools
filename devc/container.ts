@@ -2,6 +2,7 @@ import { normalizePath as _normalizePath } from './paths.ts';
 import { basenamePosix, dirnamePosix, resolvePosix } from './posix.ts';
 import {
   CLAUDE_SEED_HOST_DIR,
+  declaresBridgeFeature,
   ensureClaudeSeedDir,
   findOwnDevcontainerConfig,
   loadResolvedRemoteEnv,
@@ -560,15 +561,25 @@ export async function startContainer(
 
   const worktree = await isGitWorktree(localFolder);
 
-  // The config `devcontainer up` will actually use. A project's own config is found by the
-  // CLI on its own; only the out-of-tree bundled default needs `--config` to be found at all.
-  const ownConfig = await findOwnDevcontainerConfig(localFolder);
-  const configPath = ownConfig ?? await materializeDefaultConfig();
-
   // The `devc.json` overlay applies in *both* modes — a project with its own config is exactly
   // the case where a dev most often wants a local, gitignored mount. It is translated to CLI
   // args and never written back, so the project's `.devcontainer/` stays standalone.
+  //
+  // Loaded before the config is materialized because zero-config materialization depends on it:
+  // opting into the devc-bridge Feature adds a token mount that only a `devcontainer.json`
+  // `mounts` array can express as read-only.
   const overlay = await loadMergedOverlay(localFolder);
+
+  // The config `devcontainer up` will actually use. A project's own config is found by the
+  // CLI on its own; only the out-of-tree bundled default needs `--config` to be found at all.
+  //
+  // Project mode gets no bridge injection: devc does not write into a project's
+  // `.devcontainer/`. Those users declare the mount themselves, like any non-devc project.
+  const ownConfig = await findOwnDevcontainerConfig(localFolder);
+  const configPath = ownConfig ??
+    await materializeDefaultConfig(undefined, undefined, {
+      bridge: declaresBridgeFeature(overlay.additionalFeatures),
+    });
   // Only pay for the git subprocesses when there is actually something to substitute.
   const containerWorkspaceFolder = isEmptyOverlay(overlay)
     ? ''

@@ -11,31 +11,48 @@
 
 ### Pending
 
-- [devc-bridge-client-download](devc-bridge-client-download.md) — Stop resting
-  the Feature's security on `readonly` surviving into `docker run --mount`, which
-  the published Feature schema cannot express and the CLI honors only as an
-  accident of string passthrough. The client mount goes away entirely — the
-  binary is already a release asset, so the Feature fetches and checksum-verifies
-  it at build time and owns it as a root-owned file in an image layer, which
-  ends the cross-container tamper vector rather than blocking it. The token mount
-  has to stay — it is a runtime secret — but nothing requires the *Feature* to
-  declare it: `devcontainer.json`'s schema takes `anyOf: [Mount, string]` and
-  defers to Docker's `--mount` syntax, so there `readonly` is specified rather
-  than accidental. The consumer declares that one mount (devc carries it in its
-  bundled config, alongside three read-only binds already there), the Feature
-  declares **no mounts at all**, and the last unspecified dependency —
-  `${localEnv:HOME}` inside Feature mounts — goes with it. The host stops adopting
-  whatever is in the token file and regenerates on `start`, so safety does not
-  rest on every consumer remembering `readonly`; because that makes the host a
-  *writer* into a possibly-writable directory, and a container can plant a
-  symlink there, every token write goes through a same-dir temp + `rename`.
-  Host permissions are **not** an alternative: Docker Desktop shares through
-  `fakeowner`, where an unprivileged container user overwrites a `root:root 0400`
-  file, while the `ro` flag stops even root. Lifts the Docker Compose exclusion
-  as a side effect; costs a standalone project one copied mount line.
+_None._ Every plan written so far is implemented and archived. New work starts
+with a new plan here (see the `plan-orchestrating` skill for the conventions).
 
 ### Completed
 
+- [devc-bridge-client-download](archived/devc-bridge-client-download.md) — Stop
+  resting the devc-bridge Feature's security on `readonly` surviving into
+  `docker run --mount`, which the published Feature schema cannot express and the
+  CLI honors only as an accident of string passthrough (`generateMountCommand`
+  passes a string verbatim but rebuilds an object as `type=,src=,dst=`). Verified
+  both ways: the old manifest is **invalid** against the published schema, the new
+  one validates. The client mount goes away entirely — the binary is already a
+  release asset, so the Feature downloads and checksum-verifies it at build time
+  and owns it root-owned in an image layer, which _ends_ the cross-container
+  tamper vector instead of blocking it, and drops the host-bridge prerequisite for
+  the `devcontainer features test`. The token stays a mount, but not the
+  Feature's: `devcontainer.json`'s schema takes `anyOf: [Mount, string]` and defers
+  to Docker's `--mount` syntax, so `readonly` is specified there rather than
+  accidental — and the Feature now declares **no mounts at all**, retiring the last
+  unspecified thing it leaned on (`${localEnv:HOME}` inside a Feature mount).
+  **Who declares that mount for devc was the plan's one real error** and stopped
+  implementation for a call: the plan assumed an `initialize-command.sh` mkdir that
+  `0d46b51` had deliberately deleted, so putting the mount in devc's bundled
+  default would have failed _every_ devc create on a bridge-less host. Resolved a
+  third way — devc injects it into the config it **materializes**, in zero-config
+  mode only, and only when a devc.json opts into the Feature; the bundled default
+  and `initialize-command.sh` stay untouched, so `0d46b51` stands and
+  `default_config_test.ts:336` passes unchanged. Project-mode users declare the
+  mount themselves, like any non-devc project — the one documented asymmetry. The
+  devc.json overlay could never carry it (`MOUNT_SPEC_RE` rejects `readonly` for
+  the same re-serialization reason), which is what makes injection the only route
+  rather than the tidiest. Host-side, `ensureToken` → `resetToken` regenerates
+  instead of adopting, closing the token-pinning escalation; since that makes the
+  host a _writer_ into a possibly-writable directory and a container can plant a
+  symlink there (measured), every token write goes through a same-dir temp +
+  `rename`. Host permissions are **not** an alternative: Docker Desktop shares
+  through `fakeowner`, where an unprivileged container user overwrites a
+  `root:root 0400` file, while the `ro` flag stops even root. Lifts the Docker
+  Compose exclusion to a caveat.
+  **Not verified here (no Docker, no macOS host):** `devcontainer features test`,
+  both devc modes end to end, the compose devcontainer, the live symlink check and
+  the dev-override shadowing — all left unchecked in the plan.
 - [release-and-installer](archived/release-and-installer.md) — Publish prebuilt
   binaries from a tagged GitHub release and install them with one `curl | sh`, so
   nobody needs Deno to _use_ these tools. Covers `devc` (4 targets), the

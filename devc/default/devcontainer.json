@@ -58,9 +58,23 @@
     // new shell. initialize-command.sh creates the source, since a bind mount will not.
     "type=bind,source=${localEnv:HOME}/.config/devc/shell,target=/usr/local/share/devc/shell,consistency=cached,readonly",
 
-    // (No devc-bridge mounts here, by design. They belong to the opt-in devc-bridge Feature;
-    // declaring them here too would fail the create with Docker's `Duplicate mount point`
-    // for anyone who opted in.)
+    // The devc-bridge token mount goes here — and nothing is here in the bundled default, by
+    // design. The baseline must stay bridge-free so a devc container comes up on a host that
+    // never installed the bridge: initialize-command.sh creates no bridge dirs, and a bind
+    // mount with a missing source is a hard create failure, not a warning.
+    //
+    // materializeDefaultConfig() inserts it below, in the *cache copy only*, and only when a
+    // devc.json opts into the devc-bridge Feature. It cannot come from the devc.json overlay
+    // instead: overlay mounts become `devcontainer up --mount` args, which reject `readonly`
+    // and are re-serialized without it (overlay.ts MOUNT_SPEC_RE), and a Feature cannot declare
+    // it either. A devcontainer.json mounts array is the only place a read-only bind can be
+    // expressed at all — which is what makes injecting here the only route, not the tidiest.
+    //
+    // Project mode gets no injection: devc never writes into a project's .devcontainer/. Those
+    // users declare the mount themselves, like any non-devc project.
+    //
+    // The marker below is the insertion anchor. Keep it last in this block.
+    // devc:bridge-mount
 
     "type=volume,source=go-cache-${localWorkspaceFolderBasename},target=/home/vscode/go/pkg",
     "type=volume,source=go-build-cache-${localWorkspaceFolderBasename},target=/root/.cache/go-build",
