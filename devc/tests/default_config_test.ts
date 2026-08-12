@@ -359,6 +359,18 @@ Deno.test('canonical default devcontainer.json does not install devc-bridge', as
     [],
     'devc must not carry bridge mounts of its own',
   );
+
+  // Not even in a comment. This file is what `devc init` copies into a project, and an
+  // insertion anchor (with the paragraph that has to explain it) would leave every scaffolded
+  // repo carrying a marker for an add-on its author may never opt into. The mount is spliced
+  // into the cache copy as the `devc:bridge-mount` fence, which needs nothing here — see
+  // `injectBridgeMount`. Keep the bundled config silent about the bridge; devc/README.md is
+  // where opting in is explained.
+  assertEquals(
+    text.includes('devc-bridge') || text.includes('bridge-mount'),
+    false,
+    'the bundled config must not mention devc-bridge at all, comments included',
+  );
 });
 
 Deno.test('the devc-bridge Feature declares no mounts at all', async () => {
@@ -949,8 +961,11 @@ Deno.test('the injected bridge mount leaves the rest of the config intact', asyn
       true,
     );
     assertEquals(Array.isArray(dc.mounts), true);
-    // The comments survive — this is JSONC on purpose.
-    assertEquals(text.includes('// devc:bridge-mount'), true);
+    // The comments survive — this is JSONC on purpose — and the mount arrives fenced, so the
+    // one config that has it also says who put it there.
+    assertEquals(text.includes('// >>> devc:bridge-mount'), true);
+    assertEquals(text.includes('// <<< devc:bridge-mount'), true);
+    assertEquals(text.includes('// ~/.claude folder'), true);
     // And the other mounts are still there, unduplicated.
     const claudeSeed = (dc.mounts as string[]).filter((m) =>
       m.includes('claude-seed')
@@ -993,5 +1008,31 @@ Deno.test('bridge injection is skipped when the config already declares the moun
       1,
       'must not double up on the same mount target',
     );
+  });
+});
+
+Deno.test('a user template with no mounts array still gets the bridge mount', async () => {
+  // The injection needs no marker in the config it edits — that is what lets the bundled
+  // default (and every project `devc init` scaffolds from it) stay free of bridge references.
+  // A hand-written template that never declared `mounts` gets the array created for it, rather
+  // than the mount being silently dropped for want of an anchor.
+  await withTempDir(async (tmp) => {
+    const templates = `${tmp}/templates`;
+    const cacheDir = `${tmp}/cache`;
+    await mkdir(templates);
+    await Deno.writeTextFile(
+      `${templates}/devcontainer.json`,
+      '{\n  // hand-written\n  "name": "mine",\n  "image": "ubuntu"\n}\n',
+    );
+
+    await materializeDefaultConfig(cacheDir, templates, { bridge: true });
+    const text = await Deno.readTextFile(`${cacheDir}/devcontainer.json`);
+    const dc = JSON.parse(stripLineComments(text));
+    assertEquals(dc.mounts, [
+      'type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly',
+    ]);
+    // Their own file survives intact, comment included.
+    assertEquals(dc.image, 'ubuntu');
+    assertEquals(text.includes('// hand-written'), true);
   });
 });

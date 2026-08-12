@@ -536,6 +536,14 @@ The zero-config injection touches only devc's own cached artifact, happens only
 when you opted in, and has no host-side side effects; that is what keeps it from
 being the kind of devc-only shortcut the Feature exists to avoid.
 
+The injected mount arrives as a `devc:bridge-mount` fence in the cached config,
+spliced into whatever `mounts` array is there (created if there is none). Nothing
+in the bundled `devcontainer.json` marks the spot, on purpose: that file is also
+what `devc init` copies into your project, and a project that never opts into the
+bridge should carry no trace of it. If you keep your own
+`~/.config/devc/templates/devcontainer.json`, it needs no marker either — but a
+token mount you wrote there yourself is left alone, and no fence is added.
+
 **Install the host bridge first.** A Feature cannot create its own mount sources
 — its lifecycle hooks all run inside the container, and `--mount type=bind`
 errors on a missing source — so opting in on a host with no
