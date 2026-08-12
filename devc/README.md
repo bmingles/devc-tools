@@ -588,6 +588,11 @@ bash tests/seed_link_test.sh default/scripts/agents-setup.sh                # de
 bash tests/shell_dirs_test.sh default/scripts/bashrc-additions.sh           # devc:shell-dirs
 bash tests/project_hook_test.sh default/scripts/project-hook.sh             # devc:project-hook
 
+# shell_dirs_test.sh takes the script path so it can run against *both* copies of the
+# devc:shell-dirs block — devc's above, and the shell-dirs Feature's. It must pass unmodified
+# against each; if it needs changes for one of them, the two have drifted:
+bash tests/shell_dirs_test.sh ../features/shell-dirs/install.sh             # devc:shell-dirs
+
 # The bridge's PATH symlink is no longer devc's — it lives in the devc-bridge Feature:
 bash ../features/devc-bridge/test/install_link_test.sh   # devc:bridge-client-link
 

@@ -9,10 +9,11 @@ publish matrix from the collection rather than naming its members, and so does
 
 ## Published Features
 
-| Feature                              | Ref                                       | What it does                                                                    |
-| ------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------- |
-| [devc-bridge](devc-bridge/README.md) | `ghcr.io/bmingles/devc-tools/devc-bridge` | Installs the devc-bridge client so container code can invoke host commands.     |
-| [node-nvmrc](node-nvmrc/README.md)   | `ghcr.io/bmingles/devc-tools/node-nvmrc`  | Installs the Node version a workspace pins in `.nvmrc`, and selects it on `cd`. |
+| Feature                              | Ref                                       | What it does                                                                                        |
+| ------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [devc-bridge](devc-bridge/README.md) | `ghcr.io/bmingles/devc-tools/devc-bridge` | Installs the devc-bridge client so container code can invoke host commands.                         |
+| [node-nvmrc](node-nvmrc/README.md)   | `ghcr.io/bmingles/devc-tools/node-nvmrc`  | Installs the Node version a workspace pins in `.nvmrc`, and selects it on `cd`.                     |
+| [shell-dirs](shell-dirs/README.md)   | `ghcr.io/bmingles/devc-tools/shell-dirs`  | Sources every `*.sh` in a project (and optionally a personal) directory in every interactive shell. |
 
 The tag tracks **each Feature's own** version line: `:0` while that Feature is
 pre-1.0, `:1` at its first 1.x release. It is not the repo's version — see

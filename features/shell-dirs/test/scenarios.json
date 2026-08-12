@@ -1,0 +1,36 @@
+{
+  "project_layer": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "remoteEnv": {
+      "PROJECT_PATH": "${containerWorkspaceFolder}"
+    },
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer/shell && printf 'ORDER=\"$ORDER p10\"\\nexport SHELL_DIRS_MARKER=project\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/10-a.sh && printf 'ORDER=\"$ORDER p20\"\\nalias projalias=true\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/20-b.sh && printf 'ORDER=\"$ORDER nope\"\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/notes.txt",
+    "features": {
+      "shell-dirs": {}
+    }
+  },
+  "both_layers": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "remoteEnv": {
+      "PROJECT_PATH": "${containerWorkspaceFolder}"
+    },
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer/shell /tmp/myshell && printf 'ORDER=\"$ORDER proj\"\\nexport WINNER=project\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/10-a.sh && printf 'ORDER=\"$ORDER user\"\\nexport WINNER=user\\nexport USER_LAYER=1\\n' > /tmp/myshell/10-a.sh",
+    "features": {
+      "shell-dirs": {
+        "userDir": "/tmp/myshell"
+      }
+    }
+  },
+  "no_project_layer": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "remoteEnv": {
+      "PROJECT_PATH": "${containerWorkspaceFolder}"
+    },
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer/shell && printf 'export SHELL_DIRS_MARKER=project\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/10-a.sh",
+    "features": {
+      "shell-dirs": {
+        "projectDir": ""
+      }
+    }
+  }
+}

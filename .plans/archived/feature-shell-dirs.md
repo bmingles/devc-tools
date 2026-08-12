@@ -12,7 +12,7 @@ the repo's own `.devcontainer/shell/`, which is the layer most consumers want.
 
 The optional second layer is _personal, host-machine_ scripts, and it needs a
 bind mount whose source exists — neither of which a Feature can declare (see
-[devc-feature-split](design/devc-feature-split.md)). That mount belongs to the
+[devc-feature-split](../design/devc-feature-split.md)). That mount belongs to the
 **consumer's `devcontainer.json`**, exactly like the devc-bridge token mount:
 any project can write it, this plan's README gives them the two lines, and devc
 is simply a consumer that writes them automatically and points `userDir` at
@@ -172,31 +172,33 @@ it is merely overwritten before the snapshot is taken.
 
 ## Checklist
 
-- [ ] `features/shell-dirs/devcontainer-feature.json` — id/version/name, two
+- [x] `features/shell-dirs/devcontainer-feature.json` — id/version/name, two
       options
-- [ ] `features/shell-dirs/install.sh` — marker-guarded `~/.bashrc` append for
+- [x] `features/shell-dirs/install.sh` — marker-guarded `~/.bashrc` append for
       `$_REMOTE_USER`, option substitution into the two assignments, fence
       markers preserved
-- [ ] `_DEVC_SHELL_DIRS_DONE` skip-guard in the Feature's copy of the block
-- [ ] `features/shell-dirs/README.md` — the two layers, ordering, `PROJECT_PATH`
+- [x] `_DEVC_SHELL_DIRS_DONE` skip-guard in the Feature's copy of the block
+- [x] `features/shell-dirs/README.md` — the two layers, ordering, `PROJECT_PATH`
       prerequisite, the "not inside devc yet" warning, the `PROMPT_COMMAND`
       caveat
-- [ ] `features/shell-dirs/test/test.sh` — `devcontainer features test` scenario
-- [ ] `features/shell-dirs/test/run-features-test.sh` — wrapper
-- [ ] `features/README.md` — row
-- [ ] `devc/README.md` — Development section lists the new harness invocation
-- [ ] `.plans/PLAN.md` — register
+- [x] `features/shell-dirs/test/test.sh` — `devcontainer features test` scenario
+- [x] `features/shell-dirs/test/run-features-test.sh` — wrapper
+- [x] `features/README.md` — row
+- [x] `devc/README.md` — Development section lists the new harness invocation
+- [x] `.plans/PLAN.md` — register
 
 ## Validation
 
-- [ ] `bash devc/tests/shell_dirs_test.sh features/shell-dirs/install.sh`
+- [x] `bash devc/tests/shell_dirs_test.sh features/shell-dirs/install.sh`
       passes **unmodified** — the existing harness, pointed at the Feature. If it
       needs changes to pass, the copy has drifted and the contract above is broken
-- [ ] `bash devc/tests/shell_dirs_test.sh devc/default/scripts/bashrc-additions.sh`
+- [x] `bash devc/tests/shell_dirs_test.sh devc/default/scripts/bashrc-additions.sh`
       still passes (devc's copy untouched)
-- [ ] A case added to the harness (or a sibling harness) for the
+- [x] A case added to the harness (or a sibling harness) for the
       `_DEVC_SHELL_DIRS_DONE` guard: sourcing the block twice sources each file
-      once
+      once — a **sibling**, `features/shell-dirs/test/shell_dirs_guard_test.sh`,
+      because a case in `shell_dirs_test.sh` would fail against devc's guardless
+      copy, which that harness has to keep passing
 - [ ] (needs Docker) `bash features/shell-dirs/test/run-features-test.sh` —
       scenario with `remoteEnv.PROJECT_PATH` and a `.devcontainer/shell/10-a.sh`
       that exports a marker: a fresh interactive shell has it; ordering with a
@@ -204,7 +206,50 @@ it is merely overwritten before the snapshot is taken.
 - [ ] (needs Docker) **the bare `{}` scenario** — no options, no mounts: installs
       cleanly and sources the project layer. The Feature is not allowed to be
       inert without devc, and this is what proves it
-- [ ] `deno fmt --check` clean
+- [x] `deno fmt --check` clean
+
+Beyond the plan, since there is no Docker here: a second offline harness,
+`features/shell-dirs/test/install_options_test.sh`, runs the real `install.sh`
+against a temp `_REMOTE_USER_HOME` and covers what neither block harness reaches —
+both options through to both assignments (default, absolute `projectDir`, empty
+`projectDir`, `userDir`), the marker guard against a double-append, and the
+option-rejection path. And all four `devcontainer features test` scripts were
+executed **offline**, against a real `~/.bashrc` written by `install.sh` in a temp
+`HOME` with the test lib stubbed, including their `bash -ic` interactive-shell
+checks. What that cannot cover is the Docker half: the image build, the CLI's
+`PROJECTDIR`/`USERDIR` option plumbing, and `${containerWorkspaceFolder}`
+substitution inside each scenario's `onCreateCommand`.
+
+## Notes
+
+**The ordering hazard is real and is not fixed here.** Features install after the
+Dockerfile, so this Feature's `~/.bashrc` block lands **after** devc's
+`bashrc-additions` block — including the `DEVC_ATTACH` block that snapshots
+`PROMPT_COMMAND` into `_DEVC_BASE_PC`. A sourced file that _assigns_
+`PROMPT_COMMAND` (already discouraged) therefore clobbers `devc attach`'s
+first-prompt clear, where today it is merely overwritten before the snapshot is
+taken. Not fixable from the Feature — `~/.bashrc` append order is not ours — and
+not a regression for non-devc consumers, who have no `DEVC_ATTACH` block at all.
+Recorded in the Feature README under "It runs last". **The swap plan must move
+devc's `DEVC_ATTACH` block after the Feature's append, or make it re-assert itself
+at the first prompt.**
+
+**The `_DEVC_SHELL_DIRS_DONE` guard is one-sided during the interim, and it happens
+to work.** devc's copy has no guard and runs first, so devc sources and this
+Feature's copy skips. That is the right outcome by accident of ordering, not by
+design; the README says plainly not to enable this Feature in a devc container
+until devc's own block is gone.
+
+**One deviation from the contract as written.** The plan sketches
+`USER_SHELL_DIR=<userDir, or empty>` unquoted; the block ships it quoted
+(`USER_SHELL_DIR=""`), which the harness's `sed` rewrites identically and which
+survives a path with a space. `install.sh` refuses an option containing `"`,
+`` ` ``, `$` or `\` rather than escaping it — a mangled block would silently source
+something other than what was asked for.
+
+**`workspaceEnvVar` was not added**, per the concept-boundaries note. An absolute
+`projectDir` already covers the consumer who will not set `PROJECT_PATH`, so a
+second variable name has no case yet.
 
 ## Not in this plan
 

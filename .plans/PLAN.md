@@ -17,7 +17,7 @@ settles, once, which pieces **can** be a Feature (a Feature can declare no
 `initializeCommand`, no read-only mount, and no string mount) and the rules all
 five plans inherit.
 
-All three Features still pending have a host-coupled half that the Feature
+Both Features still pending have a host-coupled half that the Feature
 cannot declare. That does **not** make them devc-only: a host bind mount and an
 `initializeCommand` belong to the **consumer's `devcontainer.json`**, which every
 devcontainer project has. devc is one consumer — it writes those lines for you.
@@ -35,29 +35,17 @@ reverse once.
 
 The machinery they land on is already generalized —
 [features-collection](archived/features-collection.md) made `features/` a real
-collection, so each of the three below only adds a directory: no edit to
-`publish-feature.yml`, and `features/README.md` gains a row. Order among the
-three does not matter — [feature-node-nvmrc](archived/feature-node-nvmrc.md) went
-first and is done. **A new Feature starts at its own `0.1.0`**, not at the repo's
+collection, so each of the two below only adds a directory: no edit to
+`publish-feature.yml`, and `features/README.md` gains a row. Order among them
+does not matter — [feature-node-nvmrc](archived/feature-node-nvmrc.md) went
+first, then [feature-shell-dirs](archived/feature-shell-dirs.md). **A new Feature
+starts at its own `0.1.0`**, not at the repo's
 version: [feature-independent-versions](archived/feature-independent-versions.md)
 landed first and unpinned Features from the `v*` tag, and each of the three
 manifest contracts below already says so. Bump a Feature's `version` in the
 commit that changes it; a push to `main` under `features/` publishes it from its
 own matrix job.
 
-- [feature-shell-dirs](feature-shell-dirs.md) — the sourcing **mechanism** for
-  `*.sh` directories becomes the Feature. A bare `{}` gives the **project layer**
-  (the repo's own `.devcontainer/shell/`), which is the layer most consumers
-  want. A second layer of _personal host_ scripts needs a read-only bind the
-  Feature cannot declare, so the consumer declares it and passes `userDir` —
-  devc writes those lines for its own containers, and the README gives everyone
-  else the same two lines pointing at a path of their choosing.
-  The Feature's copy keeps the `devc:shell-dirs` markers and the two
-  `*_SHELL_DIR` assignment names so `devc/tests/shell_dirs_test.sh` runs against
-  it **unmodified** — that is what stops the two copies drifting. Carries a real
-  ordering finding: Features install after the Dockerfile, so a Feature's
-  `~/.bashrc` block lands _after_ devc's `DEVC_ATTACH` `PROMPT_COMMAND` snapshot,
-  which the swap plan has to deal with.
 - [feature-git-config](feature-git-config.md) — LFS filters,
   `worktree.useRelativePaths` and `safe.directory` are pure container scope and
   become the Feature — three of the four settings, working from a bare `{}`. The
@@ -78,6 +66,60 @@ own matrix job.
 
 ### Completed
 
+- [feature-shell-dirs](archived/feature-shell-dirs.md) — Publish
+  `ghcr.io/bmingles/devc-tools/shell-dirs`: every `*.sh` in one or two directories
+  sourced by every interactive shell, in a defined order, **live** — sourced from
+  `~/.bashrc` rather than appended into it, so a file added after the build is
+  picked up by the next shell. A bare `{}` is the project layer (the repo's own
+  `.devcontainer/shell/`), which is the layer most consumers want; the optional
+  personal layer needs a read-only bind the Feature cannot declare, so `userDir` is
+  a slot the consumer fills and the README ships the three lines with **no devc
+  path in them**. `devc/default/` is untouched, per the copy-don't-move rule.
+  The plan's real contract is the **test**: `devc/tests/shell_dirs_test.sh` now runs
+  against `features/shell-dirs/install.sh` **unmodified**, so the fence markers, the
+  two `*_SHELL_DIR` assignment names, the helper's name and the no-leaks property are
+  all pinned in both copies at once — the only thing keeping them from drifting.
+  Everything the two copies **do not** share went into siblings, because that harness
+  has to keep passing against devc's copy: `test/shell_dirs_guard_test.sh` for the
+  `_DEVC_SHELL_DIRS_DONE` skip-guard (confirmed to fail when the skip is neutered,
+  which the mere presence of the variable would not have caught), and
+  `test/install_options_test.sh` for the half neither block harness reaches — both
+  options through to both assignments, the marker guard against a double-append, and
+  the refusal path. Two decisions worth the words. `${VAR-default}`, not
+  `${VAR:-default}`: an explicitly empty option **disables** its layer, and falling
+  back to the default there would be invisible until someone set `projectDir` to `""`
+  and got `.devcontainer/shell` anyway. And an option containing `"`, `` ` ``, `$` or
+  `\` **fails the build** naming the option, rather than being escaped — the values
+  are pasted into a shell assignment, and a silently mangled block sources something
+  other than what was asked for. Substitution goes through `awk -v` rather than `sed`
+  so a `&` in a path is data, and it is verified with `grep -qxF` afterwards, the same
+  fail-loudly shape `node-nvmrc` uses.
+  **The ordering hazard is recorded, not papered over.** Features install after the
+  Dockerfile, so this block lands _after_ devc's `DEVC_ATTACH` `PROMPT_COMMAND`
+  snapshot — a layer that assigns `PROMPT_COMMAND` would clobber `devc attach`'s
+  first-prompt clear, where today it is merely overwritten before the snapshot. Not
+  fixable from a Feature and not a regression for anyone without a `DEVC_ATTACH`
+  block; **the swap plan must move that block after the Feature's append, or make it
+  re-assert at the first prompt.** The interim guard is one-sided by construction and
+  happens to work (devc runs first and sources; this copy skips), so the README says
+  plainly not to enable this Feature in a devc container until devc's own block is
+  gone.
+  Verified here: both harness invocations (12 checks each, the Feature's copy and
+  devc's), the guard harness (10 checks), the options harness (35 checks),
+  `tests/features_test.sh` (12 checks, 3 Features in scope — the collection walk
+  picked the new directory up with no edit), `tests/workflow_guards_test.sh` (8
+  checks) and `deno fmt --check` (125 files). Beyond the plan, **all four
+  `devcontainer features test` scripts were executed offline** — against a real
+  `~/.bashrc` written by `install.sh` into a temp `HOME`, with the test lib stubbed —
+  including their `bash -ic` interactive-shell checks, which is what turns "the block
+  is in the file" into "a new shell actually has the alias".
+  **Not verified here (no Docker):** every `devcontainer features test` scenario as a
+  container. All four are written — the default is the bare `{}` case, and
+  `scenarios.json` adds `project_layer` (`remoteEnv.PROJECT_PATH` + a real workspace),
+  `both_layers` (user-then-project ordering) and `no_project_layer` (`""` disables) —
+  but none has been run under Docker. What that leaves unmeasured is the image build,
+  the CLI's `PROJECTDIR`/`USERDIR` option plumbing, and `${containerWorkspaceFolder}`
+  substitution inside each scenario's `onCreateCommand`.
 - [feature-independent-versions](archived/feature-independent-versions.md) — **Reversed a
   stated decision**, `design/devc-feature-split.md`'s "One repo, one tag" (now
   struck through there, with a pointer here): every Feature republished at the
@@ -701,6 +743,6 @@ own matrix job.
 | `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](archived/features-collection.md)                     | complete |
 | `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](archived/feature-node-nvmrc.md)                       | complete |
 | Features version independently — unpin the collection from the repo tag                  | [feature-independent-versions](archived/feature-independent-versions.md)   | complete |
-| `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](feature-shell-dirs.md)                                | pending  |
+| `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](archived/feature-shell-dirs.md)                       | complete |
 | `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                | pending  |
 | `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                          | pending  |
