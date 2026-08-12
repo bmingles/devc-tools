@@ -11,8 +11,28 @@
 
 ### Pending
 
-_None._ Every plan written so far is implemented and archived. New work starts
-with a new plan here (see the `plan-orchestrating` skill for the conventions).
+- [devc-bridge-client-download](devc-bridge-client-download.md) — Stop resting
+  the Feature's security on `readonly` surviving into `docker run --mount`, which
+  the published Feature schema cannot express and the CLI honors only as an
+  accident of string passthrough. The client mount goes away entirely — the
+  binary is already a release asset, so the Feature fetches and checksum-verifies
+  it at build time and owns it as a root-owned file in an image layer, which
+  ends the cross-container tamper vector rather than blocking it. The token mount
+  has to stay — it is a runtime secret — but nothing requires the *Feature* to
+  declare it: `devcontainer.json`'s schema takes `anyOf: [Mount, string]` and
+  defers to Docker's `--mount` syntax, so there `readonly` is specified rather
+  than accidental. The consumer declares that one mount (devc carries it in its
+  bundled config, alongside three read-only binds already there), the Feature
+  declares **no mounts at all**, and the last unspecified dependency —
+  `${localEnv:HOME}` inside Feature mounts — goes with it. The host stops adopting
+  whatever is in the token file and regenerates on `start`, so safety does not
+  rest on every consumer remembering `readonly`; because that makes the host a
+  *writer* into a possibly-writable directory, and a container can plant a
+  symlink there, every token write goes through a same-dir temp + `rename`.
+  Host permissions are **not** an alternative: Docker Desktop shares through
+  `fakeowner`, where an unprivileged container user overwrites a `root:root 0400`
+  file, while the `ro` flag stops even root. Lifts the Docker Compose exclusion
+  as a side effect; costs a standalone project one copied mount line.
 
 ### Completed
 
