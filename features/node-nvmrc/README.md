@@ -16,8 +16,9 @@ see [What this is not](#what-this-is-not).
 No mounts, no options, nothing host-side. `.nvmrc` is read from the workspace, and
 everything else is written inside the container.
 
-> The tag tracks the repo's version line. It is `:0` while devc-tools is pre-1.0;
-> it becomes `:1` at the first 1.x release.
+> The tag tracks **this Feature's** version line, not the repo's — Features
+> version independently of the devc-tools release tag. It is `:0` while this
+> Feature is pre-1.0; it becomes `:1` at its first 1.x release.
 
 ## Prerequisite: something has to provide nvm
 
@@ -179,7 +180,10 @@ is what measures it: if the cwd were anything else, the hook would have found no
 ## Publishing
 
 `.github/workflows/publish-feature.yml` publishes this folder to
-`ghcr.io/bmingles/devc-tools/node-nvmrc` on a `v*` tag, along with every other
-Feature in [`features/`](../README.md). `version` moves in lockstep with the repo
-tag. There is no `FEATURE_VERSION` in `install.sh` — this Feature downloads no
-release asset, so it has no second copy of the version to keep in step.
+`ghcr.io/bmingles/devc-tools/node-nvmrc` on a push to `main` that touches
+`features/`, in its own matrix job. `version` is this Feature's own — bump it in
+the commit that changes this Feature, and nothing else in the repo has to move;
+leave it and the publish is a no-op, since the CLI skips a version already in
+the registry. There is no `DEVC_TOOLS_RELEASE` in `install.sh` — this Feature
+downloads no release asset, so it pins none, and nothing here is coupled to a
+devc-tools release at all.

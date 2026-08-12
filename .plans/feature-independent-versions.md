@@ -311,58 +311,58 @@ first, and a silently changed rule is worse than a marked one.
 
 ## Checklist
 
-- [ ] `tests/features_test.sh` — new, per the contract above
-- [ ] `.github/workflows/publish-feature.yml` — rewritten; version guard gone,
+- [x] `tests/features_test.sh` — new, per the contract above
+- [x] `.github/workflows/publish-feature.yml` — rewritten; version guard gone,
       trigger moved, CLI pinned, `discover` + per-Feature `publish` matrix
-- [ ] `tests/workflow_guards_test.sh` — scrapers and version assertions removed,
+- [x] `tests/workflow_guards_test.sh` — scrapers and version assertions removed,
       `guards_both` parameterized on the expected ref expression
-- [ ] `features/devc-bridge/install.sh` — `FEATURE_VERSION` → `DEVC_TOOLS_RELEASE`
-- [ ] `features/devc-bridge/test/install_download_test.sh` — reads the new name
-- [ ] `features/devc-bridge/devcontainer-feature.json` — `clientVersion`
+- [x] `features/devc-bridge/install.sh` — `FEATURE_VERSION` → `DEVC_TOOLS_RELEASE`
+- [x] `features/devc-bridge/test/install_download_test.sh` — reads the new name
+- [x] `features/devc-bridge/devcontainer-feature.json` — `clientVersion`
       description
-- [ ] `features/devc-bridge/README.md` — the version note at line 133 and the
+- [x] `features/devc-bridge/README.md` — the version note at line 133 and the
       options table
-- [ ] `features/README.md` — "Versions" section rewritten: per-Feature versions,
+- [x] `features/README.md` — "Versions" section rewritten: per-Feature versions,
       bump-what-you-change, the release pin, the publish trigger
-- [ ] `README.md` — "Releasing" section: step 1 stops listing Feature versions,
+- [x] `README.md` — "Releasing" section: step 1 stops listing Feature versions,
       and a short paragraph says Features publish on their own cadence
-- [ ] `docs/manual-verification.md` — §1 and §3 stop asserting tag == every
+- [x] `docs/manual-verification.md` — §1 and §3 stop asserting tag == every
       Feature version; §3 gains a Feature publish check off a `main` push
-- [ ] `.plans/design/devc-feature-split.md` — bullet marked superseded
-- [ ] `.plans/feature-shell-dirs.md`, `.plans/feature-git-config.md`,
+- [x] `.plans/design/devc-feature-split.md` — bullet marked superseded
+- [x] `.plans/feature-shell-dirs.md`, `.plans/feature-git-config.md`,
       `.plans/feature-claude-config.md` — `<repo version>` → `0.1.0`
-- [ ] `.plans/PLAN.md` — register
+- [x] `.plans/PLAN.md` — register
 
 ## Validation
 
-- [ ] `bash tests/features_test.sh` — passes on this tree; fails when a manifest
+- [x] `bash tests/features_test.sh` — passes on this tree; fails when a manifest
       `id` is edited away from its directory, when a `version` is not semver, and
       on an empty `features/` (synthesized in a temp collection, as
       [features-collection](archived/features-collection.md) did)
-- [ ] `bash tests/features_test.sh --check-release-pins` with `gh` stubbed on
+- [x] `bash tests/features_test.sh --check-release-pins` with `gh` stubbed on
       PATH: passes when the stub reports the release exists, fails naming the
       Feature and the tag when it does not
-- [ ] `bash tests/features_test.sh --feature node-nvmrc --check-release-pins`
+- [x] `bash tests/features_test.sh --feature node-nvmrc --check-release-pins`
       with a `gh` stub that reports **every** release missing — **must pass**,
       because `node-nvmrc` pins none. This is the check that proves decision 6:
       devc-bridge's unmet pin cannot reach `node-nvmrc`'s job
-- [ ] `bash tests/features_test.sh --feature no-such-feature` fails rather than
+- [x] `bash tests/features_test.sh --feature no-such-feature` fails rather than
       passing vacuously
-- [ ] `bash tests/workflow_guards_test.sh` — passes; and fails when the `Publish`
+- [x] `bash tests/workflow_guards_test.sh` — passes; and fails when the `Publish`
       step's `if:` is edited to drop either condition
-- [ ] `publish-feature.yml` parses as YAML and its `run:` steps, extracted from
+- [x] `publish-feature.yml` parses as YAML and its `run:` steps, extracted from
       the parse, execute against this tree — the same technique
       [features-collection](archived/features-collection.md) used
-- [ ] `bash features/devc-bridge/test/install_download_test.sh` — passes against
+- [x] `bash features/devc-bridge/test/install_download_test.sh` — passes against
       the renamed constant
-- [ ] Each Feature packages **on its own**: `npx @devcontainers/cli@<pinned>
+- [x] Each Feature packages **on its own**: `npx @devcontainers/cli@<pinned>
       features package ./features/<id> --force-clean-output-folder
       --output-folder /tmp/f` for both ids, each producing one `.tgz` named for
       that Feature. Confirms the single-Feature mode decision 6 rests on
-- [ ] The matrix expression the `discover` job emits is valid JSON, contains both
+- [x] The matrix expression the `discover` job emits is valid JSON, contains both
       current ids, and is derived from the glob — verified by adding a throwaway
       `features/<id>/` and seeing it appear without editing the workflow
-- [ ] `deno fmt --check` clean
+- [x] `deno fmt --check` clean
 - [ ] (needs Actions) A `workflow_dispatch` **dry run** from `main`: the
       `node-nvmrc` matrix job is **green** while `devc-bridge`'s fails on its
       unmet pin naming `v0.1.0`, and `fail-fast: false` leaves the green one

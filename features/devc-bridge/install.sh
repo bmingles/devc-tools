@@ -23,11 +23,15 @@ set -e
 # the symlink cannot disagree. Overridable for the test harness.
 BRIDGE_CLIENT="${BRIDGE_CLIENT:-/usr/local/share/devc-bridge/client/devc-bridge}"
 
-# Must equal the `version` in devcontainer-feature.json. The publish workflow fails the
-# release if the two disagree, so this cannot silently drift; it is duplicated rather than
-# read from the manifest because the manifest is JSON and no `jq` is guaranteed in an
-# arbitrary base image.
-FEATURE_VERSION='0.1.0'
+# The devc-tools release this Feature downloads its client from. NOT this Feature's own
+# version — the two are independent (see
+# .plans/archived/feature-independent-versions.md). Pinned deliberately: bumping it is a
+# Feature change, and ships a client that has been tested with this install.sh. Duplicated
+# from nothing — the manifest is JSON and no `jq` is guaranteed in an arbitrary base image.
+#
+# `tests/features_test.sh --check-release-pins` fails the publish if this names a release
+# that does not exist, which the old `v*` tag trigger used to guarantee by accident.
+DEVC_TOOLS_RELEASE='v0.1.0'
 
 die() {
   echo "devc-bridge: $*" >&2
@@ -40,9 +44,11 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 # `clientVersion` reaches us as $CLIENTVERSION: the CLI uppercases option names and strips
 # non-word characters (getSafeId). Deliberately *not* named VERSION — this repo already has
-# three unrelated VERSION consts and a $VERSION in install.sh and both workflows.
+# three unrelated VERSION consts and a $VERSION in install.sh and both workflows. For the
+# same reason it is not named after this Feature: what it selects is a devc-tools release,
+# which no longer moves with the Feature's own version.
 CLIENT_VERSION="${CLIENTVERSION:-}"
-[ -n "$CLIENT_VERSION" ] || CLIENT_VERSION="$FEATURE_VERSION"
+[ -n "$CLIENT_VERSION" ] || CLIENT_VERSION="$DEVC_TOOLS_RELEASE"
 # Tags carry the `v`, asset filenames carry the bare version. Accept either spelling.
 BARE_VERSION="${CLIENT_VERSION#v}"
 

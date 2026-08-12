@@ -18,6 +18,7 @@ deno fmt --check                                            # repo root
 (cd devc-bridge/client && deno task check)
 bash tests/install_test.sh install.sh                              # ALL PASS
 bash tests/workflow_guards_test.sh                                 # ALL PASS
+bash tests/features_test.sh                                        # ALL PASS
 (cd devc && for t in seed_link:default/scripts/agents-setup.sh \
                      shell_dirs:default/scripts/bashrc-additions.sh \
                      project_hook:default/scripts/project-hook.sh; do
@@ -38,12 +39,13 @@ gh run list --limit 5
 ```
 
 `dry_run` defaults to true, and every publishing step requires it to be false
-_and_ the ref to be a `v*` tag. Both conditions are asserted by
-`tests/workflow_guards_test.sh`, which the `gate` job runs. That matters here
-because a dispatch can target a **tag**: the ref check alone would have
-published from a run whose own checkbox said dry run. With both in place, a dry
-run against the tag itself is safe, which makes it the last rehearsal available
-before §3 — worth doing once the tag exists.
+_and_ the ref to be the one that workflow publishes from — a `v*` tag for
+`release.yml`, `refs/heads/main` for `publish-feature.yml`. Both conditions are
+asserted by `tests/workflow_guards_test.sh`, which the `gate` job runs. That
+matters here because a dispatch can target **any ref**: the ref check alone would
+have published from a run whose own checkbox said dry run. With both in place, a
+dry run against the ref itself is safe, which makes it the last rehearsal
+available before §3 — worth doing once the tag exists.
 
 Expected from `release.yml`:
 
@@ -69,9 +71,18 @@ Expected from `release.yml`:
 - [ ] The stamp step rewrites `DEVC_RELEASE_VERSION='v0.1.0'` and `sh -n` passes
 - [ ] A `release-v0.1.0` artifact is uploaded; **no GitHub release exists**
 
-Expected from `publish-feature.yml`:
+Expected from `publish-feature.yml` — dispatch it **from `main`**, since that is
+the ref it publishes from and the one a dry run has to rehearse:
 
-- [ ] `features package` succeeds; version guard is skipped off a tag
+- [ ] `discover` passes `bash tests/features_test.sh` and emits a matrix
+      containing every id under `features/`, derived from the tree
+- [ ] One `publish` job per Feature. `node-nvmrc`'s is **green**: it downloads
+      nothing, pins no release, and packages on its own
+- [ ] `devc-bridge`'s **fails on its release pin guard, naming `v0.1.0`** — no
+      such release exists until §3. That is the guard working, not a blocker, and
+      `fail-fast: false` must leave `node-nvmrc` green beside it. This is the
+      acceptance test for one-job-per-Feature: a Feature that fetches nothing must
+      not wait on a Feature that does
 - [ ] Nothing is pushed to ghcr.io
 
 ---
@@ -117,13 +128,12 @@ these must first read `0.1.0-rc.1`:
 - `devc/help.ts` — `VERSION`
 - `devc-bridge/host/version.ts` — `VERSION`
 - `devc-bridge/client/version.ts` — `VERSION`
-- `"version"` in **every** `features/*/devcontainer-feature.json` (today just
-  `devc-bridge`), plus `FEATURE_VERSION` in the `install.sh` of any Feature that
-  has one
 
-The three binaries are guarded by `release.yml`, the whole Feature collection by
-`publish-feature.yml`. Miss a Feature and the binaries publish while nothing in
-`features/` does.
+The three binaries are guarded by `release.yml`. **Nothing under `features/` is
+part of a tag**: each Feature carries its own `version` and publishes from a push
+to `main`, so leave them alone here. `devc-bridge`'s `DEVC_TOOLS_RELEASE` names
+the release its client is downloaded from and stays `v0.1.0` — pointing it at a
+prerelease would be a change to the Feature, not to this release.
 
 - [ ] **Negative test first.** Push a tag that disagrees with `VERSION` and
       confirm `gate` fails before anything compiles, naming both values.
@@ -134,15 +144,32 @@ The three binaries are guarded by `release.yml`, the whole Feature collection by
 - [ ] **On the release page the assets group by tool** — four `devc-`, then two
       `client`, then two `host`. This is the first place the naming scheme is
       actually visible; a dry run only produces workflow artifacts.
-- [ ] `publish-feature.yml` pushes
-      `ghcr.io/bmingles/devc-tools/devc-bridge`. **Write down which tags it
-      actually created.** A stable `0.1.0` publish yields `latest`/`0`/`0.1`/
-      `0.1.0`, and `:0` is what `devc/README.md` and this repo's docs tell people
-      to reference — but it is unverified whether a **prerelease** version
-      produces the same rolling tags. If `:0` is absent, the documented opt-in
-      line does not resolve until a stable release — settle that in the docs
-      before telling anyone to use it.
-- [ ] Make the package public in the repo's Packages settings, or an anonymous
+- [ ] The tag publishes **no Features** — `publish-feature.yml` does not run at
+      all, since it triggers on a push to `main` under `features/`
+
+### Then publish the Features — a separate trigger
+
+Features are not tagged. `publish-feature.yml` fires on a push to `main` that
+touches `features/`, one job per Feature, each at its own `version`. Note the
+ordering the pin guard imposes: `devc-bridge` pins `DEVC_TOOLS_RELEASE='v0.1.0'`,
+so its job stays red until a **stable** `v0.1.0` release exists — an `rc` tag is
+not it. `node-nvmrc` has no such dependency and publishes immediately.
+
+- [ ] Merge a `features/` change to `main` (or dispatch from `main` with
+      `dry_run` **unchecked**). `node-nvmrc` publishes; `devc-bridge` fails its
+      pin guard until `v0.1.0` is out
+- [ ] **Write down which tags it actually created.** A `0.1.0` publish should
+      yield `latest`/`0`/`0.1`/`0.1.0`, and `:0` is what `devc/README.md` and this
+      repo's docs tell people to reference. Feature versions are plain stable
+      semver even when the repo's own tag is a prerelease, so the old worry about
+      a prerelease suppressing the rolling tags no longer applies here — but
+      confirm it rather than assume it
+- [ ] **Re-run with nothing changed.** The second run must print
+      `Version 0.1.0 already exists, skipping` and push nothing. That idempotence
+      is what makes publish-on-push safe, and it is pinned to
+      `@devcontainers/cli@0.88.0` in the workflow — re-check it whenever that pin
+      moves
+- [ ] Make each package public in the repo's Packages settings, or an anonymous
       `devcontainer up` cannot pull it
 
 ---

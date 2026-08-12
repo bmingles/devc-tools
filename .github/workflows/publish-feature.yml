@@ -4,18 +4,28 @@ name: Publish devcontainer Features
 # walked, never enumerated: adding a directory under features/ is the whole of adding a
 # Feature to this workflow — see features/README.md.
 #
-# Separate from the binary release workflow but on the same `v*` tag trigger: the two produce
-# unrelated artifacts and a failure in one should not block the other, while a single tag still
-# moves the whole repo (see .plans/release-and-installer.md decision 8).
+# Each Feature carries its **own** version and publishes on a push to `main` that touches
+# features/, not on the repo's `v*` tag (see
+# .plans/archived/feature-independent-versions.md). The binaries keep their one-version rule
+# in release.yml; only Features are unpinned from it. A one-line fix to a Feature's
+# install.sh therefore ships without a four-runner binary release, which is the point.
+#
+# Publish-on-push is safe because the CLI skips a version it already finds in the registry —
+# so a run that changes nothing publishes nothing, and "you forgot to bump the version"
+# surfaces immediately as "nothing published" rather than silently at the next release. That
+# skip is load-bearing, which is why the CLI is pinned below rather than tracking @latest.
 #
 # `workflow_dispatch` with `dry_run` (the default) runs everything except the publish, so the
-# packaging can be exercised before a tag exists — and, since a dispatch can target a tag,
-# against the exact ref about to be released. `inputs` is null outside workflow_dispatch, so
-# `!inputs.dry_run` is true on a tag push and normal releases are unaffected.
+# packaging and both guards can be exercised before a push lands. `inputs` is null outside
+# workflow_dispatch, so `!inputs.dry_run` is true on a push to main and normal merges are
+# unaffected.
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'features/**'
+      - '.github/workflows/publish-feature.yml'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -27,88 +37,97 @@ permissions:
   contents: read
   packages: write
 
+env:
+  # Pinned, like DENO_VERSION in release.yml and every action SHA in this repo. `@latest` in
+  # a pipeline that pushes artifacts people pull into their containers is one silent upgrade
+  # away from a different publish semantics — and this workflow depends on a specific
+  # behavior of it: "Version X already exists, skipping", plus floating tags that only
+  # advance for the max satisfying version. That measurement was made against 0.88.0.
+  DEVCONTAINERS_CLI: '@devcontainers/cli@0.88.0'
+
 jobs:
-  publish:
+  # Collection-wide checks and the matrix, on the cheapest runner, before any publish job
+  # starts.
+  discover:
     runs-on: ubuntu-latest
+    outputs:
+      features: ${{ steps.list.outputs.features }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      # A published Feature must not disagree with the commit it claims to be, so the tag is
-      # the source of truth and this fails rather than rewriting the file during the build.
-      #
-      # Every Feature in the collection, not a named one: `features publish` walks the whole
-      # directory, so a guard that spelled out an id would let the next Feature added beside
-      # it publish unchecked — the failure that is invisible until someone pulls it.
-      # Deliberately reports every offender before exiting, since "which of the five?" is the
-      # only question a failed release run has to answer.
-      - name: Version guard
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Offline, whole collection, and deliberately ungated: a dry run must still check.
+      - name: Collection guard
+        run: bash tests/features_test.sh
+
+      # Derived from the tree, never spelled out — a static list would reintroduce the exact
+      # failure features-collection removed, where the next Feature added is silently not
+      # covered. Empty is a failure: it means the collection moved and the matrix below
+      # would publish nothing while reporting success.
+      - name: Discover Features
+        id: list
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF#refs/tags/}"
-          expected="${tag#v}"
-          found=0
-          bad=0
+          ids=()
           for manifest in features/*/devcontainer-feature.json; do
             # No nullglob here, so an unmatched glob arrives as its own literal.
             [ -f "$manifest" ] || continue
-            dir="$(dirname "$manifest")"
-            id_from_dir="$(basename "$dir")"
-            found=$((found + 1))
-
-            # `features package` derives the artifact name from `id`, so a mismatch here
-            # publishes under a name nothing references — and reads as a baffling packaging
-            # error rather than the typo it is.
-            id="$(jq -r .id "$manifest")"
-            if [ "$id" != "$id_from_dir" ]; then
-              echo "::error::$dir: id \"$id\" disagrees with the directory name \"$id_from_dir\""
-              bad=1
-            fi
-
-            # One repo, one version: every Feature moves with the repo tag, like the binaries.
-            version="$(jq -r .version "$manifest")"
-            if [ "$version" != "$expected" ]; then
-              echo "::error::$dir: version $version disagrees with tag $tag"
-              bad=1
-            fi
-
-            # Only a Feature that names a release asset bakes the version into its install.sh,
-            # because the manifest is JSON and no `jq` is guaranteed in an arbitrary base
-            # image. Absent is fine and normal; present and stale is not — a Feature that
-            # downloads from a *different* release than it claims to be is worse than a failed
-            # publish.
-            if [ -f "$dir/install.sh" ]; then
-              baked="$(sed -n "s/^FEATURE_VERSION='\(.*\)'$/\1/p" "$dir/install.sh")"
-              if [ -n "$baked" ] && [ "$baked" != "$version" ]; then
-                echo "::error::$dir: install.sh FEATURE_VERSION ($baked) disagrees with devcontainer-feature.json version ($version)"
-                bad=1
-              fi
-            fi
+            ids+=("$(basename "$(dirname "$manifest")")")
           done
-
-          # A guard that finds nothing to check must not pass: an empty collection means the
-          # tree moved, and the publish below would then push nothing while reporting success.
-          if [ "$found" -eq 0 ]; then
+          if [ "${#ids[@]}" -eq 0 ]; then
             echo "::error::no features/*/devcontainer-feature.json found — has the collection moved?"
             exit 1
           fi
-          [ "$bad" -eq 0 ] || exit 1
-          echo "checked $found Feature(s) against $tag"
+          features="$(printf '%s\n' "${ids[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+          echo "found ${#ids[@]} Feature(s): $features"
+          echo "features=$features" >> "$GITHUB_OUTPUT"
 
-      # `features/` is the collection folder and each `features/<id>/` a Feature within it;
-      # both commands below take the collection and walk it.
+  # One job per Feature, so no Feature can block another. `features publish ./features` takes
+  # the collection as a unit: one failing guard fails the run, and node-nvmrc — which
+  # downloads nothing and pins no release — could not publish until a devc-tools release was
+  # tagged for devc-bridge's sake. That is the exact coupling this workflow's rewrite exists
+  # to remove, so `fail-fast: false` here is load-bearing rather than hygiene.
+  #
+  # `features publish <one Feature dir>` lands on the identical ghcr.io/<ns>/<id> ref the
+  # collection publish would produce; nothing about the published artifact changes. The one
+  # cost is recorded in the plan: every run also pushes a devcontainer-collection.json
+  # describing only what that run packaged, which nothing here reads.
+  publish:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: ${{ fromJSON(needs.discover.outputs.features) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # The guard the tag trigger used to provide by accident: a Feature that downloads from
+      # a devc-tools release must not ship pinned to a release nobody has tagged. Scoped to
+      # this job's own Feature, which is what keeps devc-bridge's unmet pin out of
+      # node-nvmrc's job. Ungated — a dry run must still check.
+      - name: Release pin guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash tests/features_test.sh --check-release-pins --feature "${{ matrix.feature }}"
+
       - name: Package
-        run: npx --yes @devcontainers/cli@latest features package ./features --force-clean-output-folder --output-folder ./dist/features
+        run: |
+          npx --yes "$DEVCONTAINERS_CLI" features package "./features/${{ matrix.feature }}" \
+            --force-clean-output-folder --output-folder ./dist/features
 
       # Plain `docker login` rather than a third-party action: one less thing in the path that
       # produces an artifact people pull into their containers.
       - name: Log in to ghcr.io
-        if: ${{ startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run }}
+        if: ${{ github.ref == 'refs/heads/main' && !inputs.dry_run }}
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # → ghcr.io/bmingles/devc-tools/<id> for each Feature, tagged latest / 0 / 0.1 / 0.1.0.
+      # → ghcr.io/bmingles/devc-tools/<id>, tagged latest / <major> / <major>.<minor> /
+      # <version> from this Feature's own version. A version already in the registry is
+      # skipped, so re-running this on a push that changed nothing pushes nothing.
       - name: Publish
-        if: ${{ startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run }}
+        if: ${{ github.ref == 'refs/heads/main' && !inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx --yes @devcontainers/cli@latest features publish ./features --namespace "${{ github.repository }}"
+        run: |
+          npx --yes "$DEVCONTAINERS_CLI" features publish "./features/${{ matrix.feature }}" \
+            --namespace "${{ github.repository }}"

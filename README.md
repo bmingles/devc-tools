@@ -63,45 +63,48 @@ root is the source of truth for the script above.
 
 ## Repo layout
 
-| Path                        | Role                                                                                 |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| `devc-bridge/`              | The host command bridge — see its [README](devc-bridge/README.md)                    |
-| `devc/`                     | The dev container CLI + config TUI — see its [README](devc/README.md)                |
-| `features/`                 | Published devcontainer Features — see its [README](features/README.md)               |
-| `install.sh`                | The `curl \| sh` installer — source of truth; shipped as a release asset             |
-| `tests/install_test.sh`     | Its shell harness (`bash tests/install_test.sh install.sh`) — offline, no network    |
-| `.github/workflows/`        | `release.yml` (binaries from a `v*` tag) and `publish-feature.yml` (the Features)    |
-| `scripts/bash_aliases.sh`   | Shell functions to run each tool from source (no build) — source it from `~/.bashrc` |
-| `.devc/`                    | Devcontainer config for developing _this_ repo (bind mounts, env, post-create)       |
-| `.plans/`                   | Plan docs; `.plans/PLAN.md` is the status index                                      |
-| `devc-tools.code-workspace` | VS Code workspace file                                                               |
+| Path                        | Role                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| `devc-bridge/`              | The host command bridge — see its [README](devc-bridge/README.md)                        |
+| `devc/`                     | The dev container CLI + config TUI — see its [README](devc/README.md)                    |
+| `features/`                 | Published devcontainer Features — see its [README](features/README.md)                   |
+| `install.sh`                | The `curl \| sh` installer — source of truth; shipped as a release asset                 |
+| `tests/install_test.sh`     | Its shell harness (`bash tests/install_test.sh install.sh`) — offline, no network        |
+| `.github/workflows/`        | `release.yml` (binaries from a `v*` tag) and `publish-feature.yml` (Features, on `main`) |
+| `scripts/bash_aliases.sh`   | Shell functions to run each tool from source (no build) — source it from `~/.bashrc`     |
+| `.devc/`                    | Devcontainer config for developing _this_ repo (bind mounts, env, post-create)           |
+| `.plans/`                   | Plan docs; `.plans/PLAN.md` is the status index                                          |
+| `devc-tools.code-workspace` | VS Code workspace file                                                                   |
 
 Each tool owns its setup instructions; start with the tool's own README.
 
 ## Releasing
 
-**One version for the whole repo, moving in lockstep.** A single `vX.Y.Z` tag
-gates both tools **and every Feature in `features/`**; bumping one republishes
-the others unchanged. The tag is the source of truth and nothing rewrites a
-version during the build — a tag that disagrees with any hand-maintained version
-fails the workflow before anything is compiled.
+**One version for both binaries, moving in lockstep.** A single `vX.Y.Z` tag
+gates `devc` and `devc-bridge` together, because the installer fetches all eight
+tarballs from one release and must not reason about compatible pairs. The tag is
+the source of truth and nothing rewrites a version during the build — a tag that
+disagrees with any hand-maintained version fails the workflow before anything is
+compiled.
+
+**The Features in `features/` are not part of that.** Each carries its own
+`version` and publishes on its own cadence, from a push to `main` that touches
+`features/` — a Feature is pulled from ghcr by a consumer's `devcontainer.json`,
+not installed by `install.sh`, so a one-line fix to one ships without a binary
+release and an untouched Feature never gets a new digest. Bump the `version` of
+whatever Feature you changed, in the same commit; anything you do not bump simply
+does not publish. See [`features/README.md`](features/README.md#versions).
 
 To cut a release:
 
 1. Bump the version in **all three binaries** — `VERSION` in `devc/help.ts`,
-   `devc-bridge/host/version.ts` and `devc-bridge/client/version.ts` — **and in
-   every Feature under `features/`**: `"version"` in each
-   `devcontainer-feature.json`, plus `FEATURE_VERSION` in the `install.sh` of any
-   Feature that has one (only `devc-bridge` today, since only it names a release
-   asset to download). The binaries are guarded by `release.yml`, the whole
-   Feature collection by `publish-feature.yml`, which walks `features/` rather
-   than naming a Feature — miss a Feature's version and the binaries publish
-   while nothing in `features/` does; miss `FEATURE_VERSION` and that Feature
-   would install a client from a different release than it claims to be.
-   `bash tests/workflow_guards_test.sh` catches a Feature left behind without
-   needing a tag. Prereleases are no exception — to tag `v0.1.0-rc.1`, every one
-   of those versions must be `0.1.0-rc.1`, so nothing claims a version its
-   release does not have.
+   `devc-bridge/host/version.ts` and `devc-bridge/client/version.ts` — guarded by
+   `release.yml`. Prereleases are no exception: to tag `v0.1.0-rc.1`, every one of
+   those versions must be `0.1.0-rc.1`, so nothing claims a version its release
+   does not have. Nothing under `features/` moves for a release; if a Feature
+   pins a devc-tools release in its `install.sh` (`DEVC_TOOLS_RELEASE`, only
+   `devc-bridge` today), pointing it at a newer one is a change to that Feature,
+   with its own version bump, on its own schedule.
 2. Commit, then `git tag v0.1.0 && git push --tags`.
 3. [`release.yml`](.github/workflows/release.yml) builds each of the eight
    archives on a runner of its own architecture, runs `--version` on what it
@@ -111,10 +114,9 @@ To cut a release:
    letters, so `devc-bridge-*` cannot wedge into the middle of `devc-*`) and a
    downloaded archive says which version it is. `install.sh` and `checksums.txt`
    stay version-free: the former is served from `releases/latest/download/`, so
-   its name cannot move.
-   [`publish-feature.yml`](.github/workflows/publish-feature.yml) pushes every
-   devcontainer Feature in [`features/`](features/README.md) on the same tag, to
-   `ghcr.io/bmingles/devc-tools/<id>`.
+   its name cannot move. It publishes no Features —
+   [`publish-feature.yml`](.github/workflows/publish-feature.yml) does that on a
+   push to `main`, one job per Feature, to `ghcr.io/bmingles/devc-tools/<id>`.
 
 Neither workflow has ever run, and the release path crosses machines this repo
 is not developed on. Before the first real tag, work through

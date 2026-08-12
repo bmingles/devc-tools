@@ -11,7 +11,7 @@
 # Both devc copies keep running exactly as they do today; swapping devc onto this Feature is a
 # separate plan. Nothing here assumes a `vscode` user, a PROJECT_PATH, or a `sudo`.
 #
-# No network, so nothing to verify and no FEATURE_VERSION to bake: this Feature fetches no
+# No network, so nothing to verify and no DEVC_TOOLS_RELEASE to pin: this Feature fetches no
 # release asset (see features/README.md).
 set -e
 

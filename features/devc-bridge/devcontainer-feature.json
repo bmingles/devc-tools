@@ -8,7 +8,7 @@
     "clientVersion": {
       "type": "string",
       "default": "",
-      "description": "Release version of the Linux client to install. Empty means the version this Feature was published with."
+      "description": "Release version of the Linux client to install. Empty means the devc-tools release this Feature pins (DEVC_TOOLS_RELEASE in its install.sh), which is not the same thing as this Feature's own version — the two move independently."
     }
   }
 }

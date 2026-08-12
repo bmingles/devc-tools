@@ -21,8 +21,9 @@ post-create step and no env vars: `DEVC_BRIDGE_ADDR` and
 `DEVC_BRIDGE_TOKEN_FILE` already default to the address and the mount target
 above.
 
-> The tag tracks the repo's version line. It is `:0` while devc-tools is
-> pre-1.0; it becomes `:1` at the first 1.x release.
+> The tag tracks **this Feature's** version line, not the repo's — Features
+> version independently of the devc-tools release tag. It is `:0` while this
+> Feature is pre-1.0; it becomes `:1` at its first 1.x release.
 
 ## Install the host bridge first
 
@@ -63,9 +64,9 @@ the matching devc-tools release, verifies it against the release's
 `/usr/local/share/devc-bridge/client/devc-bridge`, and symlinks
 `/usr/local/bin/devc-bridge` at it. Nothing is mounted.
 
-| Option          | Default | Meaning                                                              |
-| --------------- | ------- | -------------------------------------------------------------------- |
-| `clientVersion` | `""`    | Release version to install. Empty means the Feature's own `version`. |
+| Option          | Default | Meaning                                                                        |
+| --------------- | ------- | ------------------------------------------------------------------------------ |
+| `clientVersion` | `""`    | devc-tools release to install the client from. Empty means the pinned release. |
 
 Deliberate details:
 
@@ -130,10 +131,16 @@ reintroduce the off-schema dependency this Feature was rewritten to shed _and_
 collide with the consumer's own mount. `devc/tests/default_config_test.ts`
 asserts the key is absent.
 
-`FEATURE_VERSION` in `install.sh` must equal `version` in
-`devcontainer-feature.json` — it is duplicated because the manifest is JSON and
-no `jq` is guaranteed in an arbitrary base image. The publish workflow fails the
-release if the two disagree, so it cannot drift silently.
+**`DEVC_TOOLS_RELEASE` in `install.sh` is not this Feature's version.** It names
+the devc-tools release the client is downloaded from, and the two are
+independent: bump `version` when this Feature changes, bump
+`DEVC_TOOLS_RELEASE` when you want a newer client — which is itself a Feature
+change, so it bumps both. Pinning it means the Feature ships a client that was
+tested against this `install.sh` rather than whatever is newest.
+
+`bash tests/features_test.sh --check-release-pins` fails the publish if it names
+a release that does not exist. That is a guard the old `v*` tag trigger used to
+provide by accident; publishing from `main` needs it spelled out.
 
 ### Tests
 
@@ -162,8 +169,8 @@ bash features/devc-bridge/test/run-features-test.sh
 ### Publishing
 
 `.github/workflows/publish-feature.yml` publishes this folder to
-`ghcr.io/bmingles/devc-tools/devc-bridge` on a `v*` tag. The `version` field
-moves in lockstep with the repo tag, and the workflow fails if the tag,
-`devcontainer-feature.json` and `install.sh` do not all agree — a published
-Feature must not disagree with the commit it claims, nor install a client from a
-different release than it claims to be.
+`ghcr.io/bmingles/devc-tools/devc-bridge` on a push to `main` that touches
+`features/`, in its own matrix job. Bump `version` in
+`devcontainer-feature.json` in the same commit as the change, or the publish is
+a no-op: the CLI skips a version already in the registry, so nothing is pushed
+and the run says so.

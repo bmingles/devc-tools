@@ -3,8 +3,9 @@
 This directory is a devcontainer Feature **collection**: `features/` is the
 collection, and each `features/<id>/` is one Feature published as its own OCI
 artifact. Adding a directory here is the whole of adding a Feature —
-[`publish-feature.yml`](../.github/workflows/publish-feature.yml) walks the
-collection rather than naming its members, and so does its version guard.
+[`publish-feature.yml`](../.github/workflows/publish-feature.yml) derives its
+publish matrix from the collection rather than naming its members, and so does
+[`tests/features_test.sh`](../tests/features_test.sh), the guard it runs.
 
 ## Published Features
 
@@ -13,8 +14,9 @@ collection rather than naming its members, and so does its version guard.
 | [devc-bridge](devc-bridge/README.md) | `ghcr.io/bmingles/devc-tools/devc-bridge` | Installs the devc-bridge client so container code can invoke host commands.     |
 | [node-nvmrc](node-nvmrc/README.md)   | `ghcr.io/bmingles/devc-tools/node-nvmrc`  | Installs the Node version a workspace pins in `.nvmrc`, and selects it on `cd`. |
 
-The tag tracks the repo's version line: `:0` while devc-tools is pre-1.0, `:1`
-at the first 1.x release.
+The tag tracks **each Feature's own** version line: `:0` while that Feature is
+pre-1.0, `:1` at its first 1.x release. It is not the repo's version — see
+[Versions](#versions).
 
 ## Layout
 
@@ -48,18 +50,59 @@ for the reasoning, and `devc-bridge/README.md` for the shape.
 
 ## Versions
 
-**One repo, one version.** Every Feature carries the repo's version in its
-`devcontainer-feature.json` and moves with the repo tag, exactly as the binaries
-do — a new Feature joins at whatever version the repo is on rather than starting
-at `0.1.0` of its own. `publish-feature.yml`'s version guard fails the release if
-any Feature disagrees with the tag, so the whole collection publishes together or
-not at all. See the root [README's Releasing section](../README.md#releasing).
+**Every Feature versions itself.** The `version` in a `devcontainer-feature.json`
+is that Feature's own, unrelated to the repo's `vX.Y.Z` tag and to the other
+Features. Two Features at different versions is the normal state here, not drift.
+The binaries still move in lockstep on one tag — see the root
+[README's Releasing section](../README.md#releasing) — but a Feature is pulled
+from ghcr by a consumer's `devcontainer.json`, not installed by `install.sh`, so
+nothing needs the coupling. It only ever cost: a byte-identical Feature getting a
+new digest because some unrelated tool changed, and a one-line Feature fix
+needing a full binary release. (Reasoning:
+[.plans/archived/feature-independent-versions.md](../.plans/archived/feature-independent-versions.md).)
 
-A Feature that downloads a release asset also bakes `FEATURE_VERSION='<version>'`
-into its `install.sh`, because the manifest is JSON and no `jq` is guaranteed in
-an arbitrary base image; the guard checks it wherever it appears. Only
-`devc-bridge` needs one today. **Do not add one to a Feature that fetches
-nothing** — an unused duplicate of the version is one more thing to bump.
+**Bump what you changed, in the same commit.** A push to `main` touching
+`features/` publishes each Feature from its own matrix job, so:
+
+- bump a Feature's `version` when that Feature changes — nothing else has to move;
+- leave it alone and the publish is a no-op. `devcontainer features publish` skips
+  a version already in the registry, prints `Version X already exists, skipping`,
+  and pushes nothing. So "I forgot to bump it" shows up as "nothing published" in
+  the run that changed it, not silently at the next release.
+
+A new Feature starts at `0.1.0`.
+
+A Feature that downloads a release asset bakes `DEVC_TOOLS_RELEASE='<tag>'` into
+its `install.sh`, naming the devc-tools release it fetches from — **not its own
+version**; the two are independent and only ever looked equal because the old
+rule forced them to be. It is duplicated out of the manifest because the manifest
+is JSON and no `jq` is guaranteed in an arbitrary base image. Only `devc-bridge`
+has one today. **Do not add one to a Feature that fetches nothing** — a Feature
+that downloads nothing must not be made to invent a version.
+
+`bash tests/features_test.sh --check-release-pins` asserts every pinned release
+exists, which the old tag trigger used to guarantee by accident: publishing from
+`main` otherwise lets a Feature ship pinned to a release nobody has tagged yet.
+
+## Guarding the collection
+
+```sh
+bash tests/features_test.sh                       # the whole collection, offline
+bash tests/features_test.sh --feature node-nvmrc  # one Feature
+bash tests/features_test.sh --check-release-pins  # + the network check above (needs gh)
+```
+
+Per Feature it checks that `id` equals the directory name (`features package`
+names the artifact from it, and a mismatch surfaces as a baffling packaging
+error), that `version` parses as semver (the whole tag set is derived from it),
+and that `name` and `description` are non-empty (`features package` refuses the
+Feature otherwise, far from the cause). It walks the collection, reports every
+offender, and fails on an empty glob — a guard that finds nothing to check must
+not pass.
+
+`publish-feature.yml` runs it twice: once over the whole collection before the
+matrix, and once per Feature with `--feature`, so one Feature's failed guard
+cannot fail another Feature's publish.
 
 ## Running a Feature's tests
 

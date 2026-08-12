@@ -40,10 +40,12 @@ check_out() { # check_out <desc> <expected-substring>
   fi
 }
 
-# The version the Feature bakes in — read from the script so the fixture always describes
-# the release the script will actually ask for.
-VERSION="$(sed -n "s/^FEATURE_VERSION='\(.*\)'$/\1/p" "$SCRIPT")"
-[ -n "$VERSION" ] || { echo "could not read FEATURE_VERSION from $SCRIPT"; exit 1; }
+# The devc-tools release the Feature pins — read from the script so the fixture always
+# describes the release the script will actually ask for. It is a tag, so it carries the
+# `v`; asset names carry the bare version, exactly as the script itself splits them.
+RELEASE_TAG="$(sed -n "s/^DEVC_TOOLS_RELEASE='\(.*\)'$/\1/p" "$SCRIPT")"
+[ -n "$RELEASE_TAG" ] || { echo "could not read DEVC_TOOLS_RELEASE from $SCRIPT"; exit 1; }
+VERSION="${RELEASE_TAG#v}"
 
 # --- the fixture release -----------------------------------------------------------------
 
@@ -183,11 +185,11 @@ run_install x86_64 "file://$RELEASE" "$R" CLIENTVERSION="v$ALT"
 check "a leading v is accepted too" test "$status" -eq 0
 check_out "same bare version in the asset" "client $ALT"
 
-echo "case 8: an empty clientVersion falls back to the baked-in version"
+echo "case 8: an empty clientVersion falls back to the pinned devc-tools release"
 R="$WORK/c8"
 run_install x86_64 "file://$RELEASE" "$R" CLIENTVERSION=""
 check "exit 0" test "$status" -eq 0
-check_out "used the Feature's own version" "client $VERSION"
+check_out "used the pinned release $RELEASE_TAG" "client $VERSION"
 
 echo
 if [ "$fails" -eq 0 ]; then
