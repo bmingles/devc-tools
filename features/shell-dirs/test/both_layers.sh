@@ -12,9 +12,8 @@ source dev-container-features-test-lib
 
 check "the userDir option reached the block" \
   grep -qxF 'USER_SHELL_DIR="/tmp/myshell"' "$HOME/.bashrc"
-check "and the project layer is still on" \
-  grep -qxF 'PROJECT_SHELL_DIR="${PROJECT_PATH:+$PROJECT_PATH/.devcontainer/shell}"' \
-  "$HOME/.bashrc"
+check "and the project layer is still on, resolved at create time" \
+  grep -qxF "PROJECT_SHELL_DIR=\"$PROJECT_PATH/.devcontainer/shell\"" "$HOME/.bashrc"
 
 probe() { # probe <shell snippet writing to /tmp/probe>
   rm -f /tmp/probe
@@ -29,10 +28,10 @@ check "the project layer wins on conflict" \
 check "and the user layer's own settings survive" \
   test "$(probe 'printf %s "${USER_LAYER:-}" > /tmp/probe')" = 1
 
-# The user layer is at a fixed container path, so it does not need PROJECT_PATH — that is the
-# whole asymmetry between the two options.
-check "the user layer alone works with no PROJECT_PATH" \
+# Both assignments are absolute container paths by the time any shell runs — userDir always
+# was, and the project layer was resolved at create time — so neither depends on the variable.
+check "both layers still fire with no PROJECT_PATH in the shell" \
   test "$(env -u PROJECT_PATH bash -ic 'printf %s "${ORDER:-}" > /tmp/probe' \
-    > /dev/null 2>&1; cat /tmp/probe)" = ' user'
+    > /dev/null 2>&1; cat /tmp/probe)" = ' user proj'
 
 reportResults

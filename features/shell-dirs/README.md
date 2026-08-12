@@ -6,12 +6,12 @@ are sourced from `~/.bashrc`, not appended into it, so nothing is rebuilt and
 nothing is baked.
 
 ```jsonc
-"features": { "ghcr.io/bmingles/devc-tools/shell-dirs:0": {} },
-"remoteEnv": { "PROJECT_PATH": "${containerWorkspaceFolder}" }
+"features": { "ghcr.io/bmingles/devc-tools/shell-dirs:0": {} }
 ```
 
-That is the whole setup for the layer most people want: every `*.sh` in your repo's
-own `.devcontainer/shell/`. No mounts, no options, nothing host-side.
+That one line is the whole setup for the layer most people want: every `*.sh` in
+your repo's own `.devcontainer/shell/`. No mounts, no options, no environment
+variables, nothing host-side.
 
 ```sh
 # .devcontainer/shell/10-project.sh
@@ -27,22 +27,36 @@ export DATABASE_URL=postgres://localhost/dev
 > baseline already sources both layers, and until that is removed you would get the
 > project layer twice. See [Relationship to devc](#relationship-to-devc).
 
-## `PROJECT_PATH` is a prerequisite, not a nicety
+## How the workspace-relative path is found
 
-`projectDir` is **workspace-relative**, and it is resolved at shell time against
-`$PROJECT_PATH`. If that variable is not set in the container, the project layer
-sources nothing and the Feature looks broken. Hence the `remoteEnv` line above —
-it is half of the two-line install, not a footnote.
+`projectDir` is **workspace-relative**, and a Feature's `install.sh` runs at image
+**build time**, where the workspace is not mounted and its path is unknowable. So
+the block `install.sh` writes defers to `$PROJECT_PATH` — and a create-time hook
+then replaces that deferral with a real path:
 
-There is deliberately **no fallback to `$PWD`**: a shell that happens to open in
-some directory should not source whatever `*.sh` it finds there.
+1. **At create time**, `postCreateCommand` runs `post-create.sh`, which resolves
+   `projectDir` against `$PROJECT_PATH` if set, else against **its own cwd** — the
+   devcontainer CLI hands every lifecycle hook the workspace folder. It rewrites
+   the block's `PROJECT_SHELL_DIR=` line to that absolute path.
+2. **At shell time**, the block sources whatever that line names.
 
-`PROJECT_PATH` is a plain environment variable, so anything that sets it works —
-`remoteEnv`, `containerEnv`, your image. devc sets it already and re-passes it on
-`exec` and `attach`.
+So `PROJECT_PATH` is an **override, not a prerequisite**. Set it if you want to
+point the layer somewhere other than the workspace root; ignore it otherwise.
 
-If you would rather not set it, give `projectDir` an **absolute** container path
-instead. Absolute values are used as-is and never consult `PROJECT_PATH`.
+Only the _path_ is resolved at create time. The directory's **contents** are still
+read fresh by every shell, so adding a file after the container was built needs no
+rebuild — that is the whole point of the Feature and the hook does not touch it.
+
+If the hook finds no `PROJECT_PATH` **and** a cwd equal to the home folder, it
+declines and says so. That combination is exactly the CLI's
+`remoteWorkspaceFolder || homeFolder` fallback firing, which means the container has
+no workspace folder at all — and baking `~/.devcontainer/shell` would be worse than
+leaving the block deferred. Set `PROJECT_PATH` as `remoteEnv`, or give `projectDir`
+an absolute path; both still work.
+
+There is deliberately **no `$PWD` fallback at shell time**: a shell that happens to
+open in some directory should not source whatever `*.sh` it finds there. The cwd is
+consulted once, at create time, where the CLI chose it.
 
 ## The second layer: personal scripts from your host
 
@@ -87,10 +101,10 @@ Only `*.sh` is sourced. A `README.md` or a `notes.txt` alongside is ignored, and
 is a subdirectory, even one named `something.sh`. A missing or empty directory is a
 silent no-op — the Feature is safe to leave enabled in a repo that ships no scripts.
 
-| Option       | Default               | Meaning                                                                                                              |
-| ------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `projectDir` | `.devcontainer/shell` | Workspace-relative directory, resolved against `$PROJECT_PATH`. An absolute value is used as-is. Empty disables it.  |
-| `userDir`    | _(empty)_             | Absolute container path, sourced **before** the project layer. Empty disables it. Nothing here creates or mounts it. |
+| Option       | Default               | Meaning                                                                                                                        |
+| ------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `projectDir` | `.devcontainer/shell` | Workspace-relative directory, resolved to an absolute path at create time. An absolute value is used as-is. Empty disables it. |
+| `userDir`    | _(empty)_             | Absolute container path, sourced **before** the project layer. Empty disables it. Nothing here creates or mounts it.           |
 
 The asymmetry is on purpose: one directory is found _through_ the workspace, the
 other is a fixed container path with a mount behind it.
@@ -111,15 +125,24 @@ Worth naming in full once, because they are easy to confuse:
 
 ## What it does
 
-At **build time** (as root) it appends one marker-guarded block to the remote user's
-`~/.bashrc`, between `# >>> shell-dirs >>>` and `# <<< shell-dirs <<<`, with the two
-options substituted into its two directory assignments. That is all it does: no
-lifecycle command, no mounts, nothing created, nothing fetched. The guard is the
-opening marker, so a rebuild does not double-append.
+At **build time** (as root) it does two things and fetches nothing: it appends one
+marker-guarded block to the remote user's `~/.bashrc`, between
+`# >>> shell-dirs >>>` and `# <<< shell-dirs <<<`, with the two options substituted
+into its two directory assignments; and it places `post-create.sh` at
+`/usr/local/share/devc-features/shell-dirs/`, with `projectDir` baked in — the
+manifest's `postCreateCommand` takes no arguments, so that is how the option crosses
+over. The append is guarded by the opening marker, so a rebuild does not
+double-append.
 
-At **shell time** the block sources each layer, resolving both directories fresh
-every time. That is what makes it live: a file added after the container was built
-is picked up by the next shell, and deleting one stops it being read.
+At **create time** (as the remote user, before any `postCreateCommand` your own
+`devcontainer.json` declares) `post-create.sh` resolves a workspace-relative
+`projectDir` to an absolute path, as described above. It is a no-op for an absolute
+or empty `projectDir`, and it rewrites only the line inside **this Feature's**
+markers.
+
+At **shell time** the block sources each layer, reading both directories fresh every
+time. That is what makes it live: a file added after the container was built is
+picked up by the next shell, and deleting one stops it being read.
 
 An option containing `"`, `` ` ``, `$` or `\` **fails the build**, naming the option.
 The values are pasted into a shell assignment, and a silently mangled block would
@@ -164,6 +187,10 @@ shell, deliberately **not** exported so a subshell that legitimately re-sources
 such guard yet, and it runs first — so it sources, and this one skips. That happens
 to work, but it is one-sided by construction. Do not rely on it; wait for the swap.
 
+`post-create.sh` rewrites **only** the line between this Feature's own
+`# >>> shell-dirs >>>` markers. devc's block carries an identically named
+`PROJECT_SHELL_DIR=` assignment, and an unscoped rewrite would edit it too.
+
 One difference from devc's copy beyond the guard: **nothing here defaults to a devc
 path.** devc's `USER_SHELL_DIR` is `/usr/local/share/devc/shell`, which is where its
 own mount lands. Here `userDir` is empty until you say otherwise.
@@ -187,6 +214,7 @@ because that one must stay runnable against both copies:
 ```sh
 bash features/shell-dirs/test/shell_dirs_guard_test.sh   # the _DEVC_SHELL_DIRS_DONE guard
 bash features/shell-dirs/test/install_options_test.sh    # options → assignments, and the append
+bash features/shell-dirs/test/post_create_test.sh        # create-time path resolution
 ```
 
 The guard harness is a sibling rather than a case in `shell_dirs_test.sh` for the
@@ -201,12 +229,20 @@ the second layer, and the off switch:
 bash features/shell-dirs/test/run-features-test.sh
 ```
 
-| Scenario           | What it pins                                                      |
-| ------------------ | ----------------------------------------------------------------- |
-| _(default)_        | A bare `{}` installs cleanly and sources a project layer.         |
-| `project_layer`    | `remoteEnv.PROJECT_PATH` + a real workspace; live add and delete. |
-| `both_layers`      | User layer first, project layer second; project wins on conflict. |
-| `no_project_layer` | `"projectDir": ""` disables the layer instead of falling back.    |
+| Scenario           | What it pins                                                                   |
+| ------------------ | ------------------------------------------------------------------------------ |
+| _(default)_        | A bare `{}` installs cleanly; the create-time hook resolved a real path.       |
+| `bare_no_env`      | One line, no `remoteEnv`, a committed `.devcontainer/shell/` — a shell has it. |
+| `project_layer`    | `remoteEnv.PROJECT_PATH` overrides the cwd; live add and delete.               |
+| `both_layers`      | User layer first, project layer second; project wins on conflict.              |
+| `no_project_layer` | `"projectDir": ""` disables the layer instead of falling back.                 |
+
+The default scenario is also what **measures the cwd of a Feature-declared
+`postCreateCommand`** — the assumption `post-create.sh` rests on. It asserts the
+assignment is an absolute workspace path rather than the deferred form, which is
+only true if the CLI handed the hook the workspace folder. Until that scenario has
+run under Docker, the cwd behavior here is a read of the CLI's source, not a
+measurement.
 
 Each scenario writes its `*.sh` fixtures from its own `onCreateCommand`, which runs
 before every `postCreateCommand`, because `devcontainer features test` generates the

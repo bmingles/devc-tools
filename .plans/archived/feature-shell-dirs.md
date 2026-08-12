@@ -251,6 +251,72 @@ something other than what was asked for.
 `projectDir` already covers the consumer who will not set `PROJECT_PATH`, so a
 second variable name has no case yet.
 
+## Superseded — one decision reversed immediately after it landed
+
+Read the Contracts section above as history on one point. **"No lifecycle command
+and no mounts" is now "no mounts".** The Feature declares a `postCreateCommand`.
+
+The plan treated `PROJECT_PATH` as an unavoidable prerequisite and said so in the
+concept boundaries — _"This is the Feature's sharpest usability edge."_ It then
+shipped the edge: a bare `{}` with no `remoteEnv` sourced **nothing**, which fails
+the collection's own rule that `"<feature>": {}` must install cleanly _and do
+something useful_. The plan's own README instruction ("must say how to set it, or
+the Feature looks broken out of the box") is a description of that failure, not a
+fix for it.
+
+The reasoning that produced it conflated two times, and only one of them is
+constrained:
+
+- **Image build time** — `install.sh`. The workspace is not mounted and its path is
+  genuinely unknowable. This half of the plan is correct.
+- **Create time** — a lifecycle hook. The CLI computes
+  `remoteCwd = remoteWorkspaceFolder || homeFolder` once and passes it to every
+  hook, Feature-contributed ones included, so the workspace path is simply
+  available. The plan never considered this because it had already decided against
+  a lifecycle command.
+
+So `features/shell-dirs/post-create.sh` resolves a workspace-relative `projectDir`
+to an absolute path at create time and rewrites the block's `PROJECT_SHELL_DIR=`
+line. `PROJECT_PATH` is now an **override**, still preferred when set, so devc and
+any consumer who already wrote the `remoteEnv` line are unaffected.
+
+What this deliberately does **not** cost:
+
+- **The drift contract holds.** The two assignment lines were already the defined
+  parameterization slot — the harness rewrites them, `install.sh` rewrites them,
+  and now `post-create.sh` rewrites one. The block itself is still a verbatim copy
+  of devc's, and `devc/tests/shell_dirs_test.sh` still passes unmodified against
+  both files.
+- **Liveness is untouched.** Only the path is resolved. Every shell still reads the
+  directory's contents, so a file added after create still needs no rebuild.
+- **devc's copy is not edited.** The rewrite is scoped between this Feature's own
+  `# >>> shell-dirs >>>` markers, because devc's block carries an identically named
+  assignment and an unscoped `/^PROJECT_SHELL_DIR=/` would rewrite both.
+
+The one assumption it rests on is **open question 1, which is still a source read
+rather than a measurement.** Guarded rather than assumed: if `PROJECT_PATH` is unset
+_and_ the cwd is the home folder — precisely the CLI's `|| homeFolder` branch — the
+hook declines, explains which of the two things to set, and exits 0, leaving the
+block deferring to `PROJECT_PATH` exactly as before. And the default
+`devcontainer features test` scenario now **measures** the cwd: it asserts the
+assignment is an absolute workspace path rather than the deferred form, which is
+only true if the CLI handed the hook the workspace folder.
+
+`version` stays `0.1.0` — the Feature was never pushed, so nothing has published and
+there is nothing to bump from.
+
+Checklist for the reversal:
+
+- [x] `features/shell-dirs/post-create.sh` — resolve, marker-scoped rewrite,
+      decline-on-home-folder guard, idempotent
+- [x] `install.sh` — place it under `SHARE_DIR`, bake `projectDir`, `chmod 0755`
+- [x] `devcontainer-feature.json` — `postCreateCommand`, option descriptions
+- [x] `features/shell-dirs/test/post_create_test.sh` — 33 checks, offline
+- [x] `test/bare_no_env.sh` + scenario — one line, no `remoteEnv`, a real fixture
+- [x] `test/test.sh` — now measures the hook's cwd
+- [x] README — "How the workspace-relative path is found" replaces the
+      prerequisite section; the install shrinks to one line
+
 ## Not in this plan
 
 - Any edit to `devc/default/` — the mount, `initialize-command.sh`, and the

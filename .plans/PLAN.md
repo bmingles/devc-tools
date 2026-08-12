@@ -120,6 +120,34 @@ own matrix job.
   but none has been run under Docker. What that leaves unmeasured is the image build,
   the CLI's `PROJECTDIR`/`USERDIR` option plumbing, and `${containerWorkspaceFolder}`
   substitution inside each scenario's `onCreateCommand`.
+  **One decision was reversed immediately after it landed** (see the archived plan's
+  Superseded section): "no lifecycle command" became "no mounts". The plan treated
+  `PROJECT_PATH` as an unavoidable prerequisite — its own concept boundaries called it
+  "the Feature's sharpest usability edge" — and then shipped the edge: a bare `{}`
+  with no `remoteEnv` sourced **nothing**, failing the collection's rule that
+  `"<feature>": {}` must install cleanly _and do something useful_. The reasoning
+  conflated two times. `install.sh` runs at image **build** time, where the workspace
+  is genuinely unmounted and its path unknowable — that half was right. A **lifecycle
+  hook** runs at create time, where the CLI hands every hook
+  `remoteWorkspaceFolder || homeFolder` as its cwd, so the path is simply there; the
+  plan never weighed it because it had already ruled out a lifecycle command. So
+  `post-create.sh` (the same install-copies-a-script-into-`/usr/local/share` pattern
+  `node-nvmrc` uses) resolves a workspace-relative `projectDir` at create time and
+  rewrites the block's `PROJECT_SHELL_DIR=` line; `PROJECT_PATH` remains an override,
+  preferred when set, so devc and anyone who already wrote the `remoteEnv` line are
+  unaffected. **The drift contract survives** — those two assignment lines were
+  already the defined parameterization slot, so the block is still verbatim devc's and
+  `shell_dirs_test.sh` still passes unmodified against both. Liveness survives too:
+  only the path is resolved, contents are still read per shell. The rewrite is scoped
+  between this Feature's own markers, because devc's block carries an identically
+  named assignment and an unscoped rewrite would edit it. The assumption it rests on
+  is **still open question 1** — guarded rather than assumed, since an unset
+  `PROJECT_PATH` plus a cwd equal to the home folder is exactly the `|| homeFolder`
+  branch, and there the hook declines, names the two things that would fix it, and
+  exits 0. The default scenario now **measures** that cwd. Added with it:
+  `test/post_create_test.sh` (33 checks, offline) and a `bare_no_env` scenario — one
+  line, no `remoteEnv`, a real committed fixture. `version` stays `0.1.0`; nothing had
+  been pushed, so nothing had published.
 - [feature-independent-versions](archived/feature-independent-versions.md) — **Reversed a
   stated decision**, `design/devc-feature-split.md`'s "One repo, one tag" (now
   struck through there, with a pointer here): every Feature republished at the

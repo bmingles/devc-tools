@@ -1,10 +1,15 @@
 #!/bin/sh
-# shell-dirs Feature install — append the interactive-shell hook to the remote user's ~/.bashrc.
+# shell-dirs Feature install — place the create-time script, and append the interactive-shell
+# hook to the remote user's ~/.bashrc.
 #
-# Runs as root at image *build* time, and its whole job is to write one marker-guarded block.
-# Nothing is sourced, resolved or created here: neither shell directory need exist at build
-# time (the workspace is not mounted yet, and the user layer is typically a bind mount that
-# only appears at run time), and both are looked up fresh by every shell instead.
+# Runs as root at image *build* time, and its whole job is to put files somewhere. Nothing is
+# sourced, resolved or created here: neither shell directory need exist at build time (the
+# workspace is not mounted yet, and the user layer is typically a bind mount that only appears
+# at run time), and both are looked up fresh by every shell instead.
+#
+# It cannot resolve the workspace either — the path is unknowable during `docker build`, which
+# is why the block it writes defers to $PROJECT_PATH, and why post-create.sh exists to replace
+# that deferral with a real path at create time.
 #
 # Copied out of devc's baseline — the `devc:shell-dirs` fenced block in
 # devc/default/scripts/bashrc-additions.sh — with only the two *_SHELL_DIR assignments
@@ -43,6 +48,40 @@ check_path_opt() { # check_path_opt <option name> <value>
 }
 check_path_opt projectDir "$PROJECT_DIR_OPT"
 check_path_opt userDir "$USER_DIR_OPT"
+
+# /usr/local/share/devc-features/<id>/ is the Feature namespace, the same one node-nvmrc uses.
+# /usr/local/share/devc/ is devc's own baseline namespace and no Feature writes into it — not
+# sharing the prefix is what keeps "did devc put this here, or a Feature?" answerable.
+# Overridable for the test harness.
+SHARE_DIR="${SHARE_DIR:-/usr/local/share/devc-features/shell-dirs}"
+
+FEATURE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# --- the create-time script -------------------------------------------------------------
+#
+# The manifest's postCreateCommand takes no arguments, so projectDir has to cross into
+# post-create.sh at build time. It is baked by rewriting the one `VAR="${VAR:-default}"` line,
+# which keeps the file in the repo readable and runnable on its own.
+
+bake() { # bake <file> <var> <value>
+  _bake_tmp="$1.bake.$$"
+  sed "s|^$2=.*|$2=\"$3\"|" "$1" > "$_bake_tmp"
+  mv -f "$_bake_tmp" "$1"
+  # A rename or a reformat upstream would otherwise leave the option silently unwired, with the
+  # `${VAR:-default}` fallback quietly standing in for whatever the consumer asked for.
+  grep -q "^$2=\"$3\"\$" "$1" || die "could not bake $2 into $(basename "$1")"
+}
+
+mkdir -p "$SHARE_DIR"
+# Plain cp rather than `install -o root`: this runs as root, so the copy is root-owned either
+# way, and no ownership flag means the script still runs unprivileged in the test harness.
+cp "$FEATURE_DIR/post-create.sh" "$SHARE_DIR/post-create.sh"
+bake "$SHARE_DIR/post-create.sh" PROJECT_DIR "$PROJECT_DIR_OPT"
+chmod 0755 "$SHARE_DIR/post-create.sh"
+
+echo "shell-dirs: create-time script installed at $SHARE_DIR/post-create.sh"
+
+# --- the interactive-shell hook ----------------------------------------------------------
 
 USER_HOME="${_REMOTE_USER_HOME:-$HOME}"
 [ -n "$USER_HOME" ] || die 'no _REMOTE_USER_HOME and no HOME — nowhere to append a .bashrc block'

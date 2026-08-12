@@ -14,6 +14,12 @@ source dev-container-features-test-lib
 check "PROJECT_PATH is set by remoteEnv" test -n "$PROJECT_PATH"
 check "the fixture landed in the workspace" test -f "$PROJECT_PATH/.devcontainer/shell/10-a.sh"
 
+# PROJECT_PATH is an override now, not a prerequisite: the create-time hook prefers it over its
+# own cwd. Both resolve to the same place here, which is the point — setting it changes nothing
+# for a consumer who already did.
+check "the create-time hook resolved from PROJECT_PATH" \
+  grep -qxF "PROJECT_SHELL_DIR=\"$PROJECT_PATH/.devcontainer/shell\"" "$HOME/.bashrc"
+
 # The result goes through a file rather than stdout: `bash -i` without a tty warns about job
 # control, and any other ~/.bashrc line is free to print.
 probe() { # probe <shell snippet writing to /tmp/probe>

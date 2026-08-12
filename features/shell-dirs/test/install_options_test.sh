@@ -20,11 +20,13 @@ check() { # check <desc> <condition-as-args...>
 }
 
 # run_install <home> [VAR=value ...] — a fresh ~/.bashrc unless the caller made one first.
-run_install() { # sets rc / status / out
+# SHARE_DIR is redirected out of /usr/local/share so this runs unprivileged.
+run_install() { # sets rc / share / status
   local home="$1"; shift
   mkdir -p "$home"
   [ -f "$home/.bashrc" ] || : > "$home/.bashrc"
-  env -u PROJECTDIR -u USERDIR _REMOTE_USER_HOME="$home" "$@" \
+  share="$home.share"
+  env -u PROJECTDIR -u USERDIR SHARE_DIR="$share" _REMOTE_USER_HOME="$home" "$@" \
     sh "$INSTALL" > "$WORK/out.log" 2>&1
   status=$?
   rc="$home/.bashrc"
@@ -49,6 +51,12 @@ check "projectDir defaults to .devcontainer/shell, behind the PROJECT_PATH guard
     'PROJECT_SHELL_DIR="${PROJECT_PATH:+$PROJECT_PATH/.devcontainer/shell}"'
 check "userDir defaults to empty — the layer is off" \
   test "$(assigned "$rc" USER_SHELL_DIR)" = 'USER_SHELL_DIR=""'
+# The create-time half. post_create_test.sh covers what it does; this is that install.sh
+# actually placed it, with the option carried across.
+check "the create-time script is installed" test -f "$share/post-create.sh"
+check "and is executable" test -x "$share/post-create.sh"
+check "with projectDir baked in" grep -qx 'PROJECT_DIR=".devcontainer/shell"' \
+  "$share/post-create.sh"
 
 echo "case 2: the appended block is what the harnesses run"
 # Sourcing what actually landed in ~/.bashrc, with PROJECT_PATH pointing at a fixture.
@@ -83,6 +91,8 @@ run_install "$H" PROJECTDIR=/opt/shell.d
 check "install.sh succeeds" test "$status" -eq 0
 check "used as-is, with no \${PROJECT_PATH:+...} wrapper" \
   test "$(assigned "$rc" PROJECT_SHELL_DIR)" = 'PROJECT_SHELL_DIR="/opt/shell.d"'
+check "and the create-time script carries the same value" \
+  grep -qx 'PROJECT_DIR="/opt/shell.d"' "$share/post-create.sh"
 awk '/# devc:shell-dirs \(start\)/{f=1;next} /# devc:shell-dirs \(end\)/{f=0} f' "$rc" \
   > "$WORK/c4/block.sh"
 check "so it works with no PROJECT_PATH at all" bash -c \
