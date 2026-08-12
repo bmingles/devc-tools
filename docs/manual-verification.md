@@ -111,21 +111,23 @@ ls ~/.config/devc-bridge/  # must show run/ and client/
 
 ## 3. Tag a prerelease
 
-**The version guard is strict equality.** To tag `v0.1.0-rc.1`, all four must
-first read `0.1.0-rc.1`:
+**The version guard is strict equality.** To tag `v0.1.0-rc.1`, every one of
+these must first read `0.1.0-rc.1`:
 
 - `devc/help.ts` — `VERSION`
 - `devc-bridge/host/version.ts` — `VERSION`
 - `devc-bridge/client/version.ts` — `VERSION`
-- `features/devc-bridge/devcontainer-feature.json` — `"version"`
+- `"version"` in **every** `features/*/devcontainer-feature.json` (today just
+  `devc-bridge`), plus `FEATURE_VERSION` in the `install.sh` of any Feature that
+  has one
 
-The first three are guarded by `release.yml`, the fourth by
-`publish-feature.yml`. Miss the fourth and the binaries publish while the
-Feature does not.
+The three binaries are guarded by `release.yml`, the whole Feature collection by
+`publish-feature.yml`. Miss a Feature and the binaries publish while nothing in
+`features/` does.
 
 - [ ] **Negative test first.** Push a tag that disagrees with `VERSION` and
       confirm `gate` fails before anything compiles, naming both values.
-- [ ] Bump all four, commit, `git tag v0.1.0-rc.1 && git push --tags`
+- [ ] Bump all of them, commit, `git tag v0.1.0-rc.1 && git push --tags`
 - [ ] `release.yml` creates a release with all eight assets plus `checksums.txt`
       and `install.sh`, flagged **prerelease** (the `-` in the tag), so
       `releases/latest` still points at the last stable

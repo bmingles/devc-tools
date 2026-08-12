@@ -21,8 +21,12 @@ CLI="${DEVCONTAINER_CLI:-devcontainer}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/src/$ID" "$STAGE/test/$ID"
-cp "$FEATURE_DIR/devcontainer-feature.json" "$FEATURE_DIR/install.sh" \
-  "$STAGE/src/$ID/"
+# The whole Feature directory minus its tests, rather than a list of files to keep in step
+# with the Feature — a Feature that ships scripts/ alongside install.sh would otherwise stage
+# an incomplete copy and fail inside the container, far from the omission. This file is
+# identical in every Feature; copy it as-is.
+cp -R "$FEATURE_DIR"/. "$STAGE/src/$ID/"
+rm -rf "$STAGE/src/$ID/test"
 cp "$FEATURE_DIR/test/test.sh" "$STAGE/test/$ID/"
 
 exec "$CLI" features test --project-folder "$STAGE" --features "$ID" "$@"

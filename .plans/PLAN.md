@@ -33,18 +33,12 @@ baseline that references an unpublished `ghcr.io` ref breaks every `devc up` —
 the failure [devc-bridge-feature](archived/devc-bridge-feature.md) already had to
 reverse once.
 
-Order matters only for the first: it generalizes the machinery the other four
-land on.
+The machinery they land on is already generalized —
+[features-collection](archived/features-collection.md) made `features/` a real
+collection, so each of the four below only adds a directory: no edit to
+`publish-feature.yml`, and `features/README.md` gains a row. Order among them
+does not matter.
 
-- [features-collection](features-collection.md) — **first.** Make `features/` a
-  real collection instead of a directory that happens to contain one Feature.
-  `publish-feature.yml`'s version guard names `devc-bridge` literally while
-  `features publish` walks the whole tree, so a second Feature would publish
-  **unguarded**. One loop over `features/*/devcontainer-feature.json`, per-Feature
-  error messages, `id` == directory basename, and the baked `FEATURE_VERSION`
-  checked only where one exists (only the bridge needs it — it names a release
-  asset). Plus a `features/README.md` and a staging wrapper that copies a whole
-  Feature directory rather than a per-Feature file list.
 - [feature-node-nvmrc](feature-node-nvmrc.md) — the clean case, and the only one
   of the four that does not split: `.nvmrc` → `nvm install` at create time, plus
   `nvm use` on `cd`. No host coupling and no mounts. Two deviations from devc's
@@ -84,6 +78,49 @@ land on.
 
 ### Completed
 
+- [features-collection](archived/features-collection.md) — Make `features/` a
+  real collection before four more Features arrive, rather than a directory that
+  happens to contain one. `features publish ./features` already walked the whole
+  tree while the version guard read `features/devc-bridge/` literally, so the
+  second Feature would have published **unguarded** — the kind of failure nobody
+  sees until they pull a Feature whose version disagrees with the tag it shipped
+  under. The guard is now one loop over `features/*/devcontainer-feature.json`
+  that checks three things per Feature — `id` equals the directory basename
+  (`features package` names the artifact from it, and a mismatch otherwise
+  surfaces as a baffling packaging error), `version` equals the tag minus its
+  `v`, and the baked `FEATURE_VERSION` **only where one exists**, since only
+  `devc-bridge` names a release asset to download and a Feature that fetches
+  nothing must not be made to invent a version. It reports every offender with
+  its directory before exiting, because "which of the five?" is the only question
+  a failed release run has to answer, and it **fails on an empty glob**: a guard
+  that finds nothing to check must not pass, which is the exact failure mode the
+  plan existed to prevent. What deliberately did **not** change is what fires it:
+  `on:` is untouched, publishing stays tag-triggered with `dry_run` defaulting
+  true, and the version guard stays gated on the ref alone — a dry run against a
+  tag should still check. Widening the guard's coverage was the work; widening
+  its trigger was not. The staging wrapper for `devcontainer features test` now
+  copies the whole Feature directory minus `test/` instead of a per-Feature file
+  list, so a Feature shipping `scripts/*.sh` cannot stage an incomplete copy that
+  fails deep inside a container build; it is byte-identical between Features and
+  meant to be copied unchanged. New `features/README.md` carries the collection
+  layout, the one-repo-one-version rule, the published-refs table and the
+  no-shared-code / no-host-mounts constraints; the root README's Releasing
+  section and `docs/manual-verification.md` §3 stop saying "all four" versions
+  and say "every Feature under `features/`". `tests/workflow_guards_test.sh`
+  gained two offline sections: the guard's `run:` block must name **no** Feature
+  id literally and must iterate the collection glob, and every Feature's `id`
+  must match its directory with all versions equal — the one-repo-one-version
+  rule, checkable without a tag and the thing most likely to rot between
+  releases. Nothing about the published `devc-bridge` artifact changes.
+  **Not verified here (no Docker):** `bash features/devc-bridge/test/run-features-test.sh`
+  against the widened staging copy, left unchecked in the archived plan — what
+  was checked is the staged tree itself, via a stub CLI. Everything else was run:
+  the harness (10 checks, plus both new sections confirmed to fail when the guard
+  is hardcoded or a Feature's version drifts), and the guard's `run:` block
+  extracted through a real YAML parse and executed against this tree (passes on
+  `v0.1.0`, fails naming `features/devc-bridge` on `v9.9.9`) and against
+  synthetic collections covering the empty glob, two Features with and without
+  `FEATURE_VERSION`, and all three per-Feature failures at once.
 - [devc-bridge-client-download](archived/devc-bridge-client-download.md) — Stop
   resting the devc-bridge Feature's security on `readonly` surviving into
   `docker run --mount`, which the published Feature schema cannot express and the
@@ -529,7 +566,7 @@ land on.
 | devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](archived/devc-bridge-feature.md)                     | complete |
 | devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md)         | complete |
 | releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](archived/release-and-installer.md)                 | complete |
-| `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](features-collection.md)                              | pending  |
+| `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](archived/features-collection.md)                     | complete |
 | `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](feature-node-nvmrc.md)                                | pending  |
 | `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](feature-shell-dirs.md)                                | pending  |
 | `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                | pending  |

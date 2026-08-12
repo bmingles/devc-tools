@@ -27,7 +27,7 @@ is devc-shaped only because it happens to live in devc.
 - `features/devc-bridge/` — the shape a Feature directory takes here
   (manifest + `install.sh` + `README.md` + `test/`).
 - `features/README.md` — add a row (created by
-  [features-collection](features-collection.md), which lands first).
+  [features-collection](archived/features-collection.md), which lands first).
 
 ## Contracts
 
@@ -171,7 +171,7 @@ nvm install                           # failure is fatal
       `node_modules`-volume rationale
 - [ ] `features/node-nvmrc/test/test.sh` — `devcontainer features test` scenario
 - [ ] `features/node-nvmrc/test/run-features-test.sh` — wrapper, per
-      [features-collection](features-collection.md)
+      [features-collection](archived/features-collection.md)
 - [ ] `features/node-nvmrc/test/nvm_use_test.sh` — offline harness over the
       `devc:nvm-use` block
 - [ ] `features/README.md` — row for this Feature

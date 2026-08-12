@@ -1,6 +1,8 @@
-name: Publish devcontainer Feature
+name: Publish devcontainer Features
 
-# Publishes features/devc-bridge/ to ghcr.io/bmingles/devc-tools/devc-bridge.
+# Publishes every Feature in features/ to ghcr.io/bmingles/devc-tools/<id>. The collection is
+# walked, never enumerated: adding a directory under features/ is the whole of adding a
+# Feature to this workflow — see features/README.md.
 #
 # Separate from the binary release workflow but on the same `v*` tag trigger: the two produce
 # unrelated artifacts and a failure in one should not block the other, while a single tag still
@@ -33,28 +35,68 @@ jobs:
 
       # A published Feature must not disagree with the commit it claims to be, so the tag is
       # the source of truth and this fails rather than rewriting the file during the build.
+      #
+      # Every Feature in the collection, not a named one: `features publish` walks the whole
+      # directory, so a guard that spelled out an id would let the next Feature added beside
+      # it publish unchecked — the failure that is invisible until someone pulls it.
+      # Deliberately reports every offender before exiting, since "which of the five?" is the
+      # only question a failed release run has to answer.
       - name: Version guard
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
           tag="${GITHUB_REF#refs/tags/}"
-          version="$(jq -r .version features/devc-bridge/devcontainer-feature.json)"
-          if [ "$tag" != "v$version" ]; then
-            echo "::error::tag $tag disagrees with devcontainer-feature.json version $version"
-            exit 1
-          fi
-          # install.sh carries the same version so it can name its release asset without a
-          # JSON parser in the container. Duplicated, therefore guarded: a Feature that
-          # downloads a client from a *different* release than it claims to be is worse than
-          # a failed publish.
-          baked="$(sed -n "s/^FEATURE_VERSION='\(.*\)'$/\1/p" features/devc-bridge/install.sh)"
-          if [ "$baked" != "$version" ]; then
-            echo "::error::install.sh FEATURE_VERSION ($baked) disagrees with devcontainer-feature.json version ($version)"
-            exit 1
-          fi
+          expected="${tag#v}"
+          found=0
+          bad=0
+          for manifest in features/*/devcontainer-feature.json; do
+            # No nullglob here, so an unmatched glob arrives as its own literal.
+            [ -f "$manifest" ] || continue
+            dir="$(dirname "$manifest")"
+            id_from_dir="$(basename "$dir")"
+            found=$((found + 1))
 
-      # The Feature is a collection of one, so `features/` is the collection folder and
-      # `features/devc-bridge/` the Feature within it.
+            # `features package` derives the artifact name from `id`, so a mismatch here
+            # publishes under a name nothing references — and reads as a baffling packaging
+            # error rather than the typo it is.
+            id="$(jq -r .id "$manifest")"
+            if [ "$id" != "$id_from_dir" ]; then
+              echo "::error::$dir: id \"$id\" disagrees with the directory name \"$id_from_dir\""
+              bad=1
+            fi
+
+            # One repo, one version: every Feature moves with the repo tag, like the binaries.
+            version="$(jq -r .version "$manifest")"
+            if [ "$version" != "$expected" ]; then
+              echo "::error::$dir: version $version disagrees with tag $tag"
+              bad=1
+            fi
+
+            # Only a Feature that names a release asset bakes the version into its install.sh,
+            # because the manifest is JSON and no `jq` is guaranteed in an arbitrary base
+            # image. Absent is fine and normal; present and stale is not — a Feature that
+            # downloads from a *different* release than it claims to be is worse than a failed
+            # publish.
+            if [ -f "$dir/install.sh" ]; then
+              baked="$(sed -n "s/^FEATURE_VERSION='\(.*\)'$/\1/p" "$dir/install.sh")"
+              if [ -n "$baked" ] && [ "$baked" != "$version" ]; then
+                echo "::error::$dir: install.sh FEATURE_VERSION ($baked) disagrees with devcontainer-feature.json version ($version)"
+                bad=1
+              fi
+            fi
+          done
+
+          # A guard that finds nothing to check must not pass: an empty collection means the
+          # tree moved, and the publish below would then push nothing while reporting success.
+          if [ "$found" -eq 0 ]; then
+            echo "::error::no features/*/devcontainer-feature.json found — has the collection moved?"
+            exit 1
+          fi
+          [ "$bad" -eq 0 ] || exit 1
+          echo "checked $found Feature(s) against $tag"
+
+      # `features/` is the collection folder and each `features/<id>/` a Feature within it;
+      # both commands below take the collection and walk it.
       - name: Package
         run: npx --yes @devcontainers/cli@latest features package ./features --force-clean-output-folder --output-folder ./dist/features
 
@@ -64,7 +106,7 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run }}
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # → ghcr.io/bmingles/devc-tools/devc-bridge, tagged latest / 0 / 0.1 / 0.1.0.
+      # → ghcr.io/bmingles/devc-tools/<id> for each Feature, tagged latest / 0 / 0.1 / 0.1.0.
       - name: Publish
         if: ${{ startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run }}
         env:

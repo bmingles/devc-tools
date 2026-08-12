@@ -96,28 +96,42 @@ generic, not that it works (it runs in Actions, not here):
 
 ## Checklist
 
-- [ ] `.github/workflows/publish-feature.yml` — version guard loops over
+- [x] `.github/workflows/publish-feature.yml` — version guard loops over
       `features/*/devcontainer-feature.json`; per-Feature error messages; empty
       glob fails; `FEATURE_VERSION` checked only where present
-- [ ] `features/devc-bridge/test/run-features-test.sh` — stage the whole Feature
+- [x] `features/devc-bridge/test/run-features-test.sh` — stage the whole Feature
       directory minus `test/`
-- [ ] `features/README.md` — collection layout, version rule, published refs
+- [x] `features/README.md` — collection layout, version rule, published refs
       table, how to run a Feature's tests
-- [ ] `tests/workflow_guards_test.sh` — generic-guard + one-version assertions
-- [ ] `README.md` — Releasing section mentions that a tag moves every Feature in
-      `features/`, not just the bridge
-- [ ] `.plans/PLAN.md` — register
+- [x] `tests/workflow_guards_test.sh` — generic-guard + one-version assertions
+- [x] `README.md` — Releasing section mentions that a tag moves every Feature in
+      `features/`, not just the bridge (`docs/manual-verification.md` §3 said
+      "all four" too, and was generalized with it)
+- [x] `.plans/PLAN.md` — register
 
 ## Validation
 
-- [ ] `bash tests/workflow_guards_test.sh` passes
-- [ ] The guard's `run:` block, extracted and executed against this tree with
+- [x] `bash tests/workflow_guards_test.sh` passes — 10 checks, ALL PASS. Its two
+      new sections were also confirmed to **fail** when they should: a guard
+      edited back to `features/devc-bridge/devcontainer-feature.json` trips the
+      "names no Feature literally" check, and a second Feature at a different
+      `version` trips the one-version check
+- [x] The guard's `run:` block, extracted and executed against this tree with
       `GITHUB_REF=refs/tags/v0.1.0`, passes; with `v9.9.9` it fails naming
       `devc-bridge` — the same extract-and-run technique
-      `.plans/archived/release-and-installer.md` used for its workflow steps
+      `.plans/archived/release-and-installer.md` used for its workflow steps.
+      Extracted through a real YAML parse (`jsr:@std/yaml`), so what ran is the
+      shell in the file. Also run against synthetic collections: an empty
+      `features/` fails, two Features (one with `FEATURE_VERSION`, one without)
+      pass, and a tree with an `id`/directory mismatch, a stale version and a
+      stale `FEATURE_VERSION` fails reporting **all three** with the offending
+      directory in each message
 - [ ] (needs Docker) `bash features/devc-bridge/test/run-features-test.sh` still
-      passes with the widened staging copy
-- [ ] `deno fmt --check` clean
+      passes with the widened staging copy — **not run, no Docker here.** What
+      was checked is the staging itself, with a stub `DEVCONTAINER_CLI`: the
+      tempdir gets `src/devc-bridge/{devcontainer-feature.json,install.sh,README.md}`
+      and `test/devc-bridge/test.sh`, and no `src/devc-bridge/test/`
+- [x] `deno fmt --check` clean — 118 files
 
 ## Not in this plan
 
