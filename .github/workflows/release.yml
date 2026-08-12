@@ -3,18 +3,24 @@ name: Release
 # Builds every binary this repo produces and publishes them as a GitHub release, so
 # nobody needs Deno to *use* these tools.
 #
-# One tag moves the whole repo (see .plans/archived/release-and-installer.md decision 8):
+# One tag moves both binaries (see .plans/archived/release-and-installer.md decision 8):
 # `vX.Y.Z` gates devc and devc-bridge together, and the tag is the source of truth —
 # nothing here rewrites a VERSION during the build, a tag that disagrees with one just
 # fails before anything is compiled.
+#
+# NOT the whole repo: the Features under features/ carry their own versions and are
+# published by publish-feature.yml on a push to main. Nothing in this workflow touches
+# ghcr.io. See .plans/archived/feature-independent-versions.md.
 #
 # `workflow_dispatch` with `dry_run` (the default) runs the whole matrix and uploads the
 # assets as workflow artifacts *without* creating a release, so the pipeline can be
 # exercised before a tag exists — and, since a dispatch can target a tag, re-exercised
 # against the exact ref about to be released.
 #
-# Runs alongside publish-feature.yml on the same trigger: the two produce unrelated
-# artifacts and a failure in one should not block the other.
+# The one place the two workflows still meet: devc-bridge's Feature downloads its client
+# from a release *this* workflow produces, pinned as DEVC_TOOLS_RELEASE in its install.sh.
+# So a release unblocks that Feature's publish — but only on the next push to main under
+# features/. Tagging publishes no Features.
 
 on:
   push:
