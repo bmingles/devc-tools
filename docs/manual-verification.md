@@ -171,14 +171,32 @@ checked _before_ merging.
       **Measured against the registry: `["0","0.1","0.1.0","latest"]`** — all four,
       so the documented `:0` opt-in resolves. This closes the open question
       `devc-bridge-feature` left about whether `:0` would exist at all.
-- [ ] **Re-run with nothing changed.** The second run must print
+- [x] **Re-run with nothing changed.** The second run must print
       `Version 0.1.0 already exists, skipping` and push nothing. That idempotence
       is what makes publish-on-push safe, and it is pinned to
-      `@devcontainers/cli@0.88.0` in the workflow — re-check it whenever that pin
-      moves.
-      _The commit that ticked the two items above is itself the test: it touches
-      `features/` (so the workflow fires) and does **not** bump `node-nvmrc`'s
-      `version` (so the publish must be a no-op)._
+      `@devcontainers/cli@0.88.0` in the workflow — **re-check it whenever that
+      pin moves.**
+      **Confirmed.** A `features/`-touching commit that did _not_ bump
+      `node-nvmrc`'s `version` re-ran the job green, and all four tags still
+      resolve to the same manifest digest
+      (`sha256:8bff2dc276623e88baeb8407e25279ab41c0a1a4fcc697633cc5dde76cc884b6`)
+      as before the push. The digest is the check worth repeating rather than the
+      log line: the skip check and the tag-advance logic are separate code paths,
+      so a regression could in principle print the warning and still push. Compare
+      digests, not just output.
+
+  ```sh
+  # unauthenticated; works because the package is public
+  repo=bmingles/devc-tools/node-nvmrc
+  TOK=$(curl -s "https://ghcr.io/token?scope=repository:$repo:pull&service=ghcr.io" | jq -r .token)
+  curl -sI -H "Authorization: Bearer $TOK" \
+       -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+       "https://ghcr.io/v2/$repo/manifests/0.1.0" | grep -i docker-content-digest
+  ```
+
+  One thing that looks alarming on a skip run and is not: `Publishing collection
+  metadata...` still appears. That push is unconditional, after the per-Feature
+  loop, and is not the Feature being republished.
 - [x] Make each package public in the repo's Packages settings, or an anonymous
       `devcontainer up` cannot pull it — **`node-nvmrc` verified public**: an
       unauthenticated `GET /v2/bmingles/devc-tools/node-nvmrc/tags/list` returns
