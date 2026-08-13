@@ -4,6 +4,7 @@
   "name": "Shell script directories",
   "description": "Sources every *.sh in one or two directories from every interactive shell, in a defined order — a workspace-relative project layer (.devcontainer/shell by default) and an optional absolute container path for personal scripts. The files are sourced live from ~/.bashrc rather than appended into it, so edits apply to the next new shell with no rebuild. Needs no configuration: the workspace-relative layer is resolved to a real path at create time.",
   "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/shell-dirs",
+  "licenseURL": "https://github.com/bmingles/devc-tools/blob/main/LICENSE",
   "options": {
     "projectDir": {
       "type": "string",
