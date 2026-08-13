@@ -9,12 +9,12 @@ publish matrix from the collection rather than naming its members, and so does
 
 ## Published Features
 
-| Feature                              | Ref                                       | What it does                                                                                                    |
-| ------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| [bash-config](bash-config/README.md) | `ghcr.io/bmingles/devc-tools/bash-config` | Sources `bashrc_*.sh` from `~/.bashrc` and `profile_*.sh` from the login profile, out of two fixed directories. |
-| [devc-bridge](devc-bridge/README.md) | `ghcr.io/bmingles/devc-tools/devc-bridge` | Installs the devc-bridge client so container code can invoke host commands.                                     |
-| [node-nvmrc](node-nvmrc/README.md)   | `ghcr.io/bmingles/devc-tools/node-nvmrc`  | Installs the Node version a workspace pins in `.nvmrc`, and selects it on `cd`.                                 |
-| [shell-dirs](shell-dirs/README.md)   | `ghcr.io/bmingles/devc-tools/shell-dirs`  | Sources every `*.sh` in a project (and optionally a personal) directory in every interactive shell.             |
+| Feature                              | Ref                                       | What it does                                                                                        |
+| ------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [bash-config](bash-config/README.md) | `ghcr.io/bmingles/devc-tools/bash-config` | Sources `bashrc_*.sh` from `~/.bashrc` out of two fixed directories.                                |
+| [devc-bridge](devc-bridge/README.md) | `ghcr.io/bmingles/devc-tools/devc-bridge` | Installs the devc-bridge client so container code can invoke host commands.                         |
+| [node-nvmrc](node-nvmrc/README.md)   | `ghcr.io/bmingles/devc-tools/node-nvmrc`  | Installs the Node version a workspace pins in `.nvmrc`, and selects it on `cd`.                     |
+| [shell-dirs](shell-dirs/README.md)   | `ghcr.io/bmingles/devc-tools/shell-dirs`  | Sources every `*.sh` in a project (and optionally a personal) directory in every interactive shell. |
 
 The tag tracks **each Feature's own** version line: `:0` while that Feature is
 pre-1.0, `:1` at its first 1.x release. It is not the repo's version — see
@@ -38,9 +38,9 @@ its project directory twice. `shell-dirs` stays in the tree until `bash-config`
 has been verified under Docker — retiring it, and swapping devc's own baseline
 onto a published Feature, are later plans. The difference is structural:
 `shell-dirs` keeps its sourcing loop _inside_ `~/.bashrc` and has both halves of
-the Feature rewrite lines within it, while `bash-config` puts a static two-line
-block in `~/.bashrc` (and in the login profile) naming two fixed container
-directories, so nothing rewrites anything. See
+the Feature rewrite lines within it, while `bash-config` puts a static
+one-line block in `~/.bashrc` naming two fixed container directories, so
+nothing rewrites anything. See
 [bash-config/README.md](bash-config/README.md#relationship-to-shell-dirs).
 
 ## Layout

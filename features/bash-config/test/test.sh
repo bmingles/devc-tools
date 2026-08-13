@@ -32,24 +32,21 @@ check "and is closed" grep -qF '# <<< bash-config <<<' "$HOME/.bashrc"
 # The block is a constant. No option, no workspace path, no ${PROJECT_PATH} deferral, nothing
 # for a create-time hook to come back and patch — that is the whole reason this Feature exists
 # in place of shell-dirs, so it is asserted literally rather than by grep.
-check "it is the static four lines, naming the fixed path" bash -c \
+check "it is the static one line, naming the fixed path" bash -c \
   "[ \"\$(sed -n '/^# >>> bash-config >>>\$/,/^# <<< bash-config <<<\$/p' $HOME/.bashrc)\" = \
 '# >>> bash-config >>>
-_bash_config_kind=bashrc
 . $SHARE/init.sh
 # <<< bash-config <<<' ]"
 
-# This image ships ~/.profile and no ~/.bash_profile. bash reads the FIRST of ~/.bash_profile,
-# ~/.bash_login, ~/.profile — so inventing the first would shadow ~/.profile and, with it, the
-# ~/.bashrc that ~/.profile sources. Measured: a naive ~/.bash_profile made an interactive login
-# shell run neither.
-check "the login profile is ~/.profile" grep -qF '# >>> bash-config >>>' "$HOME/.profile"
-check "with the profile kind" grep -qxF '_bash_config_kind=profile' "$HOME/.profile"
-check "and no ~/.bash_profile was invented" test ! -e "$HOME/.bash_profile"
-check "nor a ~/.bash_login" test ! -e "$HOME/.bash_login"
+# No login profile is touched at all — this Feature's whole audience is ~/.bashrc. This image
+# ships ~/.profile (unrelated to this Feature); the point is that nothing appended a block to
+# it, not that the file is absent.
+check "~/.profile has no bash-config block" bash -c \
+  "! grep -qF '# >>> bash-config >>>' '$HOME/.profile' 2> /dev/null"
+check "no ~/.bash_profile was created" test ! -e "$HOME/.bash_profile"
+check "no ~/.bash_login was created" test ! -e "$HOME/.bash_login"
 
-check "both startup files are still writable by the remote user" bash -c \
-  "[ -w $HOME/.bashrc ] && [ -w $HOME/.profile ]"
+check "~/.bashrc is still writable by the remote user" test -w "$HOME/.bashrc"
 
 check "init.sh is installed" test -f "$SHARE/init.sh"
 check "and is owned by root" bash -c "[ \"\$(stat -c '%U' $SHARE/init.sh)\" = root ]"
@@ -106,19 +103,22 @@ probe() { # probe <bash flags> <snippet writing to /tmp/probe>
 check "a fresh interactive shell sources the project directory" \
   test "$(probe -ic 'printf %s "${MARKER:-none}" > /tmp/probe')" = project
 check "in glob order" test "$(probe -ic 'printf %s "${ORDER:-}" > /tmp/probe')" = ' p10 p20'
-check "only <kind>_*.sh" \
+check "only bashrc_*.sh" \
   bash -c "case '$(probe -ic 'printf %s "${ORDER:-}" > /tmp/probe')' in *nope*) exit 1 ;; esac"
-check "and it did not run the profile_ file" \
+# profile_10.sh is just an ignored file now — no prefix routes to it from anywhere.
+check "the profile_ file is never sourced, by any shell" \
   test "$(probe -ic 'printf %s "${PROFILE_MARKER:-none}" > /tmp/probe')" = none
 
-check "a login shell sources the profile_ file" \
-  test "$(probe -lc 'printf %s "${PROFILE_MARKER:-none}" > /tmp/probe')" = project
+# The Feature's ceiling: a login shell gets nothing from this Feature at all — no block is
+# appended to a login profile.
+check "a login shell gets nothing from this Feature" \
+  test "$(probe -lc 'printf %s "${MARKER:-none}" > /tmp/probe')" = none
 check "PROJECT_PATH reaches a shell with no remoteEnv at all" \
   test "$(probe -ic 'printf %s "${PROJECT_PATH:-none}" > /tmp/probe')" = "$PWD"
 
 check "no helper function or loop variable is left behind" \
   test "$(probe -ic 'declare -F _bash_config_source_dir > /dev/null && printf leak > /tmp/probe
-    [ -n "${_bash_config_dirs:-}${_bash_config_kind:-}" ] && printf leak > /tmp/probe
+    [ -n "${_bash_config_dirs:-}" ] && printf leak > /tmp/probe
     printf %s "${_x:-clean}" >> /tmp/probe')" = clean
 check "both startup files are silent" bash -c \
   "[ -z \"\$(env -u PROJECT_PATH bash -lc true 2>&1)\" ]"

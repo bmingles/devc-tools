@@ -1,6 +1,9 @@
 #!/bin/sh
 # bash-config Feature install — place the three scripts and the two fixed directories, then
-# append one static block to ~/.bashrc and one to the login profile.
+# append one static block to ~/.bashrc. That is the Feature's whole audience as of 0.2.0; it
+# used to also append a block to the login profile, dropped because it was reaching neither a
+# real terminal (plain interactive, non-login) nor an agent/scripted invocation (which reaches
+# neither startup file at all). See README.md.
 #
 # Runs as root at image *build* time, and its whole job is to put files somewhere. Nothing is
 # resolved here because nothing here needs resolving: the blocks it appends name a fixed path
@@ -106,21 +109,19 @@ USER_HOME="${_REMOTE_USER_HOME:-$HOME}"
 START_MARKER='# >>> bash-config >>>'
 END_MARKER='# <<< bash-config <<<'
 
-append_block() { # append_block <file> <kind>
+append_block() { # append_block <file>
   # Marker-guarded so a rebuild does not double-append — the same shape devc/default/Dockerfile
-  # uses for its own bashrc-additions block. Checked per file: an image that already has the
-  # ~/.bashrc block but not the profile one still gets the profile one.
+  # uses for its own bashrc-additions block.
   if grep -qF "$START_MARKER" "$1" 2> /dev/null; then
     echo "bash-config: $1 already has the block — left alone"
     return 0
   fi
 
-  # Two lines, and they are the same two lines in every container this Feature is ever
-  # installed into. No option is substituted here and nothing rewrites them later, which is the
-  # entire design: a static block cannot drift from what the Feature thinks it wrote.
+  # One line, and it is the same line in every container this Feature is ever installed into.
+  # No option is substituted here and nothing rewrites it later, which is the entire design: a
+  # static block cannot drift from what the Feature thinks it wrote.
   {
     printf '%s\n' "$START_MARKER"
-    printf '_bash_config_kind=%s\n' "$2"
     printf '. %s\n' "$SHARE_DIR/init.sh"
     printf '%s\n' "$END_MARKER"
   } >> "$1"
@@ -132,27 +133,13 @@ append_block() { # append_block <file> <kind>
     chown "$_REMOTE_USER" "$1" 2> /dev/null || true
   fi
 
-  echo "bash-config: $2 block appended to $1"
+  echo "bash-config: block appended to $1"
 }
 
 # ~/.bashrc reaches **interactive** shells only: the stock `case $- in *i*) ;; *) return;; esac`
 # guard sits at the top of it and this block lands at the bottom. Measured: `bash -c` gets
-# nothing, `bash -ic` gets everything.
-append_block "$USER_HOME/.bashrc" bashrc
-
-# The login profile is whichever of these three bash will actually read — it takes the **first**
-# that exists and ignores the rest. Creating ~/.bash_profile is therefore destructive, not
-# additive: measured on this image, a naive ~/.bash_profile made an interactive login shell run
-# **neither** ~/.profile nor ~/.bashrc, because ~/.profile is what sources ~/.bashrc. So append
-# to the file that is already in charge, and invent one only when there is none — as ~/.profile,
-# the one of the three that does not shadow anything.
-LOGIN_PROFILE=''
-for candidate in .bash_profile .bash_login .profile; do
-  if [ -f "$USER_HOME/$candidate" ]; then
-    LOGIN_PROFILE="$USER_HOME/$candidate"
-    break
-  fi
-done
-[ -n "$LOGIN_PROFILE" ] || LOGIN_PROFILE="$USER_HOME/.profile"
-
-append_block "$LOGIN_PROFILE" profile
+# nothing, `bash -ic` gets everything. That is this Feature's whole audience as of 0.2.0 — no
+# block is appended anywhere else. A login profile (`~/.bash_profile` / `~/.bash_login` /
+# `~/.profile`) is never touched, and the destructive question of which of those three bash would
+# actually read no longer has to be answered here. See README.md for what that gives up.
+append_block "$USER_HOME/.bashrc"

@@ -1,8 +1,9 @@
 # bash-config (devcontainer Feature)
 
-Two fixed directories of shell scripts, sourced by every shell this Feature can
-reach. Drop a file in, open a new terminal, and it is there — the directories are
-read fresh by every shell, so nothing is rebuilt and nothing is baked.
+Two fixed directories of shell scripts, sourced by `~/.bashrc` in every
+interactive bash shell this Feature can reach. Drop a file in, open a new
+terminal, and it is there — the directories are read fresh by every shell, so
+nothing is rebuilt and nothing is baked.
 
 ```jsonc
 "features": { "ghcr.io/bmingles/devc-tools/bash-config:0": {} }
@@ -45,55 +46,50 @@ consumer's own `devcontainer.json` binds a host directory onto it, or a
 truth. Editing a file changes what the next shell sources; deleting one stops it
 being read; nothing has to run again for either.
 
-## Which file sources which
+## Which files get sourced
 
-A script's **prefix** selects which startup file sources it:
-
-| Prefix         | Sourced by        | Reaches                                     |
-| -------------- | ----------------- | ------------------------------------------- |
-| `bashrc_*.sh`  | `~/.bashrc`       | interactive bash (`bash -i`, your terminal) |
-| `profile_*.sh` | the login profile | login bash (`bash -l`) and `sh -l`          |
-
-They are **targets, not ordering**. `profile_` does not mean "after `bashrc_`" —
-it means "a different audience". In an interactive login shell both run, and
-`bashrc_` runs first, because `~/.profile` sources `~/.bashrc` partway through and
-only reaches its own appended block afterwards. In a plain terminal only `bashrc_`
-runs; under `bash -lc` only `profile_`.
-
-Anything else in the directories is ignored: a `README.md`, a `notes.txt`, an
-unprefixed `helpers.sh`, and a subdirectory — even one named `bashrc_x.sh`.
-
-**`profile_*.sh` must be POSIX `sh`.** `~/.profile` is read by dash, not only by
-bash, so a `[[ ]]` or an array in a `profile_` script breaks `sh -l` while
-appearing to work everywhere else. `bashrc_` scripts are only ever read by bash.
+Every `bashrc_*.sh` in each directory, in glob (name) order. Anything else is
+ignored: a `README.md`, a `notes.txt`, an unprefixed `helpers.sh`, and a
+subdirectory — even one named `bashrc_x.sh`.
 
 ### How far this actually reaches — and where it stops
 
 This is the honest ceiling, and it is worth reading before wiring anything
-important to it:
+important to it. **This Feature reaches exactly one audience: a plain
+interactive bash shell** — the shape of shell a terminal in the container
+actually starts.
 
-| Shell                         | Gets           |
-| ----------------------------- | -------------- |
-| a terminal in the container   | `bashrc_*.sh`  |
-| `bash -lc '…'`                | `profile_*.sh` |
-| `bash -ilc '…'`               | both           |
-| `docker exec ctr bash -c '…'` | **neither**    |
-| `sh -c '…'`, `sh script.sh`   | **neither**    |
-| a binary exec'd by an editor  | **neither**    |
+| Shell                         | Gets          |
+| ----------------------------- | ------------- |
+| a terminal in the container   | `bashrc_*.sh` |
+| `bash -lc '…'`                | **neither**   |
+| `docker exec ctr bash -c '…'` | **neither**   |
+| `sh -c '…'`, `sh script.sh`   | **neither**   |
+| a binary exec'd by an editor  | **neither**   |
 
-Plain `bash -c` reads **no startup file at all** — not `~/.bashrc` (the stock
-`case $- in *i*) ;; *) return;; esac` guard at the top of it returns before this
-Feature's block) and not the login profile (bash only reads that for a _login_
-shell). No Feature can change that. The only thing that reaches a non-interactive,
-non-login process is the container's environment, which is
+`~/.bashrc` reaches interactive shells only: the stock
+`case $- in *i*) ;; *) return;; esac` guard at the top of it returns before
+this Feature's block, for anything that is not interactive. Nothing here is
+appended to a login profile, so a login shell (`bash -l`) gets nothing from
+this Feature either — that used to work through a second block, dropped in
+0.2.0 because it was never reaching the audience it was meant to: an agent or
+a scripted tool invocation is typically neither interactive nor a login shell,
+so it got nothing from either block anyway, and a real terminal in a
+devcontainer is plain interactive, non-login bash, so `bashrc_*.sh` was
+already the only pathway reached day to day.
+
+The only thing that reaches a non-interactive process, agent tool call
+included, is the container's environment, which is
 `containerEnv`/`remoteEnv` in **your** `devcontainer.json`:
 
 ```jsonc
 "containerEnv": { "DATABASE_URL": "postgres://localhost/dev" }
 ```
 
-Put anything a tool must see regardless of how it was started there, and keep the
-directories for aliases, functions, prompts and the rest of what a shell is for.
+Put anything a tool or an agent must see regardless of how it was started
+there. Keep these two directories for what a human actually looks at in a
+shell: a prompt, an alias, a function — cosmetic scope, deliberately, not a
+place to drive runtime behavior that has to be reliable.
 
 ## Ordering
 
@@ -172,29 +168,20 @@ At **build time** (as root) it fetches nothing and does four things: it copies
 `init.sh`, `post-create.sh` and a generated `config.sh` into
 `/usr/local/share/devc-features/bash-config/`; it creates `dirs/user/` and hands
 `dirs/` to the remote user (`/usr/local/share` is root-owned, and the create-time
-hook runs unprivileged); and it appends one marker-guarded block to `~/.bashrc`
-and one to the login profile.
+hook runs unprivileged); and it appends one marker-guarded block to `~/.bashrc`.
 
-Each block is **four static lines**:
+The block is **one static line**:
 
 ```sh
 # >>> bash-config >>>
-_bash_config_kind=bashrc
 . /usr/local/share/devc-features/bash-config/init.sh
 # <<< bash-config <<<
 ```
 
-No option is substituted into them and nothing ever rewrites them — not at build
+No option is substituted into it and nothing ever rewrites it — not at build
 time, not at create time, not on a rebuild. Everything configurable lives in
 files this Feature owns outright, which is the difference from
 [`shell-dirs`](#relationship-to-shell-dirs).
-
-**The login profile is whichever file bash will actually read**: the first
-existing of `~/.bash_profile`, `~/.bash_login`, `~/.profile`, and `~/.profile` is
-created only if none of the three exists. This Feature **never creates
-`~/.bash_profile`** — bash reads only the first of the three, so inventing it
-would shadow the `~/.profile` your image ships, and on a Debian-derived image that
-takes `~/.bashrc` down with it, since `~/.profile` is what sources `~/.bashrc`.
 
 At **create time** (as the remote user, before any `postCreateCommand` your own
 `devcontainer.json` declares) `post-create.sh` points `dirs/project` at
@@ -202,7 +189,7 @@ At **create time** (as the remote user, before any `postCreateCommand` your own
 and does not edit `init.sh`.
 
 At **shell time** `init.sh` sources `dirs/env.sh`, then every
-`<kind>_*.sh` in `dirs/user` and then in `dirs/project`, reading both directories
+`bashrc_*.sh` in `dirs/user` and then in `dirs/project`, reading both directories
 fresh. It leaves no helper function, no loop variable and no non-zero `$?` behind
 — that last one matters because this is the final thing `~/.bashrc` runs, and a
 prompt that renders `$?` would otherwise show an error on the first line of every
@@ -214,18 +201,15 @@ mangled config would link somewhere other than what you asked for.
 
 ### bash only
 
-`install.sh` writes `~/.bashrc` and a bash login profile. zsh and fish get
-nothing — deliberately unwritten rather than half-written. If your container's
-default shell is not bash, this Feature does nothing for it. (`profile_*.sh` does
-reach `sh -l`, because `~/.profile` is where it lands, but that is a side effect
-of the file, not zsh support.)
+`install.sh` writes `~/.bashrc`. zsh and fish get nothing — deliberately
+unwritten rather than half-written. If your container's default shell is not
+bash, this Feature does nothing for it.
 
 ### It runs last, which is usually what you want
 
-Features install **after** the image's own Dockerfile, so these blocks land at the
-end of `~/.bashrc` and of the login profile, after anything the base image or
-another Feature put there. A script can therefore override a prompt, a `cd`
-wrapper or an alias set earlier.
+Features install **after** the image's own Dockerfile, so this block lands at the
+end of `~/.bashrc`, after anything the base image or another Feature put there.
+A script can therefore override a prompt, a `cd` wrapper or an alias set earlier.
 
 The one thing to avoid is **assigning `PROMPT_COMMAND` outright** — append to it
 instead. Anything installed there before this block runs is dropped.
@@ -259,9 +243,9 @@ Here the block names a fixed path and the configuration lives beside the code:
 environment. Nothing rewrites anything, so there is no rewrite that can silently
 stop matching.
 
-What `bash-config` adds beyond that: the login profile (`shell-dirs` is
-`~/.bashrc` only), the two prefixes, and `PROJECT_PATH` exported for your scripts
-rather than merely consumed.
+What `bash-config` adds beyond that: `PROJECT_PATH` exported for your scripts
+rather than merely consumed, and the design that keeps `~/.bashrc` a static,
+never-rewritten line.
 
 devc's own baseline still carries its `devc:shell-dirs` block and is untouched by
 this Feature. Swapping devc onto this one is a later change.
@@ -271,33 +255,24 @@ this Feature. Swapping devc onto this one is a later change.
 No Docker needed:
 
 ```sh
-bash features/bash-config/test/init_test.sh             # the sourcing logic, incl. under dash
-bash features/bash-config/test/install_options_test.sh  # the option, both blocks, the profile chain
+bash features/bash-config/test/init_test.sh             # the sourcing logic
+bash features/bash-config/test/install_options_test.sh  # the option and the block
 bash features/bash-config/test/post_create_test.sh      # the symlink, env.sh, the refusal path
 ```
 
-`init_test.sh` runs everything twice, the second time under **dash**, because the
-login profile is read by dash and a bashism there would work in every interactive
-shell and break every login one. `install_options_test.sh` covers all four states
-of the `~/.bash_profile` / `~/.bash_login` / `~/.profile` chain, which is the one
-genuinely destructive choice in this Feature. Both it and `post_create_test.sh`
-end by starting real interactive and login shells against a real startup file, so
-what is asserted is "a new shell has it", not "the block is in the file".
-
 Needs Docker. The default scenario is the bare `{}` case — no options, no mounts,
-no `remoteEnv` — and `test/scenarios.json` adds four more:
+no `remoteEnv` — and `test/scenarios.json` adds three more:
 
 ```sh
 bash features/bash-config/test/run-features-test.sh
 ```
 
-| Scenario      | What it pins                                                                               |
-| ------------- | ------------------------------------------------------------------------------------------ |
-| _(default)_   | A bare `{}` installs; the hook resolved a real symlink from its own cwd.                   |
-| `bare_no_env` | No `remoteEnv`, a committed project folder — a new shell has it.                           |
-| `login_shell` | `profile_*.sh` fires under `bash -lc`, `bashrc_*.sh` does not, and `bash -c` gets neither. |
-| `both_dirs`   | User directory before project; project wins on conflict.                                   |
-| `live_edit`   | A file added after create is sourced by the next shell.                                    |
+| Scenario      | What it pins                                                             |
+| ------------- | ------------------------------------------------------------------------ |
+| _(default)_   | A bare `{}` installs; the hook resolved a real symlink from its own cwd. |
+| `bare_no_env` | No `remoteEnv`, a committed project folder — a new shell has it.         |
+| `both_dirs`   | User directory before project; project wins on conflict.                 |
+| `live_edit`   | A file added after create is sourced by the next shell.                  |
 
 The default scenario is also what **measures** two things the offline harnesses
 cannot: the cwd a Feature-declared `postCreateCommand` is given (the symlink can

@@ -27,9 +27,8 @@ setup() {
   H="$WORK/$NAME/home"; SHARE="$WORK/$NAME/share"; WS="$WORK/$NAME/ws"
   rm -rf "$WORK/$NAME"
   mkdir -p "$H" "$WS/.devcontainer/shell"
-  : > "$H/.bashrc"; : > "$H/.profile"
+  : > "$H/.bashrc"
   echo 'export BASHRC_MARKER=project' > "$WS/.devcontainer/shell/bashrc_10.sh"
-  echo 'export PROFILE_MARKER=project' > "$WS/.devcontainer/shell/profile_10.sh"
   env -u PROJECTDIR SHARE_DIR="$SHARE" _REMOTE_USER_HOME="$H" "$@" \
     sh "$FEATURE_DIR/install.sh" > "$WORK/install.log" 2>&1
   HOOK="$SHARE/post-create.sh"
@@ -69,13 +68,9 @@ check "and it says where" grep -qF "linked to $WS/.devcontainer/shell" "$WORK/ho
 # This is the whole point of the create-time hook: a bare `{}` with no remoteEnv works.
 check "a fresh interactive shell now has the bashrc_ file" \
   test "$(probe -ic BASHRC_MARKER)" = project
-check "and a login shell has the profile_ one" test "$(probe -lc PROFILE_MARKER)" = project
-check "each kind stays in its own audience" bash -c \
-  "[ \"\$(probe() { rm -f '$WORK/probe'
-     env -u PROJECT_PATH _BASH_CONFIG_DIRS='$DIRS' HOME='$H' \
-       bash \"\$1\" \"printf %s \\\"\\\${\$2:-none}\\\" > $WORK/probe\" > /dev/null 2>&1
-     cat '$WORK/probe'; }
-   printf '%s/%s' \"\$(probe -ic PROFILE_MARKER)\" \"\$(probe -lc BASHRC_MARKER)\")\" = none/none ]"
+# The Feature's ceiling: a login shell gets nothing from this Feature at all — no block is
+# appended to a login profile.
+check "a login shell has none of it" test "$(probe -lc BASHRC_MARKER)" = none
 
 echo "case 2: env.sh — PROJECT_PATH without a remoteEnv, and the guard that keeps one"
 check "env.sh was written" test -f "$DIRS/env.sh"
@@ -177,10 +172,9 @@ echo "case 9: nothing here touches the startup files"
 # They are static by construction. If this ever stops being true, the whole reason this Feature
 # exists in place of shell-dirs has gone with it.
 setup c9
-cp "$H/.bashrc" "$WORK/c9/bashrc-before"; cp "$H/.profile" "$WORK/c9/profile-before"
+cp "$H/.bashrc" "$WORK/c9/bashrc-before"
 run_hook "$WS"
 check "~/.bashrc is byte-identical after the hook" cmp -s "$WORK/c9/bashrc-before" "$H/.bashrc"
-check "so is the login profile" cmp -s "$WORK/c9/profile-before" "$H/.profile"
 check "and init.sh was not rewritten either" \
   cmp -s "$FEATURE_DIR/init.sh" "$SHARE/init.sh"
 
