@@ -18,26 +18,47 @@ set -e
 source dev-container-features-test-lib
 
 PINNED=20
+SHARE=/usr/local/share/devc-features/node-nvmrc
 
 check ".nvmrc is where the hook would have looked" test -f "$PWD/.nvmrc"
-
-# Every shell assertion below goes through `bash -lic`: the block lands in ~/.bashrc, so only an
-# interactive shell reads it. stderr is deliberately discarded rather than asserted empty —
-# `bash -i` without a tty writes its own job-control warning there.
 
 check "the pinned major is installed under nvm" bash -c \
   "ls -d \"\${NVM_DIR:-/usr/local/share/nvm}\"/versions/node/v$PINNED.* > /dev/null"
 
-check "an interactive shell reports the pinned major, not the node Feature's lts" bash -c \
-  "[ \"\$(bash -lic 'node -v' 2>/dev/null | tr -d '\r' | cut -d. -f1)\" = 'v$PINNED' ]"
+check "pin/bin points into that version" bash -c \
+  "case \"\$(readlink -f $SHARE/pin/bin)\" in */versions/node/v$PINNED.*/bin) exit 0 ;;
+     *) exit 1 ;; esac"
 
-# The `cd` override is the other half of the Feature, and the half a plain `node -v` cannot
-# distinguish from the shell-start `nvm use`. Leaving the workspace and coming back has to
-# re-select it — including when the shell was started somewhere with no .nvmrc at all.
-check "cd out of the workspace and back re-selects the pinned version" bash -c \
-  "[ \"\$(cd /tmp && bash -lic 'cd \"$PWD\" && node -v' 2>/dev/null | tr -d '\r' | cut -d. -f1)\" = 'v$PINNED' ]"
+# The assertion that matters, and the whole reason 0.2.0 exists. In 0.1.0 the pin lived in a
+# ~/.bashrc block, so only `bash -lic` could see it; these three shapes all got whatever the
+# node Feature installed. Now the pin is a PATH entry in PID 1's environment.
+check "a plain non-interactive bash reports the pinned major" bash -c \
+  "[ \"\$(bash -c 'node -v' | tr -d '\r' | cut -d. -f1)\" = 'v$PINNED' ]"
+check "so does sh — no bash, no startup file, nothing" bash -c \
+  "[ \"\$(sh -c 'node -v' | tr -d '\r' | cut -d. -f1)\" = 'v$PINNED' ]"
+check "and a login shell agrees" bash -c \
+  "[ \"\$(bash -lc 'node -v' | tr -d '\r' | cut -d. -f1)\" = 'v$PINNED' ]"
 
-check "and a cd into a directory with no .nvmrc still succeeds" bash -c \
-  "bash -lic 'cd /tmp && echo ok' 2>/dev/null | grep -q ok"
+# `env -i` keeps only what the caller passes: this is the pin reaching a process that inherited
+# nothing but PATH, which is as close as a scenario gets to `docker exec`.
+check "and a process given nothing but PATH" bash -c \
+  "[ \"\$(env -i PATH=\"\$PATH\" node -v | tr -d '\r' | cut -d. -f1)\" = 'v$PINNED' ]"
+
+# Directory-independence is now a property, not a limitation: the pin is one version for the
+# whole container, so leaving the workspace changes nothing.
+check "the version does not depend on the cwd" bash -c \
+  "[ \"\$(cd /tmp && bash -c 'node -v' | tr -d '\r' | cut -d. -f1)\" = 'v$PINNED' ]"
+
+# The mechanism, stated as a check so a future refactor cannot quietly move it back into a
+# startup file.
+check "no node-nvmrc block was appended to ~/.bashrc" bash -c \
+  "! grep -qF '# >>> node-nvmrc >>>' '$HOME/.bashrc' 2> /dev/null"
+check "and no cd override exists in an interactive shell" bash -c \
+  "! bash -ic 'declare -F cd' > /dev/null 2>&1"
+
+# nvm's own state agrees with PATH, so `nvm use default` in a terminal lands on the pin too.
+check "nvm's default alias names the pinned version" bash -c \
+  ". \"\${NVM_DIR:-/usr/local/share/nvm}/nvm.sh\" &&
+   [ \"\$(nvm version default | cut -d. -f1)\" = 'v$PINNED' ]"
 
 reportResults

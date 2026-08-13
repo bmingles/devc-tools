@@ -17,5 +17,27 @@
       },
       "node-nvmrc": {}
     }
+  },
+  "project_subdir": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/packages/app && echo 20 > ${containerWorkspaceFolder}/packages/app/.nvmrc",
+    "features": {
+      "ghcr.io/devcontainers/features/node:1": {
+        "version": "lts"
+      },
+      "node-nvmrc": {
+        "projectDir": "packages/app"
+      }
+    }
+  },
+  "pin_outranks_current": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "onCreateCommand": "echo 20 > ${containerWorkspaceFolder}/.nvmrc",
+    "features": {
+      "ghcr.io/devcontainers/features/node:1": {
+        "version": "lts"
+      },
+      "node-nvmrc": {}
+    }
   }
 }

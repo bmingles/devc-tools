@@ -13,7 +13,7 @@ publish matrix from the collection rather than naming its members, and so does
 | ------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | [bash-config](bash-config/README.md) | `ghcr.io/bmingles/devc-tools/bash-config` | Sources `bashrc_*.sh` from `~/.bashrc` out of two fixed directories.                                |
 | [devc-bridge](devc-bridge/README.md) | `ghcr.io/bmingles/devc-tools/devc-bridge` | Installs the devc-bridge client so container code can invoke host commands.                         |
-| [node-nvmrc](node-nvmrc/README.md)   | `ghcr.io/bmingles/devc-tools/node-nvmrc`  | Installs the Node version a workspace pins in `.nvmrc`, and selects it on `cd`.                     |
+| [node-nvmrc](node-nvmrc/README.md)   | `ghcr.io/bmingles/devc-tools/node-nvmrc`  | Makes the Node version a workspace pins in `.nvmrc` the one every process in the container gets.    |
 | [shell-dirs](shell-dirs/README.md)   | `ghcr.io/bmingles/devc-tools/shell-dirs`  | Sources every `*.sh` in a project (and optionally a personal) directory in every interactive shell. |
 
 The tag tracks **each Feature's own** version line: `:0` while that Feature is

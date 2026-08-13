@@ -1,8 +1,9 @@
 #!/bin/sh
-# node-nvmrc create-time step — install the Node version this workspace pins in .nvmrc.
+# node-nvmrc create-time step — install the Node version this project pins in .nvmrc, and point
+# this Feature's PATH symlink at it.
 #
 # install.sh copies this file to /usr/local/share/devc-features/node-nvmrc/post-create.sh at
-# image build time and bakes the Feature's options into the three assignments below; the
+# image build time and bakes the Feature's options into the five assignments below; the
 # manifest's `postCreateCommand` names that copy. The devcontainer CLI runs it **as the remote
 # user**, and runs every Feature-declared postCreateCommand *before* the one the consumer's own
 # devcontainer.json declares.
@@ -12,15 +13,31 @@
 # mounted there to actually be mounted. Copied from devc/default/scripts/node-setup.sh, which
 # keeps running unchanged; the differences are that nothing here assumes a `vscode` user, a
 # passwordless `sudo`, or that nvm exists at all.
+#
+# The symlink this writes is $SHARE_DIR/pin/bin, **not** $NVM_DIR/current. They are both "the
+# symlink" and they are not interchangeable: nvm's is container-global and is rewritten by *any*
+# `nvm use` in *any* shell, while this one is moved only by this script. The manifest's
+# containerEnv puts pin/bin ahead of $NVM_DIR/current on PATH precisely so a human's `nvm use`
+# in one terminal cannot repoint Node for every other process in the container.
 set -e
+
+die() {
+  echo "node-nvmrc: $*" >&2
+  exit 1
+}
 
 # --- baked by install.sh from the Feature's options -------------------------------------
 # Kept in `${VAR:-default}` form here so this file is readable and runnable straight out of
-# the repo. install.sh rewrites each of these three lines to the configured literal and fails
+# the repo. install.sh rewrites each of these five lines to the configured literal and fails
 # the build if a rewrite does not take, so a rename here cannot silently un-wire an option.
+#
+# PROJECT_DIR uses `${VAR-default}`, not `${VAR:-default}`: an explicitly empty projectDir means
+# the workspace root and must not fall back to anything.
 NVM_DIR="${NVM_DIR:-/usr/local/share/nvm}"
+PROJECT_DIR="${PROJECT_DIR-}"
 INSTALL_ON_CREATE="${INSTALL_ON_CREATE:-true}"
 FIX_NODE_MODULES_OWNERSHIP="${FIX_NODE_MODULES_OWNERSHIP:-true}"
+SHARE_DIR="${SHARE_DIR:-/usr/local/share/devc-features/node-nvmrc}"
 # ----------------------------------------------------------------------------------------
 
 [ "$INSTALL_ON_CREATE" = true ] || exit 0
@@ -30,15 +47,45 @@ FIX_NODE_MODULES_OWNERSHIP="${FIX_NODE_MODULES_OWNERSHIP:-true}"
 # every lifecycle hook — Feature-declared ones included — with cwd set to the remote workspace
 # folder, falling back to the remote user's home when there is none. Both spellings therefore
 # land on the workspace; see the README for how far that is verified.
-cd "${PROJECT_PATH:-$PWD}"
+#
+# The workspace root is used for nothing but resolving a relative projectDir. $TARGET is the
+# only directory ever entered, and the two are identical whenever projectDir is left alone.
+WORKSPACE="${PROJECT_PATH:-$PWD}"
+
+# Absolute is used as-is; anything else is workspace-relative; empty is the root.
+case "$PROJECT_DIR" in
+  '') TARGET="$WORKSPACE" ;;
+  /*) TARGET="$PROJECT_DIR" ;;
+  *) TARGET="$WORKSPACE/$PROJECT_DIR" ;;
+esac
+
+# A projectDir that does not exist is a misconfiguration, not a reason to make the container
+# uncreatable — same grading as the missing-nvm path below.
+cd "$TARGET" 2> /dev/null || {
+  echo "node-nvmrc: projectDir '$PROJECT_DIR' does not exist under $WORKSPACE." >&2
+  exit 0
+}
 
 # No .nvmrc is success, not a skip-with-noise. This Feature is meant to be safe to leave
-# enabled in a repo that pins nothing, which is the whole reason it is a one-line opt-in.
-[ -f .nvmrc ] || exit 0
+# enabled in a repo that pins nothing, which is the whole reason it is a one-line opt-in — so
+# the *default* location misses silently. A miss under an explicitly named projectDir warns
+# instead: the consumer asked for a directory, and silence would send them hunting for where
+# Node came from. The empty default is the only thing that tells the two apart; no extra flag
+# is baked for it.
+#
+# This check is load-bearing, not belt-and-braces. `nvm install` with no arguments walks *up*
+# the tree (nvm_find_nvmrc → nvm_find_up), so with projectDir naming a subdirectory that has no
+# .nvmrc, nvm would silently fall back to the workspace root's — the option would appear to work
+# while pinning something else entirely.
+if [ ! -f .nvmrc ]; then
+  [ -z "$PROJECT_DIR" ] || echo "node-nvmrc: no .nvmrc in $PWD — nothing pinned." >&2
+  exit 0
+fi
 
 # A missing nvm warns rather than fails. The prerequisite is documented, but failing create
 # over it turns a misconfiguration into a container that cannot be opened at all — and the
-# consumer still gets a message naming the directory that was searched.
+# consumer still gets a message naming the directory that was searched. No symlink is created,
+# so the PATH entry stays inert.
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   echo "node-nvmrc: $PWD/.nvmrc found, but there is no nvm at $NVM_DIR." >&2
   echo "node-nvmrc: add a Feature that provides one (ghcr.io/devcontainers/features/node)," >&2
@@ -59,6 +106,10 @@ export NVM_DIR
 # itself. `sudo -n` because an image whose sudo wants a password would otherwise hang create
 # forever on a prompt nobody can answer; `id -u`/`id -g` because whoever this hook runs as is
 # the right owner, whereas devc's copy hardcodes `vscode`.
+#
+# It follows projectDir, because the cwd does: the volume belongs where the project is. A
+# consumer who sets projectDir and leaves a volume mounted at the workspace root gets nothing
+# repaired there — one README line, deliberately not a second option and not two chown targets.
 if [ "$FIX_NODE_MODULES_OWNERSHIP" = true ] && [ -d node_modules ] &&
   command -v sudo > /dev/null 2>&1; then
   sudo -n chown -R "$(id -u):$(id -g)" ./node_modules 2> /dev/null || true
@@ -67,4 +118,23 @@ fi
 # Fatal on purpose, unlike everything above: the .nvmrc asked for a version that could not be
 # installed, and a container that silently comes up on the wrong Node is worse than one that
 # fails while the consumer is still watching the log.
+#
+# No arguments, so nvm's own parser reads .nvmrc — it accepts comments and key=value lines, and
+# reimplementing that here would drift from it. Nothing in this Feature parses .nvmrc.
 nvm install
+
+# `nvm install` runs `nvm use` implicitly, which exports NVM_BIN as the installed version's bin
+# directory outright — so no version string is ever extracted here.
+[ -n "${NVM_BIN:-}" ] || die 'nvm install succeeded but NVM_BIN is unset'
+
+# -n is required, not stylistic: without it a second run resolves the existing
+# symlink-to-a-directory and creates pin/bin/bin instead of replacing pin/bin.
+ln -sfn "$NVM_BIN" "$SHARE_DIR/pin/bin"
+echo "node-nvmrc: $SHARE_DIR/pin/bin -> $NVM_BIN"
+
+# nvm does not move its `default` alias on install (nvm_ensure_default_set writes it only when
+# none exists, and the node Feature already wrote one), so without this the pin lives nowhere in
+# nvm's own state. Best-effort: the PATH entry is authoritative and this only keeps nvm from
+# disagreeing with it, so it must not be able to fail the create.
+nvm alias default "$(nvm current)" > /dev/null 2>&1 ||
+  echo "node-nvmrc: could not set nvm's default alias; PATH still names the pinned version" >&2

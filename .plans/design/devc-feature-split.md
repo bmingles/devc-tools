@@ -100,7 +100,7 @@ For all four, yes:
 
 | Feature                | What a bare `{}` gives you                                                                  | What an added mount buys                           |
 | ---------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `node-nvmrc`           | Everything. `.nvmrc` installed at create, `nvm use` on `cd`.                                | n/a — it has no mount                              |
+| `node-nvmrc`           | Everything. `.nvmrc` installed at create; every process gets that version.                  | n/a — it has no mount                              |
 | `shell-dirs`           | The project layer: every `*.sh` in the repo's own `.devcontainer/shell/`.                   | A second layer of _personal_ scripts from the host |
 | `git-container-config` | LFS filters, `worktree.useRelativePaths`, `safe.directory` — the majority of the script.    | Your host `user.name` / `user.email`               |
 | `claude-config`        | The CLI installs. Plus the `~/.claude.json` and seed wiring as soon as anything is mounted. | Per-workspace persistence; a host config seed      |
