@@ -1,0 +1,35 @@
+{
+  "bare_no_env": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer/shell && printf 'export BASH_CONFIG_MARKER=project\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/bashrc_10.sh",
+    "features": {
+      "bash-config": {}
+    }
+  },
+  "login_shell": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer/shell && printf 'export BASHRC_MARKER=yes\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/bashrc_10.sh && printf 'export PROFILE_MARKER=yes\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/profile_10.sh",
+    "features": {
+      "bash-config": {}
+    }
+  },
+  "both_dirs": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer/shell && printf 'ORDER=\"$ORDER proj\"\\nexport WINNER=project\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/bashrc_10.sh && printf 'ORDER=\"$ORDER user\"\\nexport WINNER=user\\nexport USER_ONLY=1\\n' > /usr/local/share/devc-features/bash-config/dirs/user/bashrc_10.sh",
+    "features": {
+      "bash-config": {}
+    }
+  },
+  "live_edit": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "remoteEnv": {
+      "PROJECT_PATH": "${containerWorkspaceFolder}"
+    },
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/shell.d && printf 'export AT_CREATE=1\\n' > ${containerWorkspaceFolder}/shell.d/bashrc_10.sh",
+    "features": {
+      "bash-config": {
+        "projectDir": "shell.d"
+      }
+    }
+  }
+}

@@ -17,8 +17,8 @@ settles, once, which pieces **can** be a Feature (a Feature can declare no
 `initializeCommand`, no read-only mount, and no string mount) and the rules all
 five plans inherit.
 
-Both Features still pending have a host-coupled half that the Feature
-cannot declare. That does **not** make them devc-only: a host bind mount and an
+The two `feature-*-config` plans below still have a host-coupled half that the
+Feature cannot declare. That does **not** make them devc-only: a host bind mount and an
 `initializeCommand` belong to the **consumer's `devcontainer.json`**, which every
 devcontainer project has. devc is one consumer — it writes those lines for you.
 The shipped `devc-bridge` Feature already works exactly this way (it declares no
@@ -66,6 +66,92 @@ own matrix job.
 
 ### Completed
 
+- [feature-bash-config](archived/feature-bash-config.md) — **Supersedes
+  `shell-dirs`**, and the one plan here that is not a split of devc's baseline:
+  `ghcr.io/bmingles/devc-tools/bash-config` sources every `bashrc_*.sh` from
+  `~/.bashrc` and every `profile_*.sh` from the login profile, out of **two fixed
+  container directories**. `shell-dirs` keeps its whole sourcing loop _inside_
+  `~/.bashrc`, parameterized by two assignments in the middle of it, so both halves of
+  that Feature rewrite lines within the block — `bake()`, two `awk` passes, four
+  verification `grep`s, marker scoping, and the empty/absolute/relative policy written
+  twice. **Nothing here rewrites anything.** The block is four static lines naming one
+  fixed path, identical in every container the Feature is ever installed into, and all
+  configuration lives in files the Feature owns outright: `config.sh` for the option
+  (written by `install.sh`, sourced by the hook — not a `sed` bake, so there is no
+  rewrite that can silently stop matching and no replacement-side `&`/`|` hazard),
+  a **symlink** for the workspace, `env.sh` for the environment. The symlink is
+  load-bearing rather than tidy: a symlinked directory globs live, which is what lets a
+  constant block keep `shell-dirs`' liveness property with no path baked anywhere.
+  `dirs/user/` is created empty and **never written to again** — a mount target the
+  Feature never learns the origin of, so this Feature has no devc awareness at all and
+  no option defaults to a devc path. Deliberately **not** pinned to
+  `devc/tests/shell_dirs_test.sh`: that shared harness is precisely what forced
+  `shell-dirs`' shape, so `bash-config` gets its own tests and shares none.
+  Three things the plan measured rather than assumed, all of which shaped the code.
+  **The login profile is whichever file bash will actually read** — the first existing
+  of `~/.bash_profile`, `~/.bash_login`, `~/.profile`, with `~/.profile` created only
+  when none exists. Creating `~/.bash_profile` is destructive, not additive: bash reads
+  only the first of the three, so inventing it shadows the `~/.profile` the image ships
+  and takes `~/.bashrc` down with it (`~/.profile:14` is what sources `~/.bashrc`). All
+  four states of that chain are covered by a test. **`~/.profile` is read by dash**, so
+  `init.sh` is POSIX `sh` and the offline harness runs every case a second time under
+  `dash`. And **a login profile does not "fix the non-interactive case"**: it widens
+  coverage to `bash -lc`/`bash -ilc` and nothing more, since plain `bash -c` reads no
+  startup file at all. The README states that ceiling as a table with three
+  **neither** rows and points at `containerEnv`, and both the offline harness and the
+  `login_shell` scenario assert it, so the docs cannot quietly overclaim it.
+  **One correction to the plan, made deliberately rather than silently.** Its contract
+  for the once-per-shell guard says "keyed on the resolved path"; the implementation
+  keys on **kind + resolved path**. Path alone is wrong here: in an interactive login
+  shell `~/.profile` sources `~/.bashrc` partway through, so the `bashrc` pass runs
+  first over these same two directories, marks them done, and would silently disable
+  every `profile_*.sh` in the container — the exact
+  two-audiences-not-two-ordered-layers property the plan's own measurement 4 records.
+  The guard still does what the plan wanted it to do (a re-sourced `~/.bashrc`, or a
+  second block over the same directory, sources each file once), and the correction is
+  pinned by a test that fails when the kind is removed from the key. The path is
+  resolved physically (`cd -P`), so the same directory reached through the symlink and
+  by name counts once.
+  One test seam beyond the plan: `init.sh` cannot discover its own location (a sourced
+  file has no `$0`), so it names `dirs/` outright with a `_BASH_CONFIG_DIRS` override,
+  the same shape `SHARE_DIR` is for `install.sh`. Because three files then have to
+  agree on one literal path, `install_options_test.sh` asserts that agreement across
+  `install.sh`, `post-create.sh`, `init.sh` and the manifest's `postCreateCommand` —
+  nothing else would catch a rename.
+  Verified here: `test/init_test.sh` (40 checks, the second half of them under `dash`),
+  `test/install_options_test.sh` (56 checks), `test/post_create_test.sh` (42 checks),
+  `tests/features_test.sh` (18 checks, 4 Features in scope — the collection walk picked
+  the new directory up with no edit), `tests/workflow_guards_test.sh` (9 checks) and
+  `deno fmt --check` (129 files). `shell-dirs`' and `node-nvmrc`'s own harnesses still
+  pass unchanged, which is the copy-don't-move rule holding. Beyond the plan, **all
+  five `devcontainer features test` scripts were executed offline** — the real
+  `install.sh` run as root into the real `/usr/local/share/devc-features/bash-config`
+  against a throwaway `$HOME` seeded from `/etc/skel`, the real hook run as the remote
+  user with the workspace as its cwd, the test lib stubbed, and the share directory
+  removed afterwards. That covers their `bash -ic`, `bash -lc`, `bash -ilc` and
+  `bash -c` probes, which is what turns "the block is in the file" into "a new shell
+  actually has it", and it exercised the `chown` of `dirs/` to `$_REMOTE_USER` — the
+  step **open question 2** is about — by having an unprivileged hook create the symlink
+  under a root-owned `/usr/local/share`.
+  **Not verified here (no Docker):** every `devcontainer features test` scenario as a
+  real container. All five are written — the default is the bare `{}` case, and
+  `scenarios.json` adds `bare_no_env` (no `remoteEnv`, a committed fixture),
+  `login_shell` (all four shell shapes), `both_dirs` (user-then-project ordering, with
+  the user fixture written straight into the fixed path) and `live_edit` (a non-default
+  `projectDir`, plus add/delete through the symlink) — but none has been run under
+  Docker. What that leaves unmeasured is the image build itself, the CLI's `PROJECTDIR`
+  option plumbing, `${containerWorkspaceFolder}` substitution inside each scenario's
+  `onCreateCommand`, and the cwd a Feature-declared `postCreateCommand` is actually
+  given — the assumption the create-time symlink rests on, guarded rather than assumed
+  (an unset `PROJECT_PATH` plus a cwd equal to the home folder is the CLI's
+  `|| homeFolder` branch, and there the hook declines, names the two things that would
+  fix it, and exits 0). **Open question 1 is still open and deliberately undocumented:**
+  whether `userEnvProbe` picks `dirs/env.sh` up on a _first_ create. `bare_no_env.sh`
+  clears `PROJECT_PATH` before every probe rather than asserting either answer.
+  `version` is `0.1.0` and `PUBLISH_ALLOWLIST` is untouched, so this publishes nothing;
+  `features/shell-dirs/`, `devc/` and `devc/default/scripts/bashrc-additions.sh` are
+  unchanged, per copy-don't-move. Retiring `shell-dirs` and swapping devc onto this
+  Feature are later plans.
 - [feature-shell-dirs](archived/feature-shell-dirs.md) — Publish
   `ghcr.io/bmingles/devc-tools/shell-dirs`: every `*.sh` in one or two directories
   sourced by every interactive shell, in a defined order, **live** — sourced from
@@ -772,5 +858,6 @@ own matrix job.
 | `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](archived/feature-node-nvmrc.md)                       | complete |
 | Features version independently — unpin the collection from the repo tag                  | [feature-independent-versions](archived/feature-independent-versions.md)   | complete |
 | `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](archived/feature-shell-dirs.md)                       | complete |
+| `bash-config` Feature — two fixed dirs, static blocks; supersedes `shell-dirs`           | [feature-bash-config](archived/feature-bash-config.md)                     | complete |
 | `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                | pending  |
 | `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                          | pending  |

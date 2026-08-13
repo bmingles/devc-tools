@@ -1,0 +1,15 @@
+{
+  "id": "bash-config",
+  "version": "0.1.0",
+  "name": "Bash config directories",
+  "description": "Sources every bashrc_*.sh from ~/.bashrc, and every profile_*.sh from the login profile, out of two fixed container directories: dirs/user (empty, yours to mount or fill) and dirs/project (a symlink a create-time hook points at your workspace). The blocks appended to those two files are a static two lines naming a fixed path, so nothing ever rewrites them; both directories are read fresh by every shell, so a file added after the build applies to the next shell with no rebuild.",
+  "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/bash-config",
+  "options": {
+    "projectDir": {
+      "type": "string",
+      "default": ".devcontainer/shell",
+      "description": "Workspace-relative directory that dirs/project is linked to, resolved at create time. An absolute value is linked as-is. Empty creates no symlink at all."
+    }
+  },
+  "postCreateCommand": "bash /usr/local/share/devc-features/bash-config/post-create.sh"
+}
