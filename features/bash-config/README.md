@@ -287,7 +287,7 @@ there.
 
 ## Publishing
 
-`bash-config` is **not on** [`PUBLISH_ALLOWLIST`](../PUBLISH_ALLOWLIST) while it is
+`bash-config` is **not on** [`PUBLISH_ALLOWLIST.txt`](../PUBLISH_ALLOWLIST.txt) while it is
 under development, so `.github/workflows/publish-feature.yml` builds it into no
 matrix job and it is invisible to ghcr.io. Adding its id there is the whole of
 publishing it. `version` is this Feature's own — bump it in the commit that

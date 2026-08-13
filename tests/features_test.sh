@@ -24,7 +24,7 @@
 # version it finds in the registry, so an unbumped Feature simply does not publish and the
 # run says so. See .plans/archived/feature-independent-versions.md.
 #
-# It also asserts every features/PUBLISH_ALLOWLIST entry names a real Feature — the one
+# It also asserts every features/PUBLISH_ALLOWLIST.txt entry names a real Feature — the one
 # static list in this collection, and the gate that keeps a Feature under active development
 # off ghcr.io. See features/README.md#the-publish-allowlist.
 set -uo pipefail
@@ -172,7 +172,7 @@ fi
 
 # --- the publish allowlist ----------------------------------------------------------------
 #
-# features/PUBLISH_ALLOWLIST is the gate that keeps a Feature under active development off
+# features/PUBLISH_ALLOWLIST.txt is the gate that keeps a Feature under active development off
 # ghcr.io: publish-feature.yml's matrix is built from this file, not from the tree walk
 # above, so a Feature can pass every check in this script and still not publish until its id
 # is added here. That is a static list, deliberately, unlike everything else in this
@@ -196,7 +196,7 @@ allowlist_names_real_feature() { # allowlist_names_real_feature <id>
   return 1
 }
 
-ALLOWLIST=features/PUBLISH_ALLOWLIST
+ALLOWLIST=features/PUBLISH_ALLOWLIST.txt
 echo
 if [ ! -f "$ALLOWLIST" ]; then
   # Missing, not empty: an empty-but-present file is a valid "publish nothing right now"

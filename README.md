@@ -96,7 +96,7 @@ whatever Feature you changed, in the same commit; anything you do not bump simpl
 does not publish. See [`features/README.md`](features/README.md#versions).
 
 **A Feature also has to be on the allowlist to publish at all.**
-[`features/PUBLISH_ALLOWLIST`](features/PUBLISH_ALLOWLIST) is what keeps a
+[`features/PUBLISH_ALLOWLIST.txt`](features/PUBLISH_ALLOWLIST.txt) is what keeps a
 Feature under active development off ghcr.io until it's ready — see
 [The publish allowlist](features/README.md#the-publish-allowlist).
 

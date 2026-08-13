@@ -47,7 +47,7 @@ nothing rewrites anything. See
 
 ```
 features/
-  PUBLISH_ALLOWLIST             # ids allowed to publish — see below
+  PUBLISH_ALLOWLIST.txt         # ids allowed to publish — see below
   <id>/
     devcontainer-feature.json   # id must equal the directory name
     install.sh                  # runs as root at image build time
@@ -113,7 +113,7 @@ exists, which the old tag trigger used to guarantee by accident: publishing from
 ## The publish allowlist
 
 A Feature that reaches every guard above still does not publish unless its id is
-listed in [`PUBLISH_ALLOWLIST`](PUBLISH_ALLOWLIST), one id per line (`#` comments
+listed in [`PUBLISH_ALLOWLIST.txt`](PUBLISH_ALLOWLIST.txt), one id per line (`#` comments
 and blank lines are ignored). This is the gate for a Feature under active
 development: add its directory, get its manifest right, run its tests — it still
 sits invisible to ghcr.io until you add it here. No half-finished Feature
@@ -130,7 +130,7 @@ real Feature, so a stale or misspelled id is caught rather than silently doing
 nothing forever.
 
 It is **source-only**. `devcontainer features publish` packages one Feature's own
-`features/<id>/` directory; `PUBLISH_ALLOWLIST` lives at the collection root,
+`features/<id>/` directory; `PUBLISH_ALLOWLIST.txt` lives at the collection root,
 outside every Feature directory, so it is never part of a published artifact.
 
 `publish-feature.yml`'s `discover` job builds its matrix from this file, and its

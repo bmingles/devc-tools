@@ -3,7 +3,7 @@ name: Publish devcontainer Features
 # Publishes every allowlisted Feature in features/ to ghcr.io/bmingles/devc-tools/<id>. The
 # collection is walked, never enumerated: adding a directory under features/ is the whole of
 # adding a Feature to this workflow — see features/README.md. Whether it *publishes* is a
-# separate question, answered by features/PUBLISH_ALLOWLIST (below).
+# separate question, answered by features/PUBLISH_ALLOWLIST.txt (below).
 #
 # Each Feature carries its **own** version and publishes on a push to `main` that touches
 # features/, not on the repo's `v*` tag (see
@@ -22,7 +22,7 @@ name: Publish devcontainer Features
 # unaffected.
 #
 # Reaching the tree is not enough to publish: `discover` narrows the matrix to the ids listed
-# in features/PUBLISH_ALLOWLIST, so a Feature under active development sits in features/
+# in features/PUBLISH_ALLOWLIST.txt, so a Feature under active development sits in features/
 # fully guarded and still does not ship until it is added there. See
 # features/README.md#the-publish-allowlist.
 
@@ -71,7 +71,7 @@ jobs:
       # moved and the matrix below would publish nothing while reporting success.
       #
       # What *does* publish is narrower than what is found: only the ids listed in
-      # features/PUBLISH_ALLOWLIST reach the matrix. That is the one static list in this
+      # features/PUBLISH_ALLOWLIST.txt reach the matrix. That is the one static list in this
       # collection, and unlike the failure above it fails safe — leaving a Feature off it
       # means it does not publish, not that it publishes unguarded. The Collection guard step
       # above already checked every entry names a real Feature, so this trusts the file
@@ -99,10 +99,10 @@ jobs:
           # regardless, so this is belt-and-suspenders for a reader, not for the shell.
           while IFS= read -r id; do
             ids+=("$id")
-          done < <(grep -vE '^[[:space:]]*(#|$)' features/PUBLISH_ALLOWLIST || true)
+          done < <(grep -vE '^[[:space:]]*(#|$)' features/PUBLISH_ALLOWLIST.txt || true)
 
           features="$(printf '%s\n' "${ids[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
-          echo "publishing ${#ids[@]} of ${#all[@]} Feature(s) (see features/PUBLISH_ALLOWLIST): $features"
+          echo "publishing ${#ids[@]} of ${#all[@]} Feature(s) (see features/PUBLISH_ALLOWLIST.txt): $features"
           echo "features=$features" >> "$GITHUB_OUTPUT"
 
   # One job per Feature, so no Feature can block another. `features publish ./features` takes
@@ -172,7 +172,7 @@ jobs:
   # repo's Packages page, so wrong-and-alternating is worth one more job.
   #
   # "the whole collection" here means the whole *allowlisted* subset, not every directory
-  # under features/: a Feature features/PUBLISH_ALLOWLIST holds back must not show up in the
+  # under features/: a Feature features/PUBLISH_ALLOWLIST.txt holds back must not show up in the
   # index either, or this repair job would be the one place that quietly bypasses the gate
   # `discover` enforces everywhere else.
   #
