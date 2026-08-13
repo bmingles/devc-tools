@@ -41,7 +41,7 @@ does not matter — [feature-node-nvmrc](archived/feature-node-nvmrc.md) went
 first, then [feature-shell-dirs](archived/feature-shell-dirs.md). **A new Feature
 starts at its own `0.1.0`**, not at the repo's
 version: [feature-independent-versions](archived/feature-independent-versions.md)
-landed first and unpinned Features from the `v*` tag, and each of the three
+landed first and unpinned Features from the `v*` tag, and each of the two
 manifest contracts below already says so. Bump a Feature's `version` in the
 commit that changes it; a push to `main` under `features/` publishes it from its
 own matrix job.
@@ -54,44 +54,6 @@ own matrix job.
   nor mount them, but a consumer's `initializeCommand` + read-only bind can, so
   the README ships that recipe with the devc paths taken out. The seam is a dumb
   `identityIncludePath` option the Feature never parses.
-- [feature-node-nvmrc-container-wide](feature-node-nvmrc-container-wide.md) —
-  **not a split; a rework of a published Feature, and a breaking one.**
-  `node-nvmrc` selects the pinned Node in every _interactive bash_ shell, which
-  is measurably the wrong audience: the `~/.bashrc` block is unreachable from
-  `bash -lc`, `sh -c` and `docker exec`, and Claude Code's Bash tool in this very
-  container is **non-interactive zsh** inheriting a PATH frozen when the CLI
-  launched — so an agent CLI gets one Node version for its whole session no
-  matter where it `cd`s. What has been carrying the Feature is an accident:
-  `nvm install` implicitly runs `nvm use`, which repoints `$NVM_DIR/current`,
-  which the _upstream node Feature's_ `containerEnv` happens to put on PATH. That
-  symlink is container-global — a `nvm use` in one subshell was measured moving
-  it for every other process — so the `cd` hook actively fights the thing the
-  Feature exists to do. 0.2.0 keeps the create-time half verbatim and replaces
-  the shell half with this Feature's **own** `containerEnv` PATH entry plus a
-  symlink its create hook owns, which reaches every process, depends on no shell
-  and on no particular nvm provider, and outranks anything a human's `nvm use`
-  does globally. `autoUseOnCd`, the `devc:nvm-use` fence and `nvm_use_test.sh` are
-  **removed, not deprecated**; per-directory switching is dropped as a goal
-  rather than half-served. What replaces it for the case that actually comes up
-  is `projectDir` — **one** pin, just not necessarily at the workspace root. It
-  names the Node project rather than the `.nvmrc` file, so the whole create-time
-  hook relocates to it: the `.nvmrc` lookup _and_ the `node_modules` repair,
-  one `cd`, both halves following one option. That makes the existing
-  `[ -f .nvmrc ]` guard load-bearing, since `nvm install` otherwise walks _up_
-  and would pin the root's version while appearing to honor the option. The
-  moved chown is a real behavior change and is recorded rather than waved past:
-  it only ever acts on a mounted volume, and devc's own mount is at
-  `${containerWorkspaceFolder}/node_modules`
-  (`devc/default/devcontainer.json:58`), so a devc user who sets `projectDir`
-  should move the mount with it — one README line, deliberately not a second
-  option and not two chown targets. Two long-standing defects go with it: `nvmDir` is
-  validated before baking (an unvalidated `"` injects into the baked assignment
-  **and passes the existing verify grep**), and the bake moves from `sed` to
-  `awk -v` + `grep -qxF`, the fix `shell-dirs` already made after copying this
-  Feature. The one thing that cannot be measured offline is whether Feature
-  `containerEnv` merges in install order, so the pin lands ahead of
-  `…/nvm/current/bin`; the `pin_outranks_current` scenario is written to isolate
-  it, because every other scenario would pass by accident.
 - [feature-claude-config](feature-claude-config.md) — the largest split, and the
   only plan with a question that **must be measured before it can be finished**:
   whether `${localWorkspaceFolderBasename}` substitutes inside Feature `mounts`.
@@ -104,6 +66,102 @@ own matrix job.
 
 ### Completed
 
+- [feature-node-nvmrc-container-wide](archived/feature-node-nvmrc-container-wide.md)
+  — **not a split; a rework of a published Feature, and a breaking one.**
+  `node-nvmrc` 0.1.0 selected the pinned Node in every _interactive bash_ shell,
+  which is measurably the wrong audience: the `~/.bashrc` block it appended sits
+  below the stock `case $- in *i*) ;; *) return;; esac` guard, so `bash -lc`,
+  `sh -c`, `docker exec`, task runners and editor extension hosts got nothing
+  from it, and a coding-agent CLI's tool shell is non-interactive zsh inheriting
+  a PATH frozen when the CLI launched — one Node version for the whole session
+  regardless of `cd`. What had been carrying the Feature was an accident:
+  `nvm install` runs `nvm use` implicitly, repointing `$NVM_DIR/current`, which
+  the _upstream node Feature's_ `containerEnv` happens to put on PATH. That
+  symlink is container-global, so the `cd` hook actively fought the primary goal.
+  0.2.0 keeps the create-time half and replaces the shell half with this
+  Feature's **own** `containerEnv` PATH entry (`<share>/pin/bin`, a user-owned
+  subdirectory beside a root-owned `post-create.sh`, the same split `bash-config`
+  uses for `dirs/`) plus a symlink the create hook points at `$NVM_BIN` — nvm's
+  own exported variable, so no version string is parsed anywhere. `autoUseOnCd`,
+  the `devc:nvm-use` fence, the `cd` override and `nvm_use_test.sh` are
+  **removed, not deprecated**; per-directory switching is dropped as a goal
+  rather than half-served, and `projectDir` replaces it for the case that comes
+  up — **one** pin, just not necessarily at the workspace root, with the whole
+  hook relocating (the `.nvmrc` lookup _and_ the `node_modules` repair, one `cd`,
+  both halves following one option). That makes the existing `[ -f .nvmrc ]`
+  guard load-bearing rather than belt-and-braces: `nvm install` otherwise walks
+  _up_ the tree and would pin the workspace root's version while appearing to
+  honor the option. Two long-standing defects went with it — `nvmDir` **and**
+  `projectDir` are now validated before baking (unvalidated,
+  `nvmDir='/opt/n"; touch /tmp/PWNED; :"'` injected into the baked assignment
+  _and passed the verify grep_, because the grep was built from the same
+  unescaped value), and the bake moved from `sed` to `awk -v` + `grep -qxF`, the
+  fix `shell-dirs` had already made after copying this Feature. `devc/` is
+  untouched, devc's own unconditional `cd` override included.
+  **One correction to the plan, recorded rather than worked around silently.**
+  Its validation list claims an empty `projectDir` pins the `${VAR-}` vs
+  `${VAR:-}` distinction and "fails if written the other way". It does not, and
+  cannot: `projectDir`'s default is the **empty string**, and with an empty
+  default the two forms are behaviorally identical — both yield `""` whether the
+  variable is unset or set-but-empty. Confirmed by rewriting `install.sh` to
+  `${PROJECTDIR:-}` and re-running the harness: ALL PASS. (`shell-dirs`, the
+  precedent the plan cites, has a **non-empty** default, where the forms really
+  do differ — that is what was carried over without re-checking.) Both forms are
+  still written as specified, because the form documents the intent and survives
+  someone later giving the option a default; what pins it is two checks instead
+  of one — a source-form assertion that `${…-}` is literally used, plus the
+  behavioral assertion that an empty value bakes as `PROJECT_DIR=""`, which is
+  the one with teeth and fails the moment a non-empty default appears (confirmed:
+  `${PROJECTDIR:-.}` fails 3 checks).
+  Verified here, offline: the two new harnesses —
+  `test/install_options_test.sh` (102 checks: every option through to the baked
+  hook, the ten refusal cases across both path options, the injection case, a
+  bake that cannot take, the four-file agreement on the `SHARE_DIR` literal with
+  the manifest's `containerEnv` and `postCreateCommand` included, and that **no**
+  startup file is created or appended to under any option combination) and
+  `test/post_create_test.sh` (65 checks against a temp `SHARE_DIR`, a fake
+  `nvm.sh` that exports `NVM_BIN` and logs its cwd, and a stubbed `sudo` that
+  logs the cwd it was called from — the symlink and its second-run idempotency
+  including the `pin/bin/bin` nesting `ln -sfn` prevents, every `projectDir`
+  resolution, and the grading of all five failure paths). Plus
+  `tests/features_test.sh` (18 checks, 4 Features) and `deno fmt --check` (131
+  files). `bash-config`'s and `shell-dirs`' own harnesses still pass unchanged,
+  which is the copy-don't-move rule holding. **Three deliberate breaks were run
+  to prove the tests are tests**, as the plan demands: reverting the bake to
+  `sed` + `grep -q` fails 3 checks (the `&` and `|` cases), leaving the
+  `node_modules` repair at the workspace root while the `.nvmrc` lookup moves
+  fails the both-directories-exist case, and — unasked for — weakening the
+  `[ -f .nvmrc ]` guard so nvm could walk up fails 6.
+  **Not verified here (no Docker):** every `devcontainer features test` scenario
+  as a real container. All five are written — the default is the bare `{}` case
+  on a base image with no nvm (the hostile one, and where the **inert** PATH
+  entry is asserted), and `scenarios.json` carries `with_nvmrc` (rewritten to
+  assert through `bash -c`, `sh -c`, `bash -lc` and `env -i PATH=…` rather than
+  `bash -lic`), `no_nvmrc` (`pin/bin` absent, a dangling PATH entry shadowing
+  nothing), `project_subdir` (`packages/app/.nvmrc` pinning 20 with **no root
+  `.nvmrc`**) and `pin_outranks_current` — but none has been run. What that
+  leaves unmeasured, specifically: **the image build itself** (nothing has run
+  `install.sh` as root into a real `/usr/local/share`, so the `chown` of `pin/`
+  to `$_REMOTE_USER` — the step that lets an unprivileged hook create a symlink
+  there at all — is untested against a real remote user); **the `containerEnv`
+  merge ordering**, which is the whole precedence claim and cannot be measured
+  offline — whether `installsAfter` really lands this Feature's `ENV` line after
+  the node Feature's, so `pin/bin` sits ahead of `…/nvm/current/bin`; and **the
+  CLI's option plumbing** — that `projectDir` reaches `install.sh` as
+  `PROJECTDIR`, that `""` survives as an empty string rather than being dropped,
+  and that `${containerWorkspaceFolder}` substitutes inside each scenario's
+  `onCreateCommand`. `pin_outranks_current` is the only scenario that can isolate
+  the ordering: it moves nvm's global symlink to the other installed version
+  after create and asks a fresh `bash -c 'node -v'`, because every other scenario
+  would pass by accident — `nvm install` leaves `current` on the pinned version
+  at create time, so both PATH entries agree until something disturbs one.
+  Also still open, and still what `with_nvmrc` measures: the cwd of a
+  Feature-declared `postCreateCommand` (`design/devc-feature-split.md` open
+  question 1). `docs/manual-verification.md` needs no change — nothing about
+  publishing moves. **`node-nvmrc` is on `features/PUBLISH_ALLOWLIST`, so the
+  push that merges this to `main` publishes 0.2.0 to ghcr.io**, breaking any
+  consumer pinned to `:0` who passes `autoUseOnCd` or relies on the `cd` hook;
+  `:0` is the documented license for that while the Feature is pre-1.0.
 - [feature-bash-config-bashrc-only](archived/feature-bash-config-bashrc-only.md)
   — **not a split; a narrowing of an unpublished Feature, and a 0.2.0.**
   `bash-config` 0.1.0 sourced both `bashrc_*.sh` from `~/.bashrc` and
@@ -894,45 +952,45 @@ own matrix job.
 
 ## Development Phases
 
-| Phase                                                                                    | Plan                                                                           | Status   |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------- |
-| Host command bridge (socket server + client + tray)                                      | [host-command-bridge](archived/host-command-bridge.md)                         | complete |
-| Host `devc-bridge` lifecycle CLI + zero-setup seeding                                    | [host-lifecycle-cli](archived/host-lifecycle-cli.md)                           | complete |
-| devc-tui core — scan, model, fenced-region file surgery                                  | [devc-tui-core](archived/devc-tui-core.md)                                     | complete |
-| devc-tui interactive UI — checkbox project tree                                          | [devc-tui-ui](archived/devc-tui-ui.md)                                         | complete |
-| devc-tui tree reshape — folder tree, collapsed by default                                | [devc-tui-folder-tree](archived/devc-tui-folder-tree.md)                       | complete |
-| devc-tui workspace folders — host paths, not container paths                             | [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md)           | complete |
-| devc-tui home directory support — `$HOME` in config, `${localEnv:HOME}` in mounts        | [devc-tui-home-paths](archived/devc-tui-home-paths.md)                         | complete |
-| devc lifecycle core — container commands + bundled default (ported)                      | [devc-lifecycle-core](archived/devc-lifecycle-core.md)                         | complete |
-| devc baseline as a devcontainer Feature — composable postCreate                          | [devc-container-feature](archived/devc-container-feature.md)                   | complete |
-| devc global config + wizard TUI foundation                                               | [devc-global-config](archived/devc-global-config.md)                           | complete |
-| devc config wizard — project `.devcontainer/` via managed fences                         | [devc-config-wizard](archived/devc-config-wizard.md)                           | complete |
-| devc help output — clap-style `--help`/`--version` + per-command help                    | [devc-help-output](archived/devc-help-output.md)                               | complete |
-| devc container baseline fix — out-of-tree Feature + drop in-container tmux               | [devc-container-feature-fix](archived/devc-container-feature-fix.md)           | complete |
-| devc wizard modernize — inline sequential flow + multi-select folder picker              | [devc-wizard-modernize](archived/devc-wizard-modernize.md)                     | complete |
-| devc worktree-aware mounts — root-relative source targets + primary `.git` mount         | [devc-worktree-mounts](archived/devc-worktree-mounts.md)                       | complete |
-| devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate        | [devc-claude-seed-dir](archived/devc-claude-seed-dir.md)                       | complete |
-| devc `init` command — scaffold the bundled default `.devcontainer/` into a project       | [devc-init-command](archived/devc-init-command.md)                             | complete |
-| devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook   | [devc-drop-feature](archived/devc-drop-feature.md)                             | complete |
-| devc `build` command + change-aware `config` rebuild prompt                              | [devc-build-command](archived/devc-build-command.md)                           | complete |
-| devc wizard screens — picker chrome per `.plans/design/wizard/` mockups                  | [devc-wizard-screens](archived/devc-wizard-screens.md)                         | complete |
-| devc picker derived mounts — implied primary `.git` shown in the picks list              | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md)           | complete |
-| devc picker free navigation — roots as shortcuts + worktree mirror base                  | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md)         | complete |
-| devc config overlay — `devc.json` in both modes + user template layer                    | [devc-config-overlay](archived/devc-config-overlay.md)                         | complete |
-| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                         | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)                     | complete |
-| devc attach exit-code handling — stop crashing on non-zero `docker exec`                 | [devc-attach-exit-code](archived/devc-attach-exit-code.md)                     | complete |
-| devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md)                   | complete |
-| devc project post-create hook — restore `devc-post-create.sh` for zero-config projects   | [devc-project-post-create-hook](archived/devc-project-post-create-hook.md)     | complete |
-| devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](archived/devc-bridge-client-mount.md)               | complete |
-| devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](archived/devc-bridge-feature.md)                         | complete |
-| devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md)             | complete |
-| releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](archived/release-and-installer.md)                     | complete |
-| `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](archived/features-collection.md)                         | complete |
-| `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](archived/feature-node-nvmrc.md)                           | complete |
-| Features version independently — unpin the collection from the repo tag                  | [feature-independent-versions](archived/feature-independent-versions.md)       | complete |
-| `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](archived/feature-shell-dirs.md)                           | complete |
-| `bash-config` Feature — two fixed dirs, static blocks; supersedes `shell-dirs`           | [feature-bash-config](archived/feature-bash-config.md)                         | complete |
-| `bash-config` 0.2.0 — `~/.bashrc` only; the login profile half dropped entirely          | [feature-bash-config-bashrc-only](archived/feature-bash-config-bashrc-only.md) | complete |
-| `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                    | pending  |
-| `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                              | pending  |
-| `node-nvmrc` 0.2.0 — `containerEnv` PATH pin for every process; drop the `cd` hook       | [feature-node-nvmrc-container-wide](feature-node-nvmrc-container-wide.md)      | pending  |
+| Phase                                                                                    | Plan                                                                               | Status   |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------- |
+| Host command bridge (socket server + client + tray)                                      | [host-command-bridge](archived/host-command-bridge.md)                             | complete |
+| Host `devc-bridge` lifecycle CLI + zero-setup seeding                                    | [host-lifecycle-cli](archived/host-lifecycle-cli.md)                               | complete |
+| devc-tui core — scan, model, fenced-region file surgery                                  | [devc-tui-core](archived/devc-tui-core.md)                                         | complete |
+| devc-tui interactive UI — checkbox project tree                                          | [devc-tui-ui](archived/devc-tui-ui.md)                                             | complete |
+| devc-tui tree reshape — folder tree, collapsed by default                                | [devc-tui-folder-tree](archived/devc-tui-folder-tree.md)                           | complete |
+| devc-tui workspace folders — host paths, not container paths                             | [devc-tui-host-folder-paths](archived/devc-tui-host-folder-paths.md)               | complete |
+| devc-tui home directory support — `$HOME` in config, `${localEnv:HOME}` in mounts        | [devc-tui-home-paths](archived/devc-tui-home-paths.md)                             | complete |
+| devc lifecycle core — container commands + bundled default (ported)                      | [devc-lifecycle-core](archived/devc-lifecycle-core.md)                             | complete |
+| devc baseline as a devcontainer Feature — composable postCreate                          | [devc-container-feature](archived/devc-container-feature.md)                       | complete |
+| devc global config + wizard TUI foundation                                               | [devc-global-config](archived/devc-global-config.md)                               | complete |
+| devc config wizard — project `.devcontainer/` via managed fences                         | [devc-config-wizard](archived/devc-config-wizard.md)                               | complete |
+| devc help output — clap-style `--help`/`--version` + per-command help                    | [devc-help-output](archived/devc-help-output.md)                                   | complete |
+| devc container baseline fix — out-of-tree Feature + drop in-container tmux               | [devc-container-feature-fix](archived/devc-container-feature-fix.md)               | complete |
+| devc wizard modernize — inline sequential flow + multi-select folder picker              | [devc-wizard-modernize](archived/devc-wizard-modernize.md)                         | complete |
+| devc worktree-aware mounts — root-relative source targets + primary `.git` mount         | [devc-worktree-mounts](archived/devc-worktree-mounts.md)                           | complete |
+| devc `~/.claude` seed dir — one read-only directory bind, symlinked in postCreate        | [devc-claude-seed-dir](archived/devc-claude-seed-dir.md)                           | complete |
+| devc `init` command — scaffold the bundled default `.devcontainer/` into a project       | [devc-init-command](archived/devc-init-command.md)                                 | complete |
+| devc drop Feature — Dockerfile + top-level `postCreateCommand`; `scripts/` + user hook   | [devc-drop-feature](archived/devc-drop-feature.md)                                 | complete |
+| devc `build` command + change-aware `config` rebuild prompt                              | [devc-build-command](archived/devc-build-command.md)                               | complete |
+| devc wizard screens — picker chrome per `.plans/design/wizard/` mockups                  | [devc-wizard-screens](archived/devc-wizard-screens.md)                             | complete |
+| devc picker derived mounts — implied primary `.git` shown in the picks list              | [devc-picker-derived-mounts](archived/devc-picker-derived-mounts.md)               | complete |
+| devc picker free navigation — roots as shortcuts + worktree mirror base                  | [devc-picker-free-navigation](archived/devc-picker-free-navigation.md)             | complete |
+| devc config overlay — `devc.json` in both modes + user template layer                    | [devc-config-overlay](archived/devc-config-overlay.md)                             | complete |
+| devc-bridge keepalive — `ping` builtin + idle-timeout caffeinate                         | [devc-bridge-keepawake](archived/devc-bridge-keepawake.md)                         | complete |
+| devc attach exit-code handling — stop crashing on non-zero `docker exec`                 | [devc-attach-exit-code](archived/devc-attach-exit-code.md)                         | complete |
+| devc mounts to overlay — wizard fences move into `devc.json`, out of `devcontainer.json` | [devc-mounts-to-overlay](archived/devc-mounts-to-overlay.md)                       | complete |
+| devc project post-create hook — restore `devc-post-create.sh` for zero-config projects   | [devc-project-post-create-hook](archived/devc-project-post-create-hook.md)         | complete |
+| devc-bridge client by read-only mount — every container, no per-repo build               | [devc-bridge-client-mount](archived/devc-bridge-client-mount.md)                   | complete |
+| devc-bridge as a devcontainer Feature — one opt-in line, one mechanism                   | [devc-bridge-feature](archived/devc-bridge-feature.md)                             | complete |
+| devc-bridge tray decoupling — headless by default, tray as an add-on                     | [devc-bridge-tray-decouple](archived/devc-bridge-tray-decouple.md)                 | complete |
+| releases + installer — GH Action builds every binary; `curl \| sh` installs them         | [release-and-installer](archived/release-and-installer.md)                         | complete |
+| `features/` as a real collection — guard and test every Feature, not just the bridge     | [features-collection](archived/features-collection.md)                             | complete |
+| `node-nvmrc` Feature — `.nvmrc` install at create, `nvm use` on `cd`                     | [feature-node-nvmrc](archived/feature-node-nvmrc.md)                               | complete |
+| Features version independently — unpin the collection from the repo tag                  | [feature-independent-versions](archived/feature-independent-versions.md)           | complete |
+| `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](archived/feature-shell-dirs.md)                               | complete |
+| `bash-config` Feature — two fixed dirs, static blocks; supersedes `shell-dirs`           | [feature-bash-config](archived/feature-bash-config.md)                             | complete |
+| `bash-config` 0.2.0 — `~/.bashrc` only; the login profile half dropped entirely          | [feature-bash-config-bashrc-only](archived/feature-bash-config-bashrc-only.md)     | complete |
+| `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                        | pending  |
+| `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                                  | pending  |
+| `node-nvmrc` 0.2.0 — `containerEnv` PATH pin for every process; drop the `cd` hook       | [feature-node-nvmrc-container-wide](archived/feature-node-nvmrc-container-wide.md) | complete |
