@@ -98,6 +98,14 @@ check 'publish-feature.yml — no unguarded `features publish`' \
   publish_invocations_are_all_guarded
 
 echo
+echo 'collection-index publishes the allowlisted staging dir, not the raw features/ tree'
+# A regression back to `features publish ./features` here would silently bypass
+# PUBLISH_ALLOWLIST — every Feature under features/ would reappear in the collection index
+# regardless of whether discover's matrix actually published it.
+check 'publish-feature.yml — Publish collection index targets the staged dir' \
+  grep -q 'features publish /tmp/publishable-features' .github/workflows/publish-feature.yml
+
+echo
 echo 'both workflows still declare the dry_run input they are gated on'
 for f in .github/workflows/release.yml .github/workflows/publish-feature.yml; do
   check "$(basename "$f") declares dry_run" grep -q '^      dry_run:' "$f"

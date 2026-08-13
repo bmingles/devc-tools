@@ -1,8 +1,9 @@
 name: Publish devcontainer Features
 
-# Publishes every Feature in features/ to ghcr.io/bmingles/devc-tools/<id>. The collection is
-# walked, never enumerated: adding a directory under features/ is the whole of adding a
-# Feature to this workflow — see features/README.md.
+# Publishes every allowlisted Feature in features/ to ghcr.io/bmingles/devc-tools/<id>. The
+# collection is walked, never enumerated: adding a directory under features/ is the whole of
+# adding a Feature to this workflow — see features/README.md. Whether it *publishes* is a
+# separate question, answered by features/PUBLISH_ALLOWLIST (below).
 #
 # Each Feature carries its **own** version and publishes on a push to `main` that touches
 # features/, not on the repo's `v*` tag (see
@@ -19,6 +20,11 @@ name: Publish devcontainer Features
 # packaging and both guards can be exercised before a push lands. `inputs` is null outside
 # workflow_dispatch, so `!inputs.dry_run` is true on a push to main and normal merges are
 # unaffected.
+#
+# Reaching the tree is not enough to publish: `discover` narrows the matrix to the ids listed
+# in features/PUBLISH_ALLOWLIST, so a Feature under active development sits in features/
+# fully guarded and still does not ship until it is added there. See
+# features/README.md#the-publish-allowlist.
 
 on:
   push:
@@ -59,26 +65,44 @@ jobs:
       - name: Collection guard
         run: bash tests/features_test.sh
 
-      # Derived from the tree, never spelled out — a static list would reintroduce the exact
-      # failure features-collection removed, where the next Feature added is silently not
-      # covered. Empty is a failure: it means the collection moved and the matrix below
-      # would publish nothing while reporting success.
+      # Collection membership is derived from the tree, never spelled out — a static list
+      # here would reintroduce the exact failure features-collection removed, where the next
+      # Feature added is silently not covered. Empty is a failure: it means the collection
+      # moved and the matrix below would publish nothing while reporting success.
+      #
+      # What *does* publish is narrower than what is found: only the ids listed in
+      # features/PUBLISH_ALLOWLIST reach the matrix. That is the one static list in this
+      # collection, and unlike the failure above it fails safe — leaving a Feature off it
+      # means it does not publish, not that it publishes unguarded. The Collection guard step
+      # above already checked every entry names a real Feature, so this trusts the file
+      # rather than re-validating it.
       - name: Discover Features
         id: list
         run: |
           set -euo pipefail
-          ids=()
+          all=()
           for manifest in features/*/devcontainer-feature.json; do
             # No nullglob here, so an unmatched glob arrives as its own literal.
             [ -f "$manifest" ] || continue
-            ids+=("$(basename "$(dirname "$manifest")")")
+            all+=("$(basename "$(dirname "$manifest")")")
           done
-          if [ "${#ids[@]}" -eq 0 ]; then
+          if [ "${#all[@]}" -eq 0 ]; then
             echo "::error::no features/*/devcontainer-feature.json found — has the collection moved?"
             exit 1
           fi
+          echo "found ${#all[@]} Feature(s) in the collection: ${all[*]}"
+
+          ids=()
+          # `|| true`: grep exits 1 on an allowlist with no matching lines (every Feature
+          # temporarily held back), which is a valid state here, not a failure — and a
+          # process substitution's own exit code is invisible to this script's `set -e`
+          # regardless, so this is belt-and-suspenders for a reader, not for the shell.
+          while IFS= read -r id; do
+            ids+=("$id")
+          done < <(grep -vE '^[[:space:]]*(#|$)' features/PUBLISH_ALLOWLIST || true)
+
           features="$(printf '%s\n' "${ids[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
-          echo "found ${#ids[@]} Feature(s): $features"
+          echo "publishing ${#ids[@]} of ${#all[@]} Feature(s) (see features/PUBLISH_ALLOWLIST): $features"
           echo "features=$features" >> "$GITHUB_OUTPUT"
 
   # One job per Feature, so no Feature can block another. `features publish ./features` takes
@@ -147,17 +171,24 @@ jobs:
   # info` resolves a Feature through its own OCI annotations — but it is visible on the
   # repo's Packages page, so wrong-and-alternating is worth one more job.
   #
-  # `needs: publish` is the safety, not a convenience: a job whose needs did not all succeed
-  # is skipped, so this runs only when EVERY Feature published cleanly. That matters because
-  # the repair is a whole-collection publish, which would otherwise push a Feature whose
-  # release pin the matrix just rejected. When it is skipped the index simply keeps its
-  # previous value — stale, which is what it already was.
+  # "the whole collection" here means the whole *allowlisted* subset, not every directory
+  # under features/: a Feature features/PUBLISH_ALLOWLIST holds back must not show up in the
+  # index either, or this repair job would be the one place that quietly bypasses the gate
+  # `discover` enforces everywhere else.
   #
-  # By the time this runs every Feature is already published at its current version, so the
-  # CLI skips all of them and only the collection document is rewritten — this time listing
-  # the whole collection.
+  # `needs: publish` is the safety, not a convenience: a job whose needs did not all succeed
+  # is skipped, so this runs only when EVERY allowlisted Feature published cleanly. That
+  # matters because the repair is a whole-collection publish, which would otherwise push a
+  # Feature whose release pin the matrix just rejected. When it is skipped the index simply
+  # keeps its previous value — stale, which is what it already was. `needs: discover` is
+  # added alongside it only to read discover's own output; it adds no new skip condition
+  # `needs: publish` did not already give, since publish itself needs discover.
+  #
+  # By the time this runs every allowlisted Feature is already published at its current
+  # version, so the CLI skips all of them and only the collection document is rewritten —
+  # this time listing the whole allowlisted collection.
   collection-index:
-    needs: publish
+    needs: [discover, publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -168,10 +199,34 @@ jobs:
       # here later would silently turn this into an unguarded whole-collection publish,
       # which is the one operation in this file that can push a Feature whose release does
       # not exist. Cheap, and it fails closed if the reasoning above ever stops being true.
+      #
+      # One `--feature` call per allowlisted id, not a bare whole-tree check: a Feature held
+      # back by PUBLISH_ALLOWLIST (in development, possibly with no release pin decided yet)
+      # must not be able to fail this job — it isn't publishing, so its pin is not this job's
+      # business. This is the same invocation the matrix above already ran per Feature.
       - name: Release pin guard (collection)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash tests/features_test.sh --check-release-pins
+        run: |
+          set -euo pipefail
+          for id in $(echo '${{ needs.discover.outputs.features }}' | jq -r '.[]'); do
+            bash tests/features_test.sh --check-release-pins --feature "$id"
+          done
+
+      # `features publish` packages whatever directory it is pointed at wholesale — it has no
+      # flag to publish a subset of a collection — so the allowlisted Features are copied out
+      # to a directory of their own rather than pointing the command at ./features directly.
+      # Pointing it at ./features here would publish every Feature's index entry regardless
+      # of PUBLISH_ALLOWLIST, silently undoing the gate this whole workflow exists to add.
+      - name: Stage the allowlisted collection
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/publishable-features
+          mkdir -p /tmp/publishable-features
+          for id in $(echo '${{ needs.discover.outputs.features }}' | jq -r '.[]'); do
+            cp -R "features/$id" "/tmp/publishable-features/$id"
+          done
+          ls /tmp/publishable-features
 
       - name: Log in to ghcr.io (collection)
         if: ${{ github.ref == 'refs/heads/main' && !inputs.dry_run }}
@@ -182,5 +237,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx --yes "$DEVCONTAINERS_CLI" features publish ./features \
+          npx --yes "$DEVCONTAINERS_CLI" features publish /tmp/publishable-features \
             --namespace "${{ github.repository }}"

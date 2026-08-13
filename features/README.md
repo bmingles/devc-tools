@@ -21,15 +21,21 @@ pre-1.0, `:1` at its first 1.x release. It is not the repo's version — see
 
 `node-nvmrc` is **published and public** — `0.1.0` pushed `0`, `0.1`, `0.1.0` and
 `latest`, and an unauthenticated pull resolves, so the `:0` refs in the tables
-above and in `devc/README.md` work today. `devc-bridge` is **not published yet**:
-it pins `DEVC_TOOLS_RELEASE='v0.1.0'`, and until that release is tagged its
-publish job fails the pin guard by design. Nothing else is blocked by that — see
-[Versions](#versions) for why each Feature publishes on its own.
+above and in `devc/README.md` work today. `devc-bridge` is on the publish
+allowlist but **not published yet**: it pins `DEVC_TOOLS_RELEASE='v0.1.0'`, and
+until that release is tagged its publish job fails the pin guard by design.
+Nothing else is blocked by that — see [Versions](#versions) for why each Feature
+publishes on its own.
+
+`shell-dirs` is **not on the publish allowlist** — it is still under active
+development and is deliberately held back from ghcr.io. See
+[The publish allowlist](#the-publish-allowlist).
 
 ## Layout
 
 ```
 features/
+  PUBLISH_ALLOWLIST             # ids allowed to publish — see below
   <id>/
     devcontainer-feature.json   # id must equal the directory name
     install.sh                  # runs as root at image build time
@@ -91,6 +97,34 @@ that downloads nothing must not be made to invent a version.
 `bash tests/features_test.sh --check-release-pins` asserts every pinned release
 exists, which the old tag trigger used to guarantee by accident: publishing from
 `main` otherwise lets a Feature ship pinned to a release nobody has tagged yet.
+
+## The publish allowlist
+
+A Feature that reaches every guard above still does not publish unless its id is
+listed in [`PUBLISH_ALLOWLIST`](PUBLISH_ALLOWLIST), one id per line (`#` comments
+and blank lines are ignored). This is the gate for a Feature under active
+development: add its directory, get its manifest right, run its tests — it still
+sits invisible to ghcr.io until you add it here. No half-finished Feature
+auto-publishes just because it touched `main`.
+
+It is deliberately the one static list in this collection. Everywhere else a
+Feature is _discovered_ by walking `features/*/devcontainer-feature.json`,
+precisely so a guard can never be left naming only the old Features — see
+[.plans/archived/features-collection.md](../.plans/archived/features-collection.md).
+The allowlist does not reopen that failure: leaving a Feature off it fails
+**safe** (it does not publish), where the old failure mode failed **unsafe** (it
+published unguarded). `bash tests/features_test.sh` checks every entry names a
+real Feature, so a stale or misspelled id is caught rather than silently doing
+nothing forever.
+
+It is **source-only**. `devcontainer features publish` packages one Feature's own
+`features/<id>/` directory; `PUBLISH_ALLOWLIST` lives at the collection root,
+outside every Feature directory, so it is never part of a published artifact.
+
+`publish-feature.yml`'s `discover` job builds its matrix from this file, and its
+`collection-index` job stages a copy of only the allowlisted Feature directories
+before republishing the collection index — both so a held-back Feature cannot
+appear in either place. Currently allowlisted: `devc-bridge`, `node-nvmrc`.
 
 ## Guarding the collection
 

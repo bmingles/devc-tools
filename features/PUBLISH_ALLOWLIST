@@ -1,0 +1,13 @@
+# Feature ids allowed to publish, one per line. `#` comments and blank lines are ignored.
+#
+# A Feature not listed here still passes every other guard and is still discovered by the
+# collection walk in publish-feature.yml — it just does not publish. That is the gate for a
+# Feature under active development: get its directory and manifest right, and it stays
+# invisible to ghcr.io until its id is added here.
+#
+# Source-only: `devcontainer features publish` packages one Feature's own `features/<id>/`
+# directory, and this file lives at the collection root, outside every Feature directory — it
+# is never part of a published artifact. See features/README.md#the-publish-allowlist.
+
+devc-bridge
+node-nvmrc

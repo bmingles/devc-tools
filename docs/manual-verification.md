@@ -75,7 +75,9 @@ Expected from `publish-feature.yml` — dispatch it **from `main`**, since that 
 the ref it publishes from and the one a dry run has to rehearse:
 
 - [ ] `discover` passes `bash tests/features_test.sh` and emits a matrix
-      containing every id under `features/`, derived from the tree
+      containing every id listed in `features/PUBLISH_ALLOWLIST` (today:
+      `devc-bridge`, `node-nvmrc`) — not every directory under `features/`;
+      `shell-dirs` exists in the tree but is deliberately not allowlisted yet
 - [ ] One `publish` job per Feature. `node-nvmrc`'s is **green**: it downloads
       nothing, pins no release, and packages on its own
 - [ ] `devc-bridge`'s **fails on its release pin guard, naming `v0.1.0`** — no

@@ -23,6 +23,10 @@
 # changed. The registry already answers that — `devcontainer features publish` skips a
 # version it finds in the registry, so an unbumped Feature simply does not publish and the
 # run says so. See .plans/archived/feature-independent-versions.md.
+#
+# It also asserts every features/PUBLISH_ALLOWLIST entry names a real Feature — the one
+# static list in this collection, and the gate that keeps a Feature under active development
+# off ghcr.io. See features/README.md#the-publish-allowlist.
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
@@ -164,6 +168,47 @@ if [ "$check_release_pins" -eq 1 ]; then
     fi
     check "$dir — pinned release $tag exists" release_exists "$tag" "$dir"
   done
+fi
+
+# --- the publish allowlist ----------------------------------------------------------------
+#
+# features/PUBLISH_ALLOWLIST is the gate that keeps a Feature under active development off
+# ghcr.io: publish-feature.yml's matrix is built from this file, not from the tree walk
+# above, so a Feature can pass every check in this script and still not publish until its id
+# is added here. That is a static list, deliberately, unlike everything else in this
+# collection — but it fails *safe* (an unlisted Feature just does not publish) rather than
+# the way a static list failed before .plans/archived/features-collection.md (an uncovered
+# Feature published unguarded), so it does not reopen that failure.
+#
+# What is checked here is narrower than "is this a good idea": only that every entry names a
+# real Feature. A stale or misspelled id would otherwise sit in the file doing nothing,
+# forever, with no signal — the same "which of the five?" problem the rest of this script
+# exists to answer. Always runs, unscoped by --feature: the allowlist is a collection-wide
+# document, not a per-Feature one.
+
+allowlist_entries() { # prints one id per line; comments and blank lines stripped
+  grep -vE '^[[:space:]]*(#|$)' "$1"
+}
+
+allowlist_names_real_feature() { # allowlist_names_real_feature <id>
+  [ -f "features/$1/devcontainer-feature.json" ] && return 0
+  echo "       (PUBLISH_ALLOWLIST lists '$1', which has no features/$1/devcontainer-feature.json)"
+  return 1
+}
+
+ALLOWLIST=features/PUBLISH_ALLOWLIST
+echo
+if [ ! -f "$ALLOWLIST" ]; then
+  # Missing, not empty: an empty-but-present file is a valid "publish nothing right now"
+  # state. Missing means the gate itself is gone, which would otherwise stop every Feature
+  # from ever publishing again with no failure to say so.
+  echo "  FAIL $ALLOWLIST is missing — the publish gate has nothing to check against"
+  fails=$((fails + 1))
+else
+  echo "every $ALLOWLIST entry names a real Feature"
+  while IFS= read -r id; do
+    check "PUBLISH_ALLOWLIST — $id" allowlist_names_real_feature "$id"
+  done < <(allowlist_entries "$ALLOWLIST")
 fi
 
 echo
