@@ -9,5 +9,6 @@
 # directory, and this file lives at the collection root, outside every Feature directory — it
 # is never part of a published artifact. See features/README.md#the-publish-allowlist.
 
+bash-config
 devc-bridge
 node-nvmrc
