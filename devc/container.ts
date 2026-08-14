@@ -9,6 +9,7 @@ import {
   materializeDefaultConfig,
 } from './default_config.ts';
 import { displayPath } from './config.ts';
+import { devcontainerCommand } from './devcontainer_cli.ts';
 import {
   type DevcOverlay,
   isEmptyOverlay,
@@ -595,8 +596,9 @@ export async function startContainer(
     containerWorkspaceFolder,
   });
 
-  const cmd = new Deno.Command('devcontainer', {
-    args,
+  // The devcontainer CLI is embedded in this binary, not resolved from PATH — see
+  // `devcontainer_cli.ts`. Same argv, same piped stdout as the PATH binary had.
+  const cmd = devcontainerCommand(args, {
     stdout: 'piped',
     stderr: 'inherit',
   });

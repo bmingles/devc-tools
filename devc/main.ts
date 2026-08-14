@@ -11,6 +11,10 @@ import {
   stopContainer,
 } from './container.ts';
 import { parseAttachArgs, parseBuildArgs } from './args.ts';
+import {
+  DEVCONTAINER_SUBCOMMAND,
+  runEmbeddedDevcontainerCli,
+} from './devcontainer_cli.ts';
 import { initProject } from './init.ts';
 import {
   globalConfigExists,
@@ -27,6 +31,13 @@ import {
 
 const subcommand = Deno.args[0];
 const KNOWN_COMMANDS = new Set(COMMANDS.map((c) => c.name));
+
+// devc re-execs itself with this hidden subcommand to run the embedded devcontainer CLI (see
+// `devcontainer_cli.ts`). First thing dispatched, ahead of `--version` and `--help`: from here on
+// the process belongs to the CLI, and its argv is the CLI's, not devc's. Never returns.
+if (subcommand === DEVCONTAINER_SUBCOMMAND) {
+  await runEmbeddedDevcontainerCli(Deno.args.slice(1));
+}
 
 /** Prints a `devc:`-prefixed error to stderr and exits 1 (never returns). */
 function fail(e: unknown): never {

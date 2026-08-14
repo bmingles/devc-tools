@@ -11,6 +11,19 @@
 
 ### Pending
 
+- [devc-embedded-devcontainer-cli](devc-embedded-devcontainer-cli.md) —
+  **written and implemented, not yet validated**, which is why it is here rather
+  than in `archived/`. `devc` now depends on `@devcontainers/cli` as a pinned npm
+  package embedded by `deno compile`, instead of shelling out to a `devcontainer`
+  on `PATH`; `docker` becomes the only prerequisite. The from-source path is
+  tested and green, but the shipping artifact is the compiled one and
+  `deno compile` has not been run against this change — that check, and a real
+  `devc up` on a host with neither `devcontainer` nor `node`, are the plan's open
+  Validation boxes. It also widens devc to an unscoped `--allow-run`, forced by
+  the host `initializeCommand`'s `/bin/sh -c` moving inside devc's own sandbox;
+  the plan argues that trade, and reverses a note in `install.sh` that had
+  refused it.
+
 Splitting pieces of devc's baseline out as publishable devcontainer Features.
 Read [design/devc-feature-split.md](design/devc-feature-split.md) first — it
 settles, once, which pieces **can** be a Feature (a Feature can declare no

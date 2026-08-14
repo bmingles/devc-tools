@@ -37,14 +37,11 @@ Notes:
 
 - **Add `~/.local/bin` to your `PATH`** if it isn't already; the installer says
   so and prints the line to add rather than installing something unreachable.
-- `devc` needs `docker` and the
-  [`devcontainer` CLI](https://github.com/devcontainers/cli) at run time. The
-  installer reports whichever are missing and installs anyway.
-- `devc` prints `Info Failed to resolve '<name>' for allow-run` on stderr for
-  each of `docker`/`devcontainer`/`tmux` that is not on `PATH`. It is Deno's
-  line, it is harmless, and it goes away as you install them. Silencing it would
-  mean giving up the allowlist, which is the wrong trade for a tool that shells
-  out to Docker.
+- `devc` needs `docker` at run time, and nothing else. The
+  [`devcontainer` CLI](https://github.com/devcontainers/cli) is **embedded in
+  the binary**, so neither it nor the Node.js it would otherwise need has to be
+  on your `PATH`. The installer reports Docker if it is missing and installs
+  anyway.
 - Gatekeeper: `curl` does not set `com.apple.quarantine`, so an installed macOS
   binary runs. One downloaded through a browser would not.
 - **Windows is out of scope**, and the `devc-bridge` **host** CLI is macOS-only

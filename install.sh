@@ -231,14 +231,18 @@ install_binary() { # install_binary <slot> <staged-name> <dest-dir> <dest-name>
 
 # Report, never block. An installer that refuses because Docker is not running is worse
 # than one that says so.
+#
+# Docker is the whole list. `devcontainer` and the `node` it runs on used to be checked
+# here too; the devcontainer CLI is now embedded in the devc binary, so a machine with
+# neither on PATH is fully equipped.
 check_prereqs() {
   missing=''
-  for tool in docker devcontainer node; do
+  for tool in docker; do
     have "$tool" || missing="$missing $tool"
   done
   [ -n "$missing" ] || return 0
   warn "not found on PATH:$missing"
-  warn '(devc needs docker and the devcontainer CLI at run time; install them when convenient)'
+  warn '(devc needs docker at run time; install it when convenient)'
 }
 
 check_path() {
@@ -303,11 +307,11 @@ main() {
   check_path
   check_prereqs
 
-  # devc's compiled binary prints an `Info Failed to resolve '<x>' for allow-run` line on
-  # stderr for each allowlisted binary missing from PATH. It is Deno's, it is harmless,
-  # and it goes away as the tools get installed — broadening to a bare `--allow-run`
-  # would silence it by giving up the allowlist, which is the wrong trade for a tool that
-  # shells out to Docker.
+  # devc's compiled binary used to print an `Info Failed to resolve '<x>' for allow-run`
+  # line on stderr for each allowlisted binary missing from PATH. It no longer has an
+  # allowlist to resolve: embedding the devcontainer CLI put a host `initializeCommand`'s
+  # `/bin/sh -c` inside devc's own sandbox, which permits every host command anyway, so
+  # the allowlist was giving up nothing real by staying. See devc/README.md.
   say 'run `devc --help` to get started'
 }
 

@@ -16,7 +16,8 @@
     "jsr:@std/jsonc@1": "1.0.2",
     "jsr:@std/path@1": "1.1.6",
     "jsr:@std/path@^1.1.5": "1.1.6",
-    "jsr:@std/text@^1.0.19": "1.0.19"
+    "jsr:@std/text@^1.0.19": "1.0.19",
+    "npm:@devcontainers/cli@0.88.0": "0.88.0"
   },
   "jsr": {
     "@cliffy/ansi@1.2.1": {
@@ -83,11 +84,18 @@
       "integrity": "003a0e032d360e8c3a4e0410fb792c77a66bd6553fee9d60c6ec1bce30d29223"
     }
   },
+  "npm": {
+    "@devcontainers/cli@0.88.0": {
+      "integrity": "sha512-sMkruPy/icfov20mdQh2EjFYZogxvMEZptDEvg5/eMBIUOr2xr+8wlsI7nvDR6EJxoBjqoasXqgRGbiMqbaJ1w==",
+      "bin": true
+    }
+  },
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@1",
       "jsr:@std/jsonc@1",
-      "jsr:@std/path@1"
+      "jsr:@std/path@1",
+      "npm:@devcontainers/cli@0.88.0"
     ]
   }
 }

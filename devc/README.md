@@ -18,13 +18,11 @@ curl -fsSL https://github.com/bmingles/devc-tools/releases/latest/download/insta
 
 That drops a prebuilt `devc` into `~/.local/bin` (macOS and Linux, Intel and
 ARM) — **Deno is not needed to use it**, only to develop it. See the
-[repo README](../README.md#install) for the env knobs, the `PATH` note, and why
-`Info Failed to resolve 'docker' for allow-run` shows up until Docker is
-installed.
+[repo README](../README.md#install) for the env knobs and the `PATH` note.
 
-`devc` shells out to `docker` and the
-[`devcontainer` CLI](https://github.com/devcontainers/cli) at run time; install
-both.
+**`docker` is the only thing `devc` needs on your `PATH`.** The
+[`devcontainer` CLI](https://github.com/devcontainers/cli) is embedded in the
+binary — see [The embedded devcontainer CLI](#the-embedded-devcontainer-cli).
 
 To build it from a clone instead, see [Development](#development).
 
@@ -123,6 +121,35 @@ Notes:
 `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `$TMUX`) and tint the terminal for the
 duration of the attach so a container shell reads as visually distinct from a
 local one.
+
+### The embedded devcontainer CLI
+
+`devc` does not look for a `devcontainer` on your `PATH`. It depends on
+`@devcontainers/cli` as a pinned npm package, which `deno compile` embeds in the
+binary — so `devc up` works on a machine with only Docker installed, and can
+never disagree with a differently-versioned CLI someone happened to install.
+
+`@devcontainers/cli` publishes no programmatic API — its `package.json` declares
+only `bin`, and importing its bundle _runs_ the CLI against `process.argv` and
+then calls `process.exit()`. So `devc` re-execs **itself** with a hidden
+`__devcontainer` subcommand: that child sets `process.argv` and imports the
+bundle, becoming a devcontainer CLI, and the parent pipes its stdout exactly as
+it piped the old PATH binary's. Nothing about the argv `devc` builds changed.
+
+Two consequences worth knowing:
+
+- **`devc` runs with an unscoped `--allow-run`**, where it used to allowlist
+  `docker,devcontainer,git,tmux,tty`. A `devcontainer.json` may declare an
+  `initializeCommand`, which the CLI runs on the **host** through `/bin/sh -c`
+  (devc's own bundled default declares one), and an allowlist containing
+  `/bin/sh` permits every host command anyway. It also gains `--allow-sys` and
+  `--allow-net`, both the CLI's: `osRelease` at startup, and its own HTTPS
+  fetches of Features from OCI registries during `up`. The
+  `Info Failed to resolve '<name>' for allow-run` line Deno used to print for
+  each missing allowlisted binary goes away with the allowlist.
+- **Upgrading the CLI is a `devc` release.** The version is pinned in
+  `devc/deno.json`'s `imports`, alongside the identical pin in
+  `.github/workflows/publish-feature.yml`; bump both together.
 
 ## Optional overlay: `devc.json`
 
@@ -599,6 +626,13 @@ bash ../features/devc-bridge/test/install_link_test.sh   # devc:bridge-client-li
 # The release installer has its own harness at the repo root (offline, no network):
 bash ../tests/install_test.sh ../install.sh
 ```
+
+`deno task test` spawns the runtime: `tests/devcontainer_cli_test.ts` runs the
+[embedded devcontainer CLI](#the-embedded-devcontainer-cli) for real — a
+`--version` and an `up` against a Docker path that cannot exist — because
+nothing else would notice if the pin, the argv shim or the embedding broke. It
+needs no Docker, and on a cold cache it fetches the pinned npm package like any
+other dependency.
 
 ### `devc config`
 

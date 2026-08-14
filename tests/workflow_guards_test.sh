@@ -106,6 +106,27 @@ check 'publish-feature.yml — Publish collection index targets the staged dir' 
   grep -q 'features publish /tmp/publishable-features' .github/workflows/publish-feature.yml
 
 echo
+echo 'the devcontainer CLI is pinned to one version repo-wide'
+# There are two pins of @devcontainers/cli and they must agree: publish-feature.yml runs it to
+# publish Features, and devc/deno.json *embeds* it in the devc binary (see
+# .plans/devc-embedded-devcontainer-cli.md). Drifting them means the CLI that validates and
+# publishes a Feature is not the CLI that installs it — measurably different behavior, found
+# by whoever hits it rather than here. Two comments saying "keep these in step" is how they
+# drift; this is the assertion.
+pins_agree() {
+  local wf devc
+  wf="$(sed -n "s/.*DEVCONTAINERS_CLI: *'@devcontainers\/cli@\([^']*\)'.*/\1/p" \
+        .github/workflows/publish-feature.yml)"
+  devc="$(sed -n 's/.*"npm:@devcontainers\/cli@\([^"]*\)".*/\1/p' devc/deno.json)"
+  [ -n "$wf" ] || { echo '       (no DEVCONTAINERS_CLI pin in publish-feature.yml)'; return 1; }
+  [ -n "$devc" ] || { echo '       (no @devcontainers/cli pin in devc/deno.json imports)'; return 1; }
+  [ "$wf" = "$devc" ] && return 0
+  echo "       (publish-feature.yml pins $wf, devc/deno.json pins $devc)"
+  return 1
+}
+check 'publish-feature.yml and devc/deno.json pin the same version' pins_agree
+
+echo
 echo 'both workflows still declare the dry_run input they are gated on'
 for f in .github/workflows/release.yml .github/workflows/publish-feature.yml; do
   check "$(basename "$f") declares dry_run" grep -q '^      dry_run:' "$f"
