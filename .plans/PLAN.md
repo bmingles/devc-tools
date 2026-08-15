@@ -24,6 +24,17 @@
   the plan argues that trade, and reverses a note in `install.sh` that had
   refused it.
 
+- [devc-core-npm-library](devc-core-npm-library.md) — **written, not started**,
+  and blocked on the plan above clearing its `deno compile` box. devc's lifecycle
+  logic moves to a top-level `devc-core/` written against `node:` builtins, so
+  the same source runs on Deno and Node; it publishes to npm for programmatic
+  consumers (the motivating one is a pi coding-agent extension, which loads
+  TypeScript in-process under Node). The CLI is **unchanged** — same
+  `deno compile` binary, same `install.sh` into `~/.local/bin`, same
+  Docker-only prerequisite — and consumes the same modules from source. The split
+  follows the TTY: `main.ts` and `tui/` stay Deno, `container.ts` gets cut in
+  half at `attachToContainer`.
+
 Splitting pieces of devc's baseline out as publishable devcontainer Features.
 Read [design/devc-feature-split.md](design/devc-feature-split.md) first — it
 settles, once, which pieces **can** be a Feature (a Feature can declare no
