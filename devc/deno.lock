@@ -17,6 +17,7 @@
     "jsr:@std/path@1": "1.1.6",
     "jsr:@std/path@^1.1.5": "1.1.6",
     "jsr:@std/text@^1.0.19": "1.0.19",
+    "npm:@devcontainers/cli@*": "0.88.0",
     "npm:@devcontainers/cli@0.88.0": "0.88.0"
   },
   "jsr": {
