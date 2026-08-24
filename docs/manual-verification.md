@@ -278,3 +278,101 @@ The regression that matters most: devc must not depend on any of the above.
 - [ ] `devc mounts` shows both bridge mounts as **ro**
 - [ ] `devc-bridge stop` works against the pidfile at its new path (moved out of
       `run/`, so a writable token mount can no longer feed it a PID)
+
+---
+
+## 7. The content-addressed zero-config cache — Docker host
+
+From `devc-core-consumer-prep`. Everything about the cache that can be checked
+without a daemon already is, and is green: the key's stability and sensitivity
+(24 unit tests), hit/miss/lost-race, the `finalDir` rewrite, an 8-way
+concurrency check, and the same key computed identically by a `deno compile`
+binary reading its VFS and by the npm tarball under plain Node.
+
+Three claims are left, and all three need a daemon.
+
+**What not to expect.** Two copies of core whose bundled `default/` trees
+differ produce different configs, so switching between them rebuilds — that is
+correct, and content-addressing neither causes nor prevents it. What the design
+buys is that neither copy's cache directory is rewritten *under* the other, and
+that no start can observe a half-written tree. Do not read a rebuild here as a
+regression unless §7.1's count is wrong.
+
+Signal for "did it rebuild?" is the container id: `devcontainer up` reuses the
+container found by the `devcontainer.local_folder` label when the config still
+matches, and recreates it when it does not. `devc up --json` reports that id.
+
+### 7.1 The upgrade costs exactly one rebuild, then stops
+
+```sh
+P=/path/to/a/zero-config/project     # no .devcontainer/ of its own
+old=/path/to/devc-from-main          # deno task build on main
+new=/path/to/devc-from-this-branch
+
+docker rm -f "$($old up "$P" --json | jq -r .containerId)" 2>/dev/null
+rm -rf ~/.cache/devc
+
+$old up "$P" --json | jq -r .containerId    # C0
+$old up "$P" --json | jq -r .containerId    # C0  — steady state on main
+$new up "$P" --json | jq -r .containerId    # C1  — the one-time rebuild
+$new up "$P" --json | jq -r .containerId    # C1
+$new up "$P" --json | jq -r .containerId    # C1
+```
+
+**Pass:** the id changes exactly once, at the `$old` → `$new` switch, and is
+stable on either side. A second change means the key is not stable across runs
+— the bug this whole design exists to prevent.
+
+### 7.2 Steady state writes nothing
+
+```sh
+ls -1 ~/.cache/devc/                                  # exactly one default-<key>/
+before=$(stat -c %Y ~/.cache/devc/default-*/devcontainer.json)
+$new up "$P" >/dev/null && $new exec "$P" -- true
+after=$(stat -c %Y ~/.cache/devc/default-*/devcontainer.json)
+[ "$before" = "$after" ] && echo PASS || echo "FAIL: rewritten on a hit"
+ls -d ~/.cache/devc/.tmp-* 2>/dev/null && echo "FAIL: staging dir leaked"
+```
+
+**Pass:** mtime unchanged across both an `up` and an `exec` (which also calls
+`startContainer`), and no `.tmp-` residue. On main this mtime advances every
+time — that contrast is the point.
+
+### 7.3 The race is gone
+
+The one real correctness win. On main, the unconditional `rm -rf` + copy can
+land while another process's `devcontainer up` is reading the same config.
+
+```sh
+rm -rf ~/.cache/devc
+for i in $(seq 8); do $new up "$P" --json & done; wait
+ls -1 ~/.cache/devc/                       # one default-<key>/, no .tmp-*
+```
+
+**Pass:** every invocation exits 0, all report the same container id, one keyed
+directory, no staging residue.
+
+Then the same loop against `$old`. Its failure is a race and may not reproduce
+on the first try — widen the window by inserting a sleep between the `rm -rf`
+and the copy in a scratch build of `materializeDefaultConfig` if you want to see
+it fail deterministically. A clean run of `$old` is **not** evidence the race
+does not exist; only a failure is informative.
+
+### 7.4 Two projects, two bridge flags, concurrently
+
+```sh
+# P1 opts into the bridge Feature via .devc/devc.json; P2 does not.
+for i in $(seq 4); do $new up "$P1" >/dev/null & $new up "$P2" >/dev/null & done; wait
+ls -1 ~/.cache/devc/                       # two default-<key>/ dirs, both intact
+```
+
+**Pass:** two keyed directories coexist; each project's container reflects its
+own bridge setting. On main this is the flip-flop — one directory, rewritten by
+whichever process ran last.
+
+### 7.5 Round trip, unchanged
+
+`up` → `exec` → `status` → `mounts` → `down` against a real project, plus the
+same against a project that has its own `.devcontainer/` (which never touches
+the cache at all). Byte-identical output vs. `$old` was already verified without
+a daemon, apart from `spawn docker ENOENT` stack-trace line numbers.
