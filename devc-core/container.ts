@@ -77,11 +77,46 @@ function normalizePath(p: string): string {
   return _normalizePath(p).toLowerCase();
 }
 
+/** One `docker ps` row: the container id, its `local_folder` label, and its state. */
+export interface ContainerRow {
+  id: string;
+  labelPath: string;
+  state: string;
+}
+
+/**
+ * Picks the container for `localFolder` out of `docker ps`'s rows, which arrive
+ * newest-created first.
+ *
+ * **More than one row can match**, and the state is reachable in normal use: the
+ * devcontainer CLI keys a container on `devcontainer.local_folder` *and*
+ * `devcontainer.config_file`, and when it finds a `local_folder` match carrying a
+ * different `config_file` it builds a new container and leaves the old one in place
+ * rather than removing it. Anything that changes the config path for a workspace —
+ * a project gaining its own `.devcontainer/`, or the zero-config cache key moving —
+ * therefore leaves two containers sharing one `local_folder`.
+ *
+ * So the choice is made explicitly rather than falling out of row order: prefer a
+ * running container, and among equals take the newest. That is the one the most
+ * recent `up` produced, which is what every caller here means by "the container for
+ * this folder".
+ */
+export function selectContainer(
+  rows: ContainerRow[],
+  localFolder: string,
+): { id: string; state: string } | null {
+  const target = normalizePath(localFolder);
+  const matches = rows.filter((r) => normalizePath(r.labelPath) === target);
+  if (matches.length === 0) return null;
+  const picked = matches.find((r) => r.state === 'running') ?? matches[0];
+  return { id: picked.id, state: picked.state };
+}
+
 /**
  * Finds the container labeled `devcontainer.local_folder=<localFolder>` (after
- * `normalizePath`). `all` controls whether stopped containers are included
- * (`docker ps -a`) or only running ones (`docker ps`). Returns `null` if docker
- * errors or no container matches.
+ * `normalizePath`), via {@link selectContainer}. `all` controls whether stopped
+ * containers are included (`docker ps -a`) or only running ones (`docker ps`).
+ * Returns `null` if docker errors or no container matches.
  */
 async function findContainer(
   localFolder: string,
@@ -101,17 +136,14 @@ async function findContainer(
   });
   if (code !== 0) return null;
 
-  const target = normalizePath(localFolder);
-  const lines = new TextDecoder().decode(stdout).trim().split('\n').filter(
-    Boolean,
-  );
+  const rows = new TextDecoder().decode(stdout).trim().split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [id, labelPath, state] = line.split('\t');
+      return { id, labelPath, state };
+    });
 
-  for (const line of lines) {
-    const [id, labelPath, state] = line.split('\t');
-    if (normalizePath(labelPath) === target) return { id, state };
-  }
-
-  return null;
+  return selectContainer(rows, localFolder);
 }
 
 export async function getContainerStatus(
@@ -393,16 +425,71 @@ async function dockerInspect(
 }
 
 /**
+ * The warning text for a container-name conflict, in two shapes.
+ *
+ * A conflict on a *different* workspace is a hash collision between two folders whose
+ * names happen to agree, and it may clear on its own if the other container is on its
+ * way out — so that message says to re-run.
+ *
+ * A conflict on the *same* workspace is a different animal. The name is derived from
+ * the workspace path alone (see {@link containerNameForLocalFolder}), so two containers
+ * wanting it means two containers for one folder — the state the devcontainer CLI leaves
+ * behind whenever a workspace's config path changes: it keys a container on
+ * `devcontainer.local_folder` *and* `devcontainer.config_file`, rejects a `local_folder`
+ * match whose `config_file` differs, builds a new container, and only ever *removes* a
+ * container carrying no `config_file` label at all. Nothing will clear that one, so
+ * telling the user to wait (as the cross-workspace message does) would send them to wait
+ * for something that never happens. Name the removal command instead.
+ *
+ * Pure/exported so both shapes are assertable without a Docker daemon.
+ */
+export function renameConflictWarning(input: {
+  containerId: string;
+  conflictId: string;
+  desiredName: string;
+  localFolder: string;
+  otherLocalFolder: string | null;
+}): string {
+  const {
+    containerId,
+    conflictId,
+    desiredName,
+    localFolder,
+    otherLocalFolder,
+  } = input;
+
+  const sameWorkspace = otherLocalFolder !== null &&
+    normalizePath(otherLocalFolder) === normalizePath(localFolder);
+
+  if (sameWorkspace) {
+    return `warning: two containers exist for workspace ${localFolder}. ${containerId} is the ` +
+      `current one; ${conflictId} is stale — it holds the name "${desiredName}", so the current ` +
+      `container keeps its default name. Nothing will remove it automatically; once you are sure ` +
+      `you do not need it:\n  docker rm -f ${conflictId}`;
+  }
+
+  return `warning: could not rename container ${containerId} (workspace: ${localFolder}) to ` +
+    `"${desiredName}" — container ${conflictId} (workspace: ${
+      otherLocalFolder ?? 'unknown'
+    }) ` +
+    `already has that name. If ${conflictId} is being removed, this is transient — re-run ` +
+    `\`devc attach\` once it's gone. ${containerId} will keep its default name for now.`;
+}
+
+/**
  * Best-effort: if the container's current name (from `docker inspect --format
  * '{{.Name}}'`, with the leading `/` stripped) already equals `desiredName`, returns
  * (no-op — the reuse/restart case).
  *
  * Otherwise, checks whether some *other* container already holds `desiredName` (via
  * `docker ps -a --filter name=^<desiredName>$ --format '{{.ID}}'`, excluding
- * `containerId`). If found, prints a warning to stderr identifying the conflicting
- * container (its ID and its `devcontainer.local_folder` label, fetched via `docker
- * inspect --format '{{index .Config.Labels "devcontainer.local_folder"}}'`) and
- * returns without renaming — `containerId` keeps its Docker-assigned name for now.
+ * `containerId`). If found, warns and returns without renaming — `containerId` keeps
+ * its Docker-assigned name for now. The warning comes in two shapes, told apart by the
+ * conflicting container's own `devcontainer.local_folder` label (fetched via `docker
+ * inspect --format '{{index .Config.Labels "devcontainer.local_folder"}}'`): a
+ * *different* workspace is a hash collision that may clear on its own, while the *same*
+ * workspace is a stale duplicate that nothing will ever remove — see the comment at the
+ * branch.
  *
  * Otherwise (no conflict) runs `docker rename <containerId> <desiredName>`.
  *
@@ -444,12 +531,13 @@ async function renameContainerIfNeeded(
         '{{index .Config.Labels "devcontainer.local_folder"}}',
       );
       logWarning(
-        `warning: could not rename container ${containerId} (workspace: ${localFolder}) to ` +
-          `"${desiredName}" — container ${conflictId} (workspace: ${
-            otherLocalFolder ?? 'unknown'
-          }) ` +
-          `already has that name. If ${conflictId} is being removed, this is transient — re-run ` +
-          `\`devc attach\` once it's gone. ${containerId} will keep its default name for now.`,
+        renameConflictWarning({
+          containerId,
+          conflictId,
+          desiredName,
+          localFolder,
+          otherLocalFolder,
+        }),
       );
       return;
     }

@@ -294,7 +294,7 @@ Three claims are left, and all three need a daemon.
 **What not to expect.** Two copies of core whose bundled `default/` trees
 differ produce different configs, so switching between them rebuilds — that is
 correct, and content-addressing neither causes nor prevents it. What the design
-buys is that neither copy's cache directory is rewritten *under* the other, and
+buys is that neither copy's cache directory is rewritten _under_ the other, and
 that no start can observe a half-written tree. Do not read a rebuild here as a
 regression unless §7.1's count is wrong.
 
@@ -322,6 +322,18 @@ $new up "$P" --json | jq -r .containerId    # C1
 **Pass:** the id changes exactly once, at the `$old` → `$new` switch, and is
 stable on either side. A second change means the key is not stable across runs
 — the bug this whole design exists to prevent.
+
+**Expect an orphan, not a replacement.** The devcontainer CLI keys a container on
+`devcontainer.local_folder` _and_ `devcontainer.config_file`; when it finds a
+`local_folder` match whose `config_file` differs it builds a new container and
+leaves the old one — it only ever removes a container carrying no `config_file`
+label at all. So C0 is still there after the switch, holding the
+workspace-derived name (which is why `up` warns that it could not rename C1).
+That is the CLI's behaviour, not a leak in the cache change. Clear it once:
+
+```sh
+docker rm -f C0 && $new up "$P"        # C1 then takes the name
+```
 
 ### 7.2 Steady state writes nothing
 
