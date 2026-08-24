@@ -122,6 +122,18 @@ Notes:
 duration of the attach so a container shell reads as visually distinct from a
 local one.
 
+### The library: `@devc-tools/core`
+
+Everything above except attaching an interactive shell — start/rebuild/stop/down,
+status, mounts, exec, the `devc.json` overlay, the config wizard's pure helpers —
+lives in the sibling [`devc-core/`](../devc-core/README.md) package and is
+consumed from source here. `devc` compiles unchanged into the same `deno compile`
+binary described below; `devc-core` additionally publishes to npm as
+`@devc-tools/core`, for a programmatic consumer (a coding-agent extension, a
+script) that wants `ContainerInfo` back as a value instead of parsing a CLI's
+stdout. See [`.plans/devc-core-npm-library.md`](../.plans/devc-core-npm-library.md)
+for the design.
+
 ### The embedded devcontainer CLI
 
 `devc` does not look for a `devcontainer` on your `PATH`. It depends on
@@ -602,18 +614,23 @@ binary instead (see [Install](#install)).
 deno task run    -- <command> [args]   # run from source
 deno task test                         # unit tests
 deno task check                        # type-check
-deno task build                        # compile the `devc` binary (embeds default/)
+deno task build                        # compile the `devc` binary (embeds ../devc-core/default)
 
 # What the release workflow calls: same flags, cross-compiled, into the repo-root dist/.
 DEVC_TARGET=aarch64-apple-darwin deno task build:release
 
-# Parts of the baseline are bash (in default/scripts/, or in the host-side entry script), so
-# they are covered by shell harnesses rather than `deno task test`. Each extracts a fenced block
-# from the real script and runs it against temp dirs, so the tests cannot drift from the
-# implementation:
-bash tests/seed_link_test.sh default/scripts/agents-setup.sh                # devc:seed-link
-bash tests/shell_dirs_test.sh default/scripts/bashrc-additions.sh           # devc:shell-dirs
-bash tests/project_hook_test.sh default/scripts/project-hook.sh             # devc:project-hook
+# The lifecycle logic devc compiles from — startContainer, the devc.json overlay, the config
+# wizard's pure helpers — lives in the sibling `devc-core/` package (see its own README and
+# .plans/devc-core-npm-library.md), checked and tested the same way:
+cd ../devc-core && deno task check && deno task test
+
+# Parts of the baseline are bash (in devc-core/default/scripts/, or in the host-side entry
+# script), so they are covered by shell harnesses rather than `deno task test`. Each extracts a
+# fenced block from the real script and runs it against temp dirs, so the tests cannot drift
+# from the implementation:
+bash tests/seed_link_test.sh ../devc-core/default/scripts/agents-setup.sh      # devc:seed-link
+bash tests/shell_dirs_test.sh ../devc-core/default/scripts/bashrc-additions.sh # devc:shell-dirs
+bash tests/project_hook_test.sh ../devc-core/default/scripts/project-hook.sh   # devc:project-hook
 
 # shell_dirs_test.sh takes the script path so it can run against *both* copies of the
 # devc:shell-dirs block — devc's above, and the shell-dirs Feature's. It must pass unmodified

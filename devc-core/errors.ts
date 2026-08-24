@@ -1,0 +1,28 @@
+// `node:fs` reports "no such file", "already exists" and "not a directory" as an `Error` with a
+// `.code` string (`ENOENT` / `EEXIST` / `ENOTDIR`), the same on both hosts since the Deno
+// runtime's `node:fs` shim raises the identical codes. These predicates replace the old
+// `instanceof` checks against the runtime's own error-class namespace.
+
+interface ErrnoException {
+  code?: string;
+}
+
+function hasCode(err: unknown, code: string): boolean {
+  return typeof err === 'object' && err !== null &&
+    (err as ErrnoException).code === code;
+}
+
+/** True when `err` is a `node:fs` "no such file or directory" error. */
+export function isNotFound(err: unknown): boolean {
+  return hasCode(err, 'ENOENT');
+}
+
+/** True when `err` is a `node:fs` "file already exists" error. */
+export function isAlreadyExists(err: unknown): boolean {
+  return hasCode(err, 'EEXIST');
+}
+
+/** True when `err` is a `node:fs` "not a directory" error. */
+export function isNotADirectory(err: unknown): boolean {
+  return hasCode(err, 'ENOTDIR');
+}

@@ -12,6 +12,7 @@
 // installed) structural rather than conventional: `devc config` has no code path that writes
 // there at all. Scaffolding `.devcontainer/` remains `devc init`'s job.
 
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import {
   loadGlobalConfig,
   makeGlobalConfig,
@@ -97,7 +98,7 @@ export async function applySelection(
 
   const baseText = target.creating
     ? NEW_OVERLAY_TEXT
-    : await Deno.readTextFile(target.path);
+    : await readFile(target.path, 'utf8');
 
   let out: string;
   try {
@@ -116,9 +117,9 @@ export async function applySelection(
   const changed = target.creating || out !== baseText;
   if (changed) {
     if (target.creating) {
-      await Deno.mkdir(dirnameOf(target.path), { recursive: true });
+      await mkdir(dirnameOf(target.path), { recursive: true });
     }
-    await Deno.writeTextFile(target.path, out);
+    await writeFile(target.path, out);
   }
 
   await persistRecentSkills(selection.skills, deps.globalConfigPath);

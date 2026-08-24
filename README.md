@@ -57,6 +57,7 @@ root is the source of truth for the script above.
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`devc-bridge/`](devc-bridge/README.md) | Lets a devcontainer invoke allowlisted commands on the host (e.g. `caffeinate` the Mac while a Claude Code session runs). Runs headless; `devc-bridge status` reports idle/active, and a menu-bar tray is an opt-in extra.                                                                      |
 | [`devc/`](devc/README.md)               | Dev container lifecycle CLI (`up`, `attach`, `claude`, `exec`, `build`, …) over a bundled default config, plus `devc config` — a TUI that bind-mounts sibling projects, Git worktrees, and agent skill folders into the project's `.devcontainer/`, editing only its own comment-fenced blocks. |
+| [`devc-core/`](devc-core/README.md)     | `devc`'s lifecycle logic (`startContainer`, the `devc.json` overlay, …) as a runtime-neutral library, published to npm as `@devc-tools/core` for programmatic consumers. Not a separate tool to install — `devc` compiles it in unchanged.                                                      |
 
 ## Repo layout
 
@@ -64,6 +65,7 @@ root is the source of truth for the script above.
 | --------------------------- | ---------------------------------------------------------------------------------------- |
 | `devc-bridge/`              | The host command bridge — see its [README](devc-bridge/README.md)                        |
 | `devc/`                     | The dev container CLI + config TUI — see its [README](devc/README.md)                    |
+| `devc-core/`                | `devc`'s lifecycle logic, as an npm library — see its [README](devc-core/README.md)      |
 | `features/`                 | Published devcontainer Features — see its [README](features/README.md)                   |
 | `install.sh`                | The `curl \| sh` installer — source of truth; shipped as a release asset                 |
 | `tests/install_test.sh`     | Its shell harness (`bash tests/install_test.sh install.sh`) — offline, no network        |

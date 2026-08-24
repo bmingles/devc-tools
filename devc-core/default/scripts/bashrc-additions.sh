@@ -36,7 +36,7 @@ printf '\033]0;%s\007' "$_DEVC_TITLE"
 trap - DEBUG
 precmd() { printf '\033]0;%s\007' "$_DEVC_TITLE"; }
 
-# devc:shell-dirs (start) — tests/shell_dirs_test.sh runs everything between these two markers
+# devc:shell-dirs (start) — devc/tests/shell_dirs_test.sh runs everything between these two markers
 # against temp dirs, so keep the block self-contained (parameterized only by the two *_SHELL_DIR
 # assignments below, which the harness rewrites).
 #

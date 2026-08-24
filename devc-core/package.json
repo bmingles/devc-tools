@@ -1,0 +1,36 @@
+{
+  "name": "@devc-tools/core",
+  "version": "0.1.0",
+  "description": "devc's container lifecycle logic (start/attach/exec/stop, the devc.json overlay, the config wizard's pure helpers) as a runtime-neutral library — the same source Deno compiles into the devc CLI, published for programmatic consumers.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/mod.d.ts",
+      "import": "./dist/mod.js"
+    }
+  },
+  "types": "./dist/mod.d.ts",
+  "main": "./dist/mod.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc --noEmit",
+    "portability-check": "! grep -rEn '\\bDeno\\.|\\bjsr:' --include='*.ts' --exclude-dir=tests --exclude-dir=dist --exclude-dir=default .",
+    "smoke": "bash smoke.sh"
+  },
+  "dependencies": {
+    "@devcontainers/cli": "0.88.0",
+    "jsonc-parser": "^3.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.7.0"
+  }
+}

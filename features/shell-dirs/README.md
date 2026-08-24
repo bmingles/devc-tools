@@ -171,7 +171,7 @@ to change; see [Relationship to devc](#relationship-to-devc).
 ## Relationship to devc
 
 The block here was copied out of [devc](../../devc/README.md)'s baseline — the
-`devc:shell-dirs` fence in `devc/default/scripts/bashrc-additions.sh` — with only
+`devc:shell-dirs` fence in `devc-core/default/scripts/bashrc-additions.sh` — with only
 the two directory assignments substituted. **devc's copy still runs unchanged**;
 swapping devc onto this published Feature is a separate change.
 
@@ -203,7 +203,7 @@ both files:
 
 ```sh
 bash devc/tests/shell_dirs_test.sh features/shell-dirs/install.sh
-bash devc/tests/shell_dirs_test.sh devc/default/scripts/bashrc-additions.sh
+bash devc/tests/shell_dirs_test.sh devc-core/default/scripts/bashrc-additions.sh
 ```
 
 If the first one needs changes to pass, this Feature's copy has drifted.

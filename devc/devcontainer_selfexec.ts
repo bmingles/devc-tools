@@ -1,4 +1,8 @@
-// The `devcontainer` CLI, embedded in devc — not looked up on PATH.
+// The `devcontainer` CLI, embedded in devc — not looked up on PATH, and not run through
+// `devc-core`'s default `nodeDevcontainerRunner` either: that runner spawns `process.execPath`
+// against a `devcontainer.js` resolved from `node_modules`, and a `deno compile` binary has
+// neither. This module is the CLI's own `DevcontainerRunner` (see `devc-core/devcontainer.ts`),
+// bound into `container.ts` below.
 //
 // `@devcontainers/cli` ships **no programmatic API**: its `package.json` declares only `bin`, and
 // its esbuild bundle ends in `0&&(module.exports={doExec})` — the dead-code marker, so it exports
@@ -9,18 +13,19 @@
 // So devc re-execs **itself** with a hidden `__devcontainer` subcommand
 // ({@link DEVCONTAINER_SUBCOMMAND}). The child sets `process.argv` and imports the bundle, which
 // makes that process a devcontainer CLI; the parent pipes its stdout exactly as it piped the PATH
-// binary's, so {@link startContainer}'s JSON-per-line parsing is unchanged. One binary — neither
-// `devcontainer` nor `node` has to exist on the host.
+// binary's, so {@link import("@devc-tools/core/container.ts").startContainer}'s JSON-per-line
+// parsing is unchanged. One binary — neither `devcontainer` nor `node` has to exist on the host.
 //
 // The npm package is pinned in `deno.json`'s `imports` and embedded by `deno compile`, which is
 // what makes the child self-sufficient. It is pure JavaScript with zero dependencies, so it
 // cross-compiles to every release target like the rest of the graph.
 import { fromFileUrl } from 'jsr:@std/path';
+import type { DevcontainerRunner } from '@devc-tools/core/devcontainer.ts';
 
 /**
  * Hidden first argument that turns a devc process into the devcontainer CLI. Dispatched in
  * `main.ts` ahead of everything else and deliberately absent from `COMMANDS`: it is an
- * implementation detail of {@link devcontainerCommand}, not a command anyone types.
+ * implementation detail of {@link selfExecDevcontainerRunner}, not a command anyone types.
  *
  * The `__` prefix keeps it out of the namespace a real subcommand could ever want.
  */
@@ -87,20 +92,22 @@ function currentRuntime(): SelfExecRuntime {
 }
 
 /**
- * A `Deno.Command` that runs the embedded devcontainer CLI with `args`, as a drop-in for the
- * `new Deno.Command('devcontainer', …)` this replaced. `opts` carries the stdio the caller wants;
- * the argv is this binary's own.
+ * The CLI's `DevcontainerRunner`: self-execs with the hidden `__devcontainer` subcommand and
+ * captures its stdout, a drop-in for `devc-core`'s default `nodeDevcontainerRunner` — see the
+ * module header for why a compiled binary needs its own.
  */
-export function devcontainerCommand(
-  args: string[],
-  opts: Omit<Deno.CommandOptions, 'args'> = {},
-): Deno.Command {
-  const runtime = currentRuntime();
-  return new Deno.Command(runtime.execPath, {
-    ...opts,
-    args: devcontainerArgv(args, runtime),
-  });
-}
+export const selfExecDevcontainerRunner: DevcontainerRunner = {
+  async run(args) {
+    const runtime = currentRuntime();
+    const cmd = new Deno.Command(runtime.execPath, {
+      args: devcontainerArgv(args, runtime),
+      stdout: 'piped',
+      stderr: 'inherit',
+    });
+    const { code, stdout } = await cmd.output();
+    return { code, stdout: new TextDecoder().decode(stdout) };
+  },
+};
 
 /**
  * The child half: become the devcontainer CLI. Sets `process.argv` to what the bundle's yargs

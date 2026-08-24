@@ -13,7 +13,7 @@
 # at all. The ~/.bashrc block and the `cd` override 0.1.0 appended are **removed, not
 # deprecated**; see README.md.
 #
-# Copied out of devc's baseline — devc/default/scripts/node-setup.sh and the nvm lines in
+# Copied out of devc's baseline — devc-core/default/scripts/node-setup.sh and the nvm lines in
 # scripts/bashrc-additions.sh — and generalized for an image that has never heard of devc.
 # Both devc copies keep running exactly as they do today, devc's own unconditional `cd` override
 # included; swapping devc onto this Feature is a separate plan. Nothing here assumes a `vscode`

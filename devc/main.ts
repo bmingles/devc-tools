@@ -14,8 +14,8 @@ import { parseAttachArgs, parseBuildArgs } from './args.ts';
 import {
   DEVCONTAINER_SUBCOMMAND,
   runEmbeddedDevcontainerCli,
-} from './devcontainer_cli.ts';
-import { initProject } from './init.ts';
+} from './devcontainer_selfexec.ts';
+import { initProject } from '@devc-tools/core/init.ts';
 import {
   globalConfigExists,
   runGlobalConfigWizard,
@@ -258,7 +258,8 @@ if (subcommand === 'exec') {
   }
 
   try {
-    const code = await execInContainer(resolveLocalFolder(target), {
+    // stdio defaults to 'inherit' — devc exec streams straight through, same as always.
+    const { code } = await execInContainer(resolveLocalFolder(target), {
       cwd,
       env,
       cmd,

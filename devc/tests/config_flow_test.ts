@@ -8,8 +8,8 @@ import {
   type ProjectFlowOptions,
   runProjectFlow,
 } from '../tui/config_flow.ts';
-import type { WizardSelection } from '../wizard_apply.ts';
-import type { FsProbe } from '../worktree.ts';
+import type { WizardSelection } from '@devc-tools/core/wizard_apply.ts';
+import type { FsProbe } from '@devc-tools/core/worktree.ts';
 import type { ContainerStatus } from '../container.ts';
 
 const FS: Record<string, string[]> = {

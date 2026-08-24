@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@^1';
-import { sessionNameForWorkspaceFolder } from '../container.ts';
+import { sessionNameForWorkspaceFolder } from '../attach.ts';
 
 Deno.test('sessionNameForWorkspaceFolder uses the basename of the workspace folder', () => {
   assertEquals(

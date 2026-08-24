@@ -12,28 +12,21 @@
 ### Pending
 
 - [devc-embedded-devcontainer-cli](devc-embedded-devcontainer-cli.md) —
-  **written and implemented, not yet validated**, which is why it is here rather
+  **written and implemented, mostly validated**, which is why it is here rather
   than in `archived/`. `devc` now depends on `@devcontainers/cli` as a pinned npm
   package embedded by `deno compile`, instead of shelling out to a `devcontainer`
   on `PATH`; `docker` becomes the only prerequisite. The from-source path is
-  tested and green, but the shipping artifact is the compiled one and
-  `deno compile` has not been run against this change — that check, and a real
-  `devc up` on a host with neither `devcontainer` nor `node`, are the plan's open
-  Validation boxes. It also widens devc to an unscoped `--allow-run`, forced by
+  tested and green, and — as of 2026-08-24, in an environment with `deno compile`
+  and npm registry access — so is the compiled one: `./devc __devcontainer
+  --version` prints the pinned `0.88.0` from a real compiled binary, and a
+  zero-config `devc up` / `devc init` round-trips through the embedded CLI with
+  `node`, `npm`, `devcontainer` and `deno` all off `PATH`, failing only where a
+  Docker daemon would be needed. Still open: the same round trip with a real
+  Docker daemon, and one cross-compiled target — neither runnable in a sandbox
+  with no Docker. It also widens devc to an unscoped `--allow-run`, forced by
   the host `initializeCommand`'s `/bin/sh -c` moving inside devc's own sandbox;
   the plan argues that trade, and reverses a note in `install.sh` that had
   refused it.
-
-- [devc-core-npm-library](devc-core-npm-library.md) — **written, not started**,
-  and blocked on the plan above clearing its `deno compile` box. devc's lifecycle
-  logic moves to a top-level `devc-core/` written against `node:` builtins, so
-  the same source runs on Deno and Node; it publishes to npm for programmatic
-  consumers (the motivating one is a pi coding-agent extension, which loads
-  TypeScript in-process under Node). The CLI is **unchanged** — same
-  `deno compile` binary, same `install.sh` into `~/.local/bin`, same
-  Docker-only prerequisite — and consumes the same modules from source. The split
-  follows the TTY: `main.ts` and `tui/` stay Deno, `container.ts` gets cut in
-  half at `attachToContainer`.
 
 Splitting pieces of devc's baseline out as publishable devcontainer Features.
 Read [design/devc-feature-split.md](design/devc-feature-split.md) first — it
@@ -89,6 +82,23 @@ own matrix job.
   `devc/tests/seed_link_test.sh` runs against the Feature unchanged.
 
 ### Completed
+
+- [devc-core-npm-library](archived/devc-core-npm-library.md) — ✅ Done.
+  `devc`'s lifecycle logic (start/rebuild/stop/down, status, mounts, exec, the
+  `devc.json` overlay, the config wizard's pure helpers) moved to a new
+  top-level `devc-core/`, written against `node:` builtins so the exact same
+  source runs on Deno and Node — verified via `deno task test` (189 tests) and
+  a real `npm pack` + scratch-project `node` smoke run (`npm run smoke`), no
+  Deno/`devcontainer`/`devc` on `PATH`. Publishes to npm as `@devc-tools/core`.
+  `devc` itself is unchanged — same `deno compile` binary (280 tests total
+  across both packages, matching the pre-split count exactly), same
+  `install.sh`, same Docker-only prerequisite, consuming `devc-core` from
+  source via one `@devc-tools/core/` import-map entry. The split follows the
+  TTY: `main.ts`/`tui/` and the new `attach.ts` stay Deno-only CLI;
+  `container.ts` was cut in half at `attachToContainer`, and the devcontainer
+  CLI now runs through a `DevcontainerRunner` seam (a plain Node child process
+  by default, a hidden self-exec subcommand in the CLI's compiled binary — see
+  `devc/devcontainer_selfexec.ts`).
 
 - [feature-node-nvmrc-container-wide](archived/feature-node-nvmrc-container-wide.md)
   — **not a split; a rework of a published Feature, and a breaking one.**

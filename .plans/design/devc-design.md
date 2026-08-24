@@ -1,5 +1,31 @@
 # devc CLI Design
 
+## Source layout: `devc-core/` and `devc/`
+
+Everything this doc describes is still true of `devc` as a whole, but the
+source behind it lives in two packages (see
+[`.plans/devc-core-npm-library.md`](../devc-core-npm-library.md)):
+
+- **`devc-core/`** — the container lifecycle: start/rebuild/stop/down, status,
+  mounts, exec, the `devc.json` overlay, and the config wizard's pure helpers
+  (worktree resolution, mount-row serialization, the JSONC fence editor).
+  Written against `node:` builtins only, so it runs unchanged on Deno and Node;
+  published to npm as `@devc-tools/core` for a programmatic consumer, and
+  consumed from source by `devc` itself.
+- **`devc/`** — everything that touches a raw TTY: attaching an interactive
+  shell (tmux window titles, the OSC background tint, terminal identity
+  propagation), argument parsing, help text, and the `config`/`init` TUI's
+  imperative shell. Also the one thing that has to differ by host: running the
+  devcontainer CLI. `devc-core` defaults to spawning it as an ordinary Node
+  child process; `devc`'s compiled binary has no such file on disk to spawn, so
+  it binds a different `DevcontainerRunner` — a hidden `__devcontainer`
+  subcommand that re-execs itself (`devcontainer_selfexec.ts`).
+
+The split follows the TTY, not a rewrite: `devc` still ships as the same single
+`deno compile` binary via the same `install.sh`, with byte-identical behavior.
+`@devc-tools/core` is an additional distribution channel for the logic
+underneath it, not a new tool.
+
 ## Project directory semantics
 
 All `devc` commands operate on the **current working directory** by default. The

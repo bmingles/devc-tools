@@ -18,8 +18,8 @@ import {
   loadGlobalConfig,
   makeGlobalConfig,
   saveGlobalConfig,
-} from '../config.ts';
-import { resolveProjectOverlayTarget } from '../overlay.ts';
+} from '@devc-tools/core/config.ts';
+import { resolveProjectOverlayTarget } from '@devc-tools/core/overlay.ts';
 import {
   assertNoDuplicateTarget,
   basename,
@@ -31,25 +31,29 @@ import {
   parseEntries,
   rowForHostPath,
   serializeMount,
-} from '../mounts.ts';
+} from '@devc-tools/core/mounts.ts';
 import {
   type ApplyResult,
   applySelection,
   type WizardSelection,
-} from '../wizard_apply.ts';
+} from '@devc-tools/core/wizard_apply.ts';
 import {
   type ContainerStatus,
   getContainerStatus,
   rebuildContainer,
 } from '../container.ts';
-import { findArraySpan, findFence, parseFenceEntries } from '../jsonc_edit.ts';
+import {
+  findArraySpan,
+  findFence,
+  parseFenceEntries,
+} from '@devc-tools/core/jsonc_edit.ts';
 import {
   type FsProbe,
   longestRootAncestor,
   realFsProbe,
   resolvePickedMounts,
   resolveWorktree,
-} from '../worktree.ts';
+} from '@devc-tools/core/worktree.ts';
 import {
   type DerivedEntry,
   type EntryFlag,

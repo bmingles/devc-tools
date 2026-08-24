@@ -1,0 +1,34 @@
+{
+  "version": "0.1.0",
+  "compilerOptions": {
+    "lib": ["deno.window", "esnext"]
+  },
+  "tasks": {
+    "check": "deno check mod.ts container.ts devcontainer.ts exec.ts errors.ts config.ts overlay.ts worktree.ts mounts.ts wizard_apply.ts init.ts default_config.ts posix.ts paths.ts jsonc_edit.ts",
+    // `--allow-net` is the devcontainer CLI's own (Features fetched from OCI registries during
+    // `up`), exercised by `devcontainer.ts`'s runner tests; `--allow-run` spawns it (and `docker`
+    // /`git`) via `exec.ts`.
+    "test": "deno test --allow-run --allow-read --allow-write --allow-env --allow-net"
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 80,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": true,
+    "proseWrap": "preserve"
+  },
+  "imports": {
+    // Bare specifiers, so the same `import 'jsonc-parser'` / `import.meta.resolve(…)` line
+    // works unmodified under `npm install` — see package.json's own `dependencies`. Pinned to
+    // match package.json; keep the two in step by hand (there is nothing here to assert against,
+    // unlike the `@devcontainers/cli` pin — see `tests/workflow_guards_test.sh`).
+    "jsonc-parser": "npm:jsonc-parser@3.3.1",
+    // `devcontainer.ts`'s `import.meta.resolve('@devcontainers/cli/devcontainer.js')` needs this
+    // exact subpath mapped: `deno check`/`deno test` resolve a bare specifier only via the import
+    // map, whereas Node's own ESM resolver walks `node_modules` and needs no such entry. Keep in
+    // step with `devc/deno.json`'s pin and `.github/workflows/publish-feature.yml`'s
+    // `DEVCONTAINERS_CLI` — see `tests/workflow_guards_test.sh`.
+    "@devcontainers/cli/devcontainer.js": "npm:@devcontainers/cli@0.88.0/devcontainer.js"
+  }
+}

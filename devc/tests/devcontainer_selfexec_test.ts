@@ -2,16 +2,16 @@ import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@^1';
 import {
   DEVCONTAINER_SUBCOMMAND,
   devcontainerArgv,
-} from '../devcontainer_cli.ts';
+} from '../devcontainer_selfexec.ts';
 import { fromFileUrl } from 'jsr:@std/path';
 
 /**
- * Spawn the embedded CLI the way `devcontainerCommand` does from source, through the real
+ * Spawn the embedded CLI the way `selfExecDevcontainerRunner` does from source, through the real
  * {@link devcontainerArgv} — so these tests cover the permission set the child is given, not just
  * a hand-written argv that happens to work.
  *
- * `devcontainerCommand` itself cannot be called here: it reads `Deno.mainModule`, which under
- * `deno test` is a test module rather than `main.ts`. Only that one field is substituted.
+ * `selfExecDevcontainerRunner` itself cannot be called here: it reads `Deno.mainModule`, which
+ * under `deno test` is a test module rather than `main.ts`. Only that one field is substituted.
  */
 function runEmbedded(args: string[]): Promise<Deno.CommandOutput> {
   return new Deno.Command(Deno.execPath(), {

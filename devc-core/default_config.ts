@@ -1,11 +1,25 @@
-import { parse as parseJsonc } from 'jsr:@std/jsonc';
+import type { Dirent } from 'node:fs';
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
+import process from 'node:process';
+import { parse as parseJsoncLoose, type ParseError } from 'jsonc-parser';
 import { writeBlocks } from './jsonc_edit.ts';
 import { basenamePosix } from './posix.ts';
+import { isAlreadyExists, isNotFound } from './errors.ts';
 
-// Embedded `devc/default/` directory, read via Deno.readDir/Deno.readFile.
-// Under `deno run` this resolves to the real source tree; under a
-// `deno compile --include default` binary it resolves to the embedded
-// virtual filesystem.
+// Embedded `devc-core/default/` directory, read via `node:fs/promises`. Under `deno run` /
+// `node` from source this resolves to the real source tree; under a `deno compile --include
+// default` binary it resolves to the embedded virtual filesystem, which `node:fs` reads
+// unmodified — see `.plans/devc-core-npm-library.md`'s Validation section.
 const DEFAULT_DIR_URL = new URL('./default/', import.meta.url);
 
 /** The global config directory, `~/.config/devc`. */
@@ -83,19 +97,19 @@ export async function ensureClaudeSeedDir(
   // silently on an existing directory, so it cannot report the difference. lstat (not stat) so
   // a dangling symlink counts as present and falls into the guard below rather than looking
   // like a fresh creation.
-  const created = await Deno.lstat(seedDir).then(() => false).catch(() => true);
+  const created = await lstat(seedDir).then(() => false).catch(() => true);
   try {
-    await Deno.mkdir(seedDir, { recursive: true });
+    await mkdir(seedDir, { recursive: true });
   } catch (err) {
     // Recursive mkdir is not quite `mkdir -p`: it reports AlreadyExists when the path is a
     // regular file or a dangling symlink. Fall through to the guard, which says why.
-    if (!(err instanceof Deno.errors.AlreadyExists)) throw err;
+    if (!isAlreadyExists(err)) throw err;
   }
 
   // Verify we actually have a directory — otherwise the problem resurfaces later as an opaque
   // "bind source path does not exist" from Docker.
-  const stat = await Deno.stat(seedDir).catch(() => null);
-  if (stat === null || !stat.isDirectory) {
+  const info = await stat(seedDir).catch(() => null);
+  if (info === null || !info.isDirectory()) {
     throw new Error(
       `${seedDir} exists but is not a directory (expected the devc ~/.claude config folder)`,
     );
@@ -118,31 +132,32 @@ export async function findOwnDevcontainerConfig(
   for (const rel of ['.devcontainer/devcontainer.json', '.devcontainer.json']) {
     const path = `${localFolder}/${rel}`;
     try {
-      await Deno.stat(path);
+      await stat(path);
       return path;
     } catch (err) {
-      if (!(err instanceof Deno.errors.NotFound)) throw err;
+      if (!isNotFound(err)) throw err;
     }
   }
   return null;
 }
 
 function homeDir(): string {
-  return Deno.env.get('HOME') ?? Deno.env.get('USERPROFILE') ?? '.';
+  return process.env.HOME ?? process.env.USERPROFILE ?? '.';
 }
 
 /** Recursively copies the embedded `default/` tree to a real directory on disk. */
 async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
-  await Deno.mkdir(destDir, { recursive: true });
-  for await (const entry of Deno.readDir(sourceUrl)) {
-    if (entry.isDirectory) {
+  await mkdir(destDir, { recursive: true });
+  const entries = await readdir(sourceUrl, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
       await copyDir(
         new URL(`${entry.name}/`, sourceUrl),
         `${destDir}/${entry.name}`,
       );
     } else {
-      const bytes = await Deno.readFile(new URL(entry.name, sourceUrl));
-      await Deno.writeFile(`${destDir}/${entry.name}`, bytes);
+      const bytes = await readFile(new URL(entry.name, sourceUrl));
+      await writeFile(`${destDir}/${entry.name}`, bytes);
     }
   }
 }
@@ -158,7 +173,7 @@ async function copyDir(sourceUrl: URL, destDir: string): Promise<void> {
  * `scripts/devc.json` is an ordinary data file with no overlay meaning. `topLevel` is internal to
  * the recursion and should not be passed.
  *
- * `Deno.copyFile` rather than read+write: unlike {@link copyDir}'s embedded-asset path, this
+ * `copyFile` rather than read+write: unlike {@link copyDir}'s embedded-asset path, this
  * copies from a real filesystem where the user's own modes are worth preserving.
  */
 async function overlayDirFrom(
@@ -166,19 +181,19 @@ async function overlayDirFrom(
   destDir: string,
   topLevel = true,
 ): Promise<void> {
-  const entries: Deno.DirEntry[] = [];
+  let entries: Dirent[];
   try {
-    for await (const entry of Deno.readDir(sourceDir)) entries.push(entry);
+    entries = await readdir(sourceDir, { withFileTypes: true });
   } catch (err) {
     // A missing template dir is the common case — it is never seeded.
-    if (err instanceof Deno.errors.NotFound) return;
+    if (isNotFound(err)) return;
     throw err;
   }
 
-  await Deno.mkdir(destDir, { recursive: true });
+  await mkdir(destDir, { recursive: true });
   for (const entry of entries) {
     if (
-      topLevel && !entry.isDirectory &&
+      topLevel && !entry.isDirectory() &&
       TEMPLATE_OVERLAY_FILENAMES.includes(entry.name)
     ) {
       console.error(
@@ -188,14 +203,14 @@ async function overlayDirFrom(
       );
       continue;
     }
-    if (entry.isDirectory) {
+    if (entry.isDirectory()) {
       await overlayDirFrom(
         `${sourceDir}/${entry.name}`,
         `${destDir}/${entry.name}`,
         false,
       );
     } else {
-      await Deno.copyFile(
+      await copyFile(
         `${sourceDir}/${entry.name}`,
         `${destDir}/${entry.name}`,
       );
@@ -204,7 +219,7 @@ async function overlayDirFrom(
 }
 
 /**
- * Copies the embedded `devc/default/` tree into `cacheDir` (default
+ * Copies the embedded `devc-core/default/` tree into `cacheDir` (default
  * `~/.cache/devc/default`), overwriting any existing copy, overlays any user
  * {@link TEMPLATES_DIR} files on top of it per file, and returns the path to the copied
  * `devcontainer.json` — suitable for `devcontainer up --config <path>`.
@@ -250,12 +265,12 @@ export async function materializeDefaultConfig(
   opts: { bridge?: boolean } = {},
 ): Promise<string> {
   // Remove any prior copy so files dropped between versions don't linger.
-  await Deno.remove(cacheDir, { recursive: true }).catch(() => {});
+  await rm(cacheDir, { recursive: true, force: true }).catch(() => {});
   await copyDir(DEFAULT_DIR_URL, cacheDir);
   await overlayDirFrom(templatesDir, cacheDir);
 
   const configPath = `${cacheDir}/devcontainer.json`;
-  const raw = await Deno.readTextFile(configPath);
+  const raw = await readFile(configPath, 'utf8');
   const rewritten = raw
     .replaceAll(
       '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
@@ -268,7 +283,7 @@ export async function materializeDefaultConfig(
   const final = opts.bridge
     ? injectBridgeMount(rewritten, configPath)
     : rewritten;
-  if (final !== raw) await Deno.writeTextFile(configPath, final);
+  if (final !== raw) await writeFile(configPath, final);
 
   return configPath;
 }
@@ -400,12 +415,13 @@ export async function installBundledAssets(
     `${destDir}/post-create.sh`,
     `${destDir}/initialize-command.sh`,
   ];
-  for await (const entry of Deno.readDir(scriptsDir)) {
-    if (entry.isFile && entry.name.endsWith('.sh')) {
+  const entries = await readdir(scriptsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith('.sh')) {
       executable.push(`${scriptsDir}/${entry.name}`);
     }
   }
-  for (const path of executable) await Deno.chmod(path, 0o755);
+  for (const path of executable) await chmod(path, 0o755);
 
   return [
     `${destDir}/devcontainer.json`,
@@ -449,7 +465,7 @@ export function substituteVars(
       .replaceAll('${localWorkspaceFolder}', localWorkspaceFolder);
   }
   return out.replace(/\$\{localEnv:([^}]+)\}/g, (_, varName: string) => {
-    return varName === 'HOME' ? homeDir() : Deno.env.get(varName) ?? '';
+    return varName === 'HOME' ? homeDir() : process.env[varName] ?? '';
   });
 }
 
@@ -481,8 +497,17 @@ export async function loadResolvedRemoteEnv(
 ): Promise<Record<string, string>> {
   let config: DevcontainerJson | null;
   try {
-    const text = await Deno.readTextFile(configPath);
-    config = parseJsonc(text) as DevcontainerJson | null;
+    const text = await readFile(configPath, 'utf8');
+    const errors: ParseError[] = [];
+    config = parseJsoncLoose(text, errors, { allowTrailingComma: true }) as
+      | DevcontainerJson
+      | null;
+    if (errors.length > 0) {
+      const [first] = errors;
+      throw new SyntaxError(
+        `JSONC parse error ${first.error} at offset ${first.offset}`,
+      );
+    }
   } catch (err) {
     console.error(
       `devc: could not read remoteEnv from ${configPath} (${

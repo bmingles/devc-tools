@@ -1,0 +1,5 @@
+# npm build output (`npm run build`): dist/mod.js + .d.ts files, plus default/ copied beside it
+/dist/
+
+# npm dependencies (@devcontainers/cli, jsonc-parser, esbuild, typescript)
+/node_modules/

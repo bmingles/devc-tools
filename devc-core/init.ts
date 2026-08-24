@@ -2,10 +2,12 @@
 // The same files `devc config` writes on first creation, minus the wizard and minus the two
 // managed mount fences; a later `devc config` inserts those into a fence-less config.
 
+import { readdir } from 'node:fs/promises';
 import {
   findOwnDevcontainerConfig,
   installBundledAssets,
 } from './default_config.ts';
+import { isNotFound } from './errors.ts';
 
 export interface InitResult {
   /** Path of the written `devcontainer.json`. */
@@ -16,14 +18,13 @@ export interface InitResult {
 
 /** Sorted names of everything in `dir` (files, directories, dotfiles); `[]` when it is absent. */
 async function entryNames(dir: string): Promise<string[]> {
-  const names: string[] = [];
   try {
-    for await (const entry of Deno.readDir(dir)) names.push(entry.name);
+    const entries = await readdir(dir);
+    return entries.sort();
   } catch (err) {
-    if (err instanceof Deno.errors.NotFound) return [];
+    if (isNotFound(err)) return [];
     throw err;
   }
-  return names.sort();
 }
 
 /** `a, b, c, +2 more` — keeps the error line readable for a crowded directory. */

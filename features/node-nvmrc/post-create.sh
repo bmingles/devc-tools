@@ -10,7 +10,7 @@
 #
 # Why create time rather than build time: the workspace is not mounted while the image builds,
 # so there is no .nvmrc to read then — and the node_modules repair below needs whatever is
-# mounted there to actually be mounted. Copied from devc/default/scripts/node-setup.sh, which
+# mounted there to actually be mounted. Copied from devc-core/default/scripts/node-setup.sh, which
 # keeps running unchanged; the differences are that nothing here assumes a `vscode` user, a
 # passwordless `sudo`, or that nvm exists at all.
 #

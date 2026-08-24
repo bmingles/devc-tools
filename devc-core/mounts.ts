@@ -6,6 +6,7 @@
 // folding happens. `jsonc_edit.ts` does the text surgery; this module produces the
 // JSON-string element text that goes inside a fence.
 
+import process from 'node:process';
 import { relativeUnderPosix } from './posix.ts';
 
 /** Container mount root for source-code folders. */
@@ -38,7 +39,7 @@ export function basename(path: string): string {
  */
 export function foldHome(
   hostPath: string,
-  home: string | undefined = Deno.env.get('HOME'),
+  home: string | undefined = process.env.HOME,
 ): string {
   if (
     hostPath.startsWith('${localEnv:HOME}') || hostPath === '~' ||

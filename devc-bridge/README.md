@@ -631,5 +631,5 @@ Paths are relative to `devc-bridge/` unless noted.
 | `client/version.ts`        | The client's own `VERSION` — separate compile unit, pinned to the same tag                                            |
 | `client/build-client.sh`   | `deno task build:client` — cross-compile the client into `~/.config/devc-bridge/client/` (dev install)                |
 | `../features/devc-bridge/` | The container half as a devcontainer Feature: the two read-only mounts and the PATH symlink                           |
-| `../devc/default/`         | devc's side: the Feature reference in `devcontainer.json` and the mount-source placeholder in `initialize-command.sh` |
+| `../devc-core/default/`    | devc's side: the Feature reference in `devcontainer.json` and the mount-source placeholder in `initialize-command.sh` |
 | `icons/`                   | Source PNGs for the app icon + the tray icons (embedded in `tray.ts`)                                                 |

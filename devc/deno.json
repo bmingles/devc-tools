@@ -2,14 +2,14 @@
   "version": "0.1.0",
   "tasks": {
     "run": "deno run --allow-run --allow-read --allow-write --allow-env --allow-sys --allow-net main.ts",
-    "check": "deno check main.ts args.ts container.ts config.ts default_config.ts devcontainer_cli.ts help.ts init.ts paths.ts posix.ts jsonc_edit.ts mounts.ts overlay.ts worktree.ts wizard_apply.ts tui/keys.ts tui/term.ts tui/folder_picker.ts tui/prompts.ts tui/config_flow.ts",
+    "check": "deno check main.ts args.ts attach.ts container.ts devcontainer_selfexec.ts help.ts tui/keys.ts tui/term.ts tui/folder_picker.ts tui/prompts.ts tui/config_flow.ts",
     // `--allow-run` is unscoped here for the same reason it is below, plus one of its own: the
-    // devcontainer_cli tests spawn the *runtime itself* (`Deno.execPath()`), whose path no
+    // devcontainer_selfexec tests spawn the *runtime itself* (`Deno.execPath()`), whose path no
     // allowlist entry can name — it is `deno` under `deno test` and the devc binary once
     // compiled, at whatever path the installer used.
     "test": "deno test --allow-run --allow-read --allow-write --allow-env",
-    "build": "deno compile --allow-run --allow-read --allow-write --allow-env --allow-sys --allow-net --include default --output devc main.ts",
-    "build:release": "deno compile --allow-run --allow-read --allow-write --allow-env --allow-sys --allow-net --include default --target $DEVC_TARGET --output ../dist/devc/devc main.ts"
+    "build": "deno compile --allow-run --allow-read --allow-write --allow-env --allow-sys --allow-net --include ../devc-core/default --output devc main.ts",
+    "build:release": "deno compile --allow-run --allow-read --allow-write --allow-env --allow-sys --allow-net --include ../devc-core/default --target $DEVC_TARGET --output ../dist/devc/devc main.ts"
   },
   "fmt": {
     "useTabs": false,
@@ -22,11 +22,14 @@
   "imports": {
     "jsr:@std/path": "jsr:@std/path@^1",
     "jsr:@std/assert": "jsr:@std/assert@^1",
-    "jsr:@std/jsonc": "jsr:@std/jsonc@^1",
+    // devc-core's own modules, consumed from source (not the published npm package — see
+    // `.plans/devc-core-npm-library.md`). One prefix entry covers every `@devc-tools/core/x.ts`
+    // import in `main.ts`, `container.ts` and `tui/config_flow.ts`.
+    "@devc-tools/core/": "../devc-core/",
     // Pinned, not ranged: this is the devcontainer CLI devc *is*, embedded by `deno compile`
-    // (see devcontainer_cli.ts), so an upgrade changes what a released binary does. Keep in step
-    // with DEVCONTAINERS_CLI in .github/workflows/publish-feature.yml, which pins the same
-    // version for the same reason.
+    // (see devcontainer_selfexec.ts), so an upgrade changes what a released binary does. Keep in
+    // step with DEVCONTAINERS_CLI in .github/workflows/publish-feature.yml and
+    // `devc-core/package.json`'s own pin — see `tests/workflow_guards_test.sh`.
     "npm:@devcontainers/cli": "npm:@devcontainers/cli@0.88.0"
   }
 }

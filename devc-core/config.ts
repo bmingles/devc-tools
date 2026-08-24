@@ -11,14 +11,17 @@
 //   2. **Never drop user data.** Unknown top-level keys are kept in `extra` and written
 //      back verbatim on save.
 
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import process from 'node:process';
 import { CONFIG_DIR } from './default_config.ts';
+import { isAlreadyExists, isNotFound } from './errors.ts';
 
 /** Absolute path of the global config file. */
 export const GLOBAL_CONFIG_PATH = `${CONFIG_DIR}/config.json`;
 
 /** A variable set to the empty string counts as unset. */
 function envOrNull(name: string): string | null {
-  const value = Deno.env.get(name);
+  const value = process.env[name];
   return value === undefined || value === '' ? null : value;
 }
 
@@ -50,7 +53,7 @@ export function expandPath(value: string): string {
 
 /** Collapse `$HOME` → `~` so messages match what the user typed in their shell. */
 export function displayPath(path: string): string {
-  const home = Deno.env.get('HOME');
+  const home = process.env.HOME;
   if (home !== undefined && home !== '' && path.startsWith(home + '/')) {
     return '~' + path.slice(home.length);
   }
@@ -109,10 +112,10 @@ export async function globalConfigExists(
   path: string = GLOBAL_CONFIG_PATH,
 ): Promise<boolean> {
   try {
-    await Deno.stat(path);
+    await stat(path);
     return true;
   } catch (e) {
-    if (e instanceof Deno.errors.NotFound) return false;
+    if (isNotFound(e)) return false;
     throw e;
   }
 }
@@ -127,7 +130,7 @@ export async function loadGlobalConfig(
 ): Promise<GlobalConfig> {
   let raw: Record<string, unknown> = {};
   try {
-    const text = await Deno.readTextFile(path);
+    const text = await readFile(path, 'utf8');
     const parsed = JSON.parse(text);
     if (
       typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
@@ -167,8 +170,8 @@ export async function loadGlobalConfig(
 export async function saveGlobalConfig(cfg: GlobalConfig): Promise<void> {
   const dir = cfg.path.slice(0, Math.max(0, cfg.path.lastIndexOf('/')));
   if (dir !== '') {
-    await Deno.mkdir(dir, { recursive: true }).catch((e) => {
-      if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
+    await mkdir(dir, { recursive: true }).catch((e) => {
+      if (!isAlreadyExists(e)) throw e;
     });
   }
   const out = {
@@ -177,7 +180,7 @@ export async function saveGlobalConfig(cfg: GlobalConfig): Promise<void> {
     recentSkills: cfg.recentSkills,
     ...cfg.extra,
   };
-  await Deno.writeTextFile(cfg.path, JSON.stringify(out, null, 2) + '\n');
+  await writeFile(cfg.path, JSON.stringify(out, null, 2) + '\n');
 }
 
 /** Construct a config value from explicit lists (used by tests and the wizard save path). */

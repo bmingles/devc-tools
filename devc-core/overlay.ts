@@ -14,8 +14,28 @@
 //   need not know `devc` exists. Because the overlay is invisible to the repo, the
 //   `.devcontainer/` everyone else checks out is untouched by definition.
 
-import { parse as parseJsonc } from 'jsr:@std/jsonc';
+import { readFile, stat } from 'node:fs/promises';
+import { parse as parseJsoncLoose, type ParseError } from 'jsonc-parser';
 import { CONFIG_DIR, substituteVars } from './default_config.ts';
+import { isNotADirectory, isNotFound } from './errors.ts';
+
+/**
+ * Parse JSONC (comments and trailing commas both allowed), throwing when `jsonc-parser`
+ * reports any real problem. `allowTrailingComma` is what keeps a trailing comma out of the
+ * error list — without it, `jsonc-parser` still recovers a value but also reports the comma
+ * itself as an error, which would make a spec-legal file fail here.
+ */
+function parseJsonc(text: string): unknown {
+  const errors: ParseError[] = [];
+  const value = parseJsoncLoose(text, errors, { allowTrailingComma: true });
+  if (errors.length > 0) {
+    const [first] = errors;
+    throw new SyntaxError(
+      `JSONC parse error ${first.error} at offset ${first.offset}`,
+    );
+  }
+  return value;
+}
 
 /** The merged, validated contents of the overlay layer. Every field is always present. */
 export interface DevcOverlay {
@@ -82,16 +102,13 @@ export function isEmptyOverlay(overlay: DevcOverlay): boolean {
 async function firstExisting(paths: readonly string[]): Promise<string | null> {
   for (const path of paths) {
     try {
-      await Deno.stat(path);
+      await stat(path);
       return path;
     } catch (err) {
       // `NotADirectory` is the same answer as `NotFound` here: a candidate whose parent is a
       // regular file (a project with a `.devcontainer` *file*) has no overlay at that path.
       // Anything else — a permissions failure, say — is a real problem and still throws.
-      if (
-        !(err instanceof Deno.errors.NotFound) &&
-        !(err instanceof Deno.errors.NotADirectory)
-      ) throw err;
+      if (!isNotFound(err) && !isNotADirectory(err)) throw err;
     }
   }
   return null;
@@ -120,7 +137,7 @@ export interface OverlayTarget {
 
 async function isDirectory(path: string): Promise<boolean> {
   try {
-    return (await Deno.stat(path)).isDirectory;
+    return (await stat(path)).isDirectory();
   } catch {
     return false;
   }
@@ -261,7 +278,7 @@ function readRemoteEnv(
  * for a genuinely truncated file.
  */
 export async function loadOverlayFile(path: string): Promise<DevcOverlay> {
-  const text = await Deno.readTextFile(path);
+  const text = await readFile(path, 'utf8');
   if (isTokenFree(text)) return emptyOverlay();
 
   let parsed: unknown;

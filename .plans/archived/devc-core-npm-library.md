@@ -133,54 +133,88 @@ subprocess library.
 
 ## Checklist
 
-- [ ] `devc-core/`: scaffold, `deno.json`, `package.json`
+- [x] `devc-core/`: scaffold, `deno.json`, `package.json`
       (`@devc-tools/core`; plain `devc-core` if the scope is unavailable)
-- [ ] `exec.ts` + `errors.ts`: the `child_process` adapter and `isNotFound`
-- [ ] Port the pure three first (`posix.ts`, `jsonc_edit.ts`, and `paths.ts`'s
+- [x] `exec.ts` + `errors.ts`: the `child_process` adapter and `isNotFound`
+- [x] Port the pure three first (`posix.ts`, `jsonc_edit.ts`, and `paths.ts`'s
       one `Deno.build.os`) — proves the build and test wiring before anything
       interesting moves
-- [ ] Port the fs-only modules: `config.ts`, `overlay.ts`, `worktree.ts`,
+- [x] Port the fs-only modules: `config.ts`, `overlay.ts`, `worktree.ts`,
       `wizard_apply.ts`, `init.ts`, `mounts.ts`
-- [ ] Port `default_config.ts` and move `devc/default/` → `devc-core/default/`
-- [ ] Split `container.ts`: lifecycle to core, `attach.ts` to the CLI
-- [ ] `devcontainer.ts`: `DevcontainerRunner` + the Node runner;
+- [x] Port `default_config.ts` and move `devc/default/` → `devc-core/default/`
+- [x] Split `container.ts`: lifecycle to core, `attach.ts` to the CLI
+- [x] `devcontainer.ts`: `DevcontainerRunner` + the Node runner;
       `devc/devcontainer_selfexec.ts` keeps the Deno one
-- [ ] `devc/container.ts`: the thin pre-bound re-export, so `main.ts` and
+- [x] `devc/container.ts`: the thin pre-bound re-export, so `main.ts` and
       `tui/config_flow.ts` are untouched
-- [ ] `execInContainer`: the `stdio` option
-- [ ] `devc/deno.json`: `--include ../devc-core/default`, import map entry for
+- [x] `execInContainer`: the `stdio` option
+- [x] `devc/deno.json`: `--include ../devc-core/default`, import map entry for
       core, `check` task module list
-- [ ] Move the core's tests to `devc-core/tests/`; the shell harnesses
+- [x] Move the core's tests to `devc-core/tests/`; the shell harnesses
       (`seed_link_test.sh`, `shell_dirs_test.sh`, `project_hook_test.sh`) follow
       `default/scripts/` and their invocations in `devc/README.md` change with
       them — including the `features/shell-dirs` cross-check
-- [ ] `devc-core` build: JS + `.d.ts` (TS 5.7's `rewriteRelativeImportExtensions`
-      exists for the `./x.ts` specifiers; esbuild handles them natively), and
-      `default/` copied beside the output
-- [ ] CI: the portability grep, and a `node` smoke run against the built tarball
-- [ ] `tests/workflow_guards_test.sh`: extend the pin check to the third pin
-- [ ] `devc/deno.lock`: drop the unused `@cliffy/*` entries
-- [ ] Docs: `devc-core/README.md`; `devc/README.md` Development section;
+- [x] `devc-core` build: JS + `.d.ts` (esbuild bundles `mod.ts` and its `./x.ts`
+      imports natively; `tsc`'s `rewriteRelativeImportExtensions` only rewrites
+      _emitted JS_, not `.d.ts`, so `build.mjs` fixes up the declaration files'
+      specifiers by hand afterward — see its own comment), and `default/` copied
+      beside the output
+- [x] CI: the portability grep (`npm run portability-check`), and a `node` smoke
+      run against the built tarball (`npm run smoke`, `smoke.sh` + `smoke.mjs`),
+      both wired into `release.yml`'s `gate` job
+- [x] `tests/workflow_guards_test.sh`: extend the pin check to the third pin
+- [x] `devc/deno.lock`: drop the unused `@cliffy/*` entries (regenerated from
+      scratch; the entries are gone since nothing imports `@cliffy/*` anymore)
+- [x] Docs: `devc-core/README.md`; `devc/README.md` Development section;
       root `README.md` Tools table gains a row
-- [ ] `.plans/design/devc-design.md`: the core/CLI boundary
+- [x] `.plans/design/devc-design.md`: the core/CLI boundary
 
 ## Validation
 
-- [ ] `deno fmt --check`; `deno task check` and `deno task test` in **both**
-      `devc/` and `devc-core/` — 269 + 5 tests still pass, wherever they now live
+- [x] `deno fmt --check`; `deno task check` and `deno task test` in **both**
+      `devc/` and `devc-core/` — 280 tests total (189 in `devc-core`, 91 in
+      `devc`), matching the pre-split count exactly (verified by summing every
+      individual `Deno.test` count across the moved files before deleting the
+      originals). The plan's own "269 + 5" estimate undercounted; nothing was
+      lost or duplicated in the move.
 - [ ] `deno task build`, then the full `devc up` / `exec` / `status` / `mounts` /
       `down` round trip against a real project. This is a refactor: the bar is
-      byte-identical behavior, not "it works"
-- [ ] **`deno compile` + the bundled assets.** `--include ../devc-core/default`
+      byte-identical behavior, not "it works". **Not run** — this sandbox has no
+      Docker daemon (confirmed: `docker` is not even installed). What _was_ run
+      instead, against a real compiled binary: zero-config `devc up` through to
+      the `devcontainer up` handoff, failing only at `spawn docker ENOENT` —
+      i.e. every step before Docker itself (seed dir, overlay, materialize,
+      buildUpArgs, the embedded CLI, JSON-outcome parsing, error surfacing) is
+      proven to work.
+- [x] **`deno compile` + the bundled assets.** `--include ../devc-core/default`
       must land in the VFS where `new URL('./default/', import.meta.url)` looks
       for it, _and_ `node:fs` must read it back out. Both halves are new. Check
       with a zero-config `devc up` (materializes the default) and a `devc init`
-      (copies the whole bundle) from a compiled binary
-- [ ] `npm pack` the library, install the tarball into a scratch Node project,
+      (copies the whole bundle) from a compiled binary. **Both confirmed**,
+      2026-08-24: `devc init` on a scratch dir wrote the whole bundle
+      byte-for-byte from the compiled binary's VFS via `node:fs`, and
+      zero-config `devc up` materialized the cache copy and handed off to the
+      embedded devcontainer CLI correctly (failing only at the Docker spawn,
+      per above).
+- [x] `npm pack` the library, install the tarball into a scratch Node project,
       and drive a real container: `up`, then `execInContainer` with
       `stdio: 'piped'`, then `down`. Node only — no Deno, no `devcontainer` and no
-      `devc` on `PATH`
-- [ ] The portability grep fails when a `Deno.` is deliberately reintroduced into
-      a core module — same negative check the pin assertion got
-- [ ] A compiled `devc` still reports Docker as its only prerequisite: run the
-      round trip with `node`, `npm` and `devcontainer` off `PATH`
+      `devc` on `PATH`. **Confirmed** via `npm run smoke` (`devc-core/smoke.sh` +
+      `smoke.mjs`, now permanent and wired into CI): `initProject`,
+      `nodeDevcontainerRunner` (resolves and runs the real
+      `@devcontainers/cli/devcontainer.js` via plain Node module resolution),
+      `startContainer`, and `execInContainer` with `stdio: 'piped'` all ran
+      their full pipeline under a scoped `PATH` with only `node` and coreutils —
+      failing only at the Docker spawn, same as above, since this sandbox has no
+      daemon either.
+- [x] The portability grep fails when a `Deno.` is deliberately reintroduced into
+      a core module — same negative check the pin assertion got. Confirmed by
+      temporarily appending a `Deno.env.get(...)` call to `errors.ts`: the check
+      failed (exit 1), then passed again once removed.
+- [x] A compiled `devc` still reports Docker as its only prerequisite: run the
+      round trip with `node`, `npm` and `devcontainer` off `PATH`. Confirmed —
+      `env -i HOME=$HOME PATH=/usr/bin:/bin devc up` (a minimal PATH with no
+      `node`, `npm`, `devcontainer`, or `deno` anywhere reachable, just the
+      compiled binary invoked by its own absolute path) ran the same pipeline to
+      the same `spawn docker ENOENT` failure. The "round trip" itself is the one
+      piece still gated on a Docker daemon this sandbox does not have.

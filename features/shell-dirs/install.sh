@@ -12,7 +12,7 @@
 # that deferral with a real path at create time.
 #
 # Copied out of devc's baseline — the `devc:shell-dirs` fenced block in
-# devc/default/scripts/bashrc-additions.sh — with only the two *_SHELL_DIR assignments
+# devc-core/default/scripts/bashrc-additions.sh — with only the two *_SHELL_DIR assignments
 # substituted. That copy is deliberate and load-bearing: devc/tests/shell_dirs_test.sh runs
 # against *this file* unmodified, which is what stops the two copies drifting apart. devc's own
 # block keeps running as it does today; swapping devc onto this Feature is a separate plan.
@@ -89,7 +89,7 @@ BASHRC="$USER_HOME/.bashrc"
 START_MARKER='# >>> shell-dirs >>>'
 END_MARKER='# <<< shell-dirs <<<'
 
-# Marker-guarded so a rebuild does not double-append — the same shape devc/default/Dockerfile
+# Marker-guarded so a rebuild does not double-append — the same shape devc-core/default/Dockerfile
 # uses for its own bashrc-additions block.
 if grep -qF "$START_MARKER" "$BASHRC" 2> /dev/null; then
   echo "shell-dirs: $BASHRC already has the block — left alone"

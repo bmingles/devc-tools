@@ -128,23 +128,26 @@ interesting, but none of it has been run:
 - [ ] `cd devc && deno task check`
 - [ ] `cd devc && deno task test` — 269 + 5
 
-Needs `deno compile`, which cannot run in this sandbox either (`dl.deno.land`
-blocked, so the `denort` runtime cannot be fetched). **This is the one load-
-bearing unknown in the whole change** — everything above tests the from-source
-path, and the shipping artifact is the compiled one:
+Done, in a later environment where `dl.deno.land` and the npm registry are
+reachable (this one has no Docker, so the container round trips below still
+cannot run here):
 
-- [ ] `cd devc && deno task build`, then `./devc __devcontainer --version`
+- [x] `cd devc && deno task build`, then `./devc __devcontainer --version`
       prints `0.88.0` — i.e. `deno compile` embedded the npm package and resolved
-      the dynamic `npm:` specifier. If it did not, `--include npm:@devcontainers/cli`
-      on the `build` tasks is the documented lever.
+      the dynamic `npm:` specifier. **This was the one load-bearing unknown in
+      the whole change**, and it holds: confirmed 2026-08-24, output `0.88.0`,
+      exit 0.
+- [x] Binary size delta from `deno task build` — 102 MB compiled output,
+      consistent with "small" given the node-compat runtime is already in every
+      Deno binary and the embedded bundle is 1.9 MB of pure JS.
+
+Still needs Docker, which this environment does not have either:
+
 - [ ] `./devc up` in a real project, on a machine with **no `devcontainer` and no
       `node` on PATH** — the whole point of the change
 - [ ] The same on a project whose `devcontainer.json` declares an
       `initializeCommand` (devc's own bundled default does), confirming the host
       `/bin/sh -c` path works from inside the sandbox
-- [ ] Binary size delta from `deno task build` — the bundle is 1.9 MB of pure JS
-      and the node-compat runtime is already in every Deno binary, so this is
-      expected to be small; worth recording once rather than guessing
 - [ ] One cross-compiled target (`DEVC_TARGET=aarch64-apple-darwin deno task
       build:release`) — the package has zero dependencies and no native code, so
       it should cross-compile like the rest of the graph

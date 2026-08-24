@@ -15,6 +15,7 @@
 // injected `FsProbe` (no `git` subprocess) — fast enough to run per-entry in the picker and
 // identical to the decision the mount builder makes.
 
+import { readFile, stat } from 'node:fs/promises';
 import {
   commonAncestorPosix,
   dirnamePosix,
@@ -31,18 +32,18 @@ export interface FsProbe {
   readText(path: string): Promise<string | null>;
 }
 
-/** The real Deno-backed probe used outside tests. */
+/** The real filesystem-backed probe used outside tests. */
 export const realFsProbe: FsProbe = {
   async statIsFile(path) {
     try {
-      return (await Deno.stat(path)).isFile;
+      return (await stat(path)).isFile();
     } catch {
       return false;
     }
   },
   async readText(path) {
     try {
-      return await Deno.readTextFile(path);
+      return await readFile(path, 'utf8');
     } catch {
       return null;
     }

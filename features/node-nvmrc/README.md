@@ -238,7 +238,7 @@ and not `current/`.
 ## Relationship to devc
 
 The logic here was copied out of [devc](../../devc/README.md)'s baseline —
-`devc/default/scripts/node-setup.sh` and the nvm lines in
+`devc-core/default/scripts/node-setup.sh` and the nvm lines in
 `scripts/bashrc-additions.sh` — and generalized: no `vscode` user, no `PROJECT_PATH`
 requirement, no assumption that nvm or `sudo` exist. Those devc copies still run
 unchanged, **devc's own unconditional `cd` override included**; swapping devc onto

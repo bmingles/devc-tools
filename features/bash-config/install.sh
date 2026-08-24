@@ -110,7 +110,7 @@ START_MARKER='# >>> bash-config >>>'
 END_MARKER='# <<< bash-config <<<'
 
 append_block() { # append_block <file>
-  # Marker-guarded so a rebuild does not double-append — the same shape devc/default/Dockerfile
+  # Marker-guarded so a rebuild does not double-append — the same shape devc-core/default/Dockerfile
   # uses for its own bashrc-additions block.
   if grep -qF "$START_MARKER" "$1" 2> /dev/null; then
     echo "bash-config: $1 already has the block — left alone"

@@ -8,7 +8,7 @@ set -e
 # Non-recursive: subpaths like skills/ are host bind mounts and must not be chowned.
 sudo chown vscode:vscode /home/vscode/.claude
 
-# devc:seed-link (start) — tests/seed_link_test.sh runs everything between these two
+# devc:seed-link (start) — devc/tests/seed_link_test.sh runs everything between these two
 # markers against temp dirs, so keep the block self-contained (parameterized only by
 # SEED and CLAUDE_DIR; no sudo, no paths outside them).
 #

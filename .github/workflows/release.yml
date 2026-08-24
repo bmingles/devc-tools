@@ -103,6 +103,35 @@ jobs:
           deno task check
           deno task test
 
+      # @devc-tools/core (see .plans/devc-core-npm-library.md) — the library `devc` compiles
+      # from source and that also ships to npm. Checked under Deno first, same as devc itself.
+      - name: devc-core — check + test
+        working-directory: devc-core
+        run: |
+          deno task check
+          deno task test
+
+      # The failure this catches is silent otherwise: a stray `Deno.` (or `jsr:`) import keeps
+      # every `deno test` above green and only breaks the npm build — see the design decision
+      # in .plans/devc-core-npm-library.md ("Node compatibility needs a CI guard").
+      - name: 'devc-core — portability check (no Deno./jsr: outside tests/)'
+        working-directory: devc-core
+        run: npm run portability-check
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+
+      # The other half of the portability claim: build the npm package, pack it, install the
+      # tarball into a scratch project, and drive it with plain `node` — no Deno, no
+      # `devcontainer`, no `devc` anywhere on PATH. See smoke.sh/smoke.mjs and the plan's
+      # Validation section ("npm pack the library ... Node only").
+      - name: devc-core — npm build + pack + node smoke test
+        working-directory: devc-core
+        run: |
+          npm ci
+          npm run smoke
+
       - name: devc-bridge host — check + test
         working-directory: devc-bridge/host
         run: |
