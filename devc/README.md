@@ -26,6 +26,17 @@ binary — see [The embedded devcontainer CLI](#the-embedded-devcontainer-cli).
 
 To build it from a clone instead, see [Development](#development).
 
+**Upgrade note — one rebuild when you first run a build carrying the
+content-addressed zero-config cache.** The materialized default config moved
+from a single `~/.cache/devc/default/` to a keyed
+`~/.cache/devc/default-<key>/` (see [How it works](#how-it-works)). Its absolute
+path is baked into the config that `devcontainer up` reads, so the first
+zero-config `up` after upgrading looks to the CLI like a changed config and
+recreates the container once. Nothing is lost that a rebuild does not normally
+preserve, and it does not repeat. Project-mode users (a project with its own
+`.devcontainer/`) are unaffected — that path never touched the cache. The old
+`~/.cache/devc/default/` is left where it is and can be deleted by hand.
+
 ## Commands
 
 ```text
@@ -92,6 +103,16 @@ Notes:
   `.devcontainer/devcontainer.json` (or `.devcontainer.json`), that is used
   instead. Exactly one of them is handed to `devcontainer up` — they do not
   merge, since a base config carries `build`/`image`.
+- That cache dir is **content-addressed**: `~/.cache/devc/default-<key>/`, where
+  the key is a hash of the bundled config tree, your
+  [`templates/`](#default-overrides-configdevctemplates) overlay, and whether
+  this project opts into [devc-bridge](#devc-bridge-the-opt-in-feature). Same
+  inputs, same directory, and nothing is rewritten — a repeat `up` costs a hash
+  and a `stat`. Different inputs get their own directory, so two `devc` versions
+  (or a `devc` and a program embedding the same library) cannot rewrite each
+  other's config and trigger rebuilds you did not ask for. A first write for a
+  given key is staged in a sibling `.tmp-…/` and renamed into place, so a
+  `devcontainer up` reading that config never sees a half-written tree.
 - An optional [`devc.json` overlay](#optional-overlay-devcjson) contributes
   extra `mounts`, `additionalFeatures` and `remoteEnv` on top of whichever base
   config won, in both modes. It is translated to `devcontainer up` CLI flags and
@@ -131,7 +152,7 @@ consumed from source here. `devc` compiles unchanged into the same `deno compile
 binary described below; `devc-core` additionally publishes to npm as
 `@devc-tools/core`, for a programmatic consumer (a coding-agent extension, a
 script) that wants `ContainerInfo` back as a value instead of parsing a CLI's
-stdout. See [`.plans/devc-core-npm-library.md`](../.plans/devc-core-npm-library.md)
+stdout. See [`.plans/archived/devc-core-npm-library.md`](../.plans/archived/devc-core-npm-library.md)
 for the design.
 
 ### The embedded devcontainer CLI
@@ -621,7 +642,7 @@ DEVC_TARGET=aarch64-apple-darwin deno task build:release
 
 # The lifecycle logic devc compiles from — startContainer, the devc.json overlay, the config
 # wizard's pure helpers — lives in the sibling `devc-core/` package (see its own README and
-# .plans/devc-core-npm-library.md), checked and tested the same way:
+# .plans/archived/devc-core-npm-library.md), checked and tested the same way:
 cd ../devc-core && deno task check && deno task test
 
 # Parts of the baseline are bash (in devc-core/default/scripts/, or in the host-side entry

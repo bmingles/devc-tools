@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "devc's container lifecycle logic (start/attach/exec/stop, the devc.json overlay, the config wizard's pure helpers) as a runtime-neutral library — the same source Deno compiles into the devc CLI, published for programmatic consumers.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bmingles/devc-tools.git",
+    "directory": "devc-core"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"

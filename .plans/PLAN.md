@@ -83,6 +83,79 @@ own matrix job.
 
 ### Completed
 
+- [devc-core-consumer-prep](archived/devc-core-consumer-prep.md) — ✅ Done.
+  Four changes to `devc-core/`, all falling out of its first out-of-tree
+  consumer (a pi coding-agent extension calling `startContainer` in-process
+  inside a TUI), with `devc`'s own behavior as the bar. The real bug is closed:
+  the zero-config default config is no longer `rm -rf`'d and rewritten into one
+  shared `~/.cache/devc/default/` on every start, but content-addressed into
+  `~/.cache/devc/default-<key>/`, keyed on a `sha256` over the bundled tree, the
+  `~/.config/devc/templates` overlay and the per-project bridge flag. A hit
+  writes nothing (a hash and a `stat`, cheaper than what it replaced); a miss
+  stages into a sibling `.tmp-…/` and `rename`s it into place, and losing that
+  `rename` to another process is treated as success. That closes the
+  per-project bridge flip-flop, the version skew between two copies of core,
+  and the write-under-a-reader race at once. The split the plan insisted on —
+  `materializeDefaultConfig` writes unconditionally where it is told,
+  `ensureDefaultConfig` is the cache — held: `tests/default_config_test.ts` is
+  byte-for-byte unchanged and its 189 tests still pass, with 24 new ones
+  alongside (213 in `devc-core`, 91 in `devc`). The plan's named trap was real
+  and is tested directly: the `initializeCommand` path baked into the config is
+  absolute, so the rewrite resolves against a new `finalDir` option naming
+  where the tree will _end up_, not the staging directory it is written to —
+  reverting that one expression makes exactly the trap test fail, so the test
+  earns its place. The other three: a module-level `setLogger` seam (`notice` →
+  `console.log`, `warning` → `console.error` by default, so the CLI sets
+  nothing) replacing seven direct `console.*` sites across three modules;
+  `createNodeDevcontainerRunner({ onStderr })` plus an exported
+  `devcontainerJsPath()`, with `nodeDevcontainerRunner` rebound as the
+  no-options instance so no importer changes, built on new optional
+  `onStdout`/`onStderr` chunk callbacks in `exec.ts`'s `output()`; and the
+  packaging fix — `devc-core/LICENSE` and a `repository` field with
+  `"directory": "devc-core"`.
+
+  **Byte-identical was checked the hard way**, since the stdout/stderr split is
+  the whole risk in the logger change: two `deno compile` binaries (`main` and
+  the branch), six invocations each (`up`, `exec`, `status`, `mounts`, `down`,
+  and a second `up` for the hit path), stdout, stderr and exit code each to
+  their own file, identical fresh `HOME` and project. `diff -r` is clean
+  throughout once the `deno compile` VFS root and the CLI's ISO timestamp are
+  normalized; the one residue is _line numbers_ inside a Deno
+  uncaught-exception stack trace on `status`/`mounts`/`down`, which moved
+  because `exec.ts` and `container.ts` gained lines — same frames, same
+  message, same exit code. The seed-dir notice is confirmed still alone on
+  stdout and the build-output dump still on stderr. The compiled binary's hash
+  walk reads the bundled `default/` out of the `deno compile` VFS through
+  `node:fs` and produces the same key the npm-installed tarball computes on the
+  same tree, which is the cross-host stability the sorted walk exists for.
+  `npm pack` + a scratch project under `env -i` confirmed `LICENSE` ships and
+  that `ensureDefaultConfig` (miss, hit, and 8-way concurrent), `setLogger` and
+  both runner shapes work from the installed package.
+
+  **Two deviations from the plan, both deliberate.** The optional 30-day prune
+  of stale `default-*` directories was **not** implemented, taking the plan's
+  own "or do nothing; either is defensible": a hit writes nothing, so a keyed
+  directory's mtime is its creation time and never advances, meaning "untouched
+  for 30 days" would fire on a _live_ cache dir — and the cache dirs whose key
+  differs from ours are precisely the ones belonging to the other copy of core
+  this plan exists to coexist with. Pruning would `rm -rf` that copy's config
+  out from under its `devcontainer up`, reintroducing the exact race the
+  content-addressing removes, to reclaim ~30 KB. Second, the `setLogger`
+  validation drives `overlay.ts`'s unknown-overlay-key warning and
+  `default_config.ts`'s templates-`devc.json` warning (one real site per
+  module) rather than the seed-dir notice, which is emitted from inside
+  `startContainer` and would need a Docker daemon or surgery on a module-level
+  constant to reach from a unit test; the `notice` level is covered directly,
+  and the seed-dir notice's stream is proven by the byte-identical capture.
+
+  **Not verified:** the full round trip against a real Docker daemon — this
+  sandbox has none, and no `docker` binary either. Everything before the Docker
+  spawn is exercised and byte-identical to `main`, but the plan's one
+  user-visible claim (existing zero-config users take exactly one container
+  rebuild when the cache path moves, and none on the second run) has not been
+  observed against a daemon. It is documented as an upgrade note in
+  `devc/README.md`.
+
 - [devc-core-npm-library](archived/devc-core-npm-library.md) — ✅ Done.
   `devc`'s lifecycle logic (start/rebuild/stop/down, status, mounts, exec, the
   `devc.json` overlay, the config wizard's pure helpers) moved to a new

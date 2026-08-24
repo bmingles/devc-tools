@@ -1,7 +1,8 @@
-// `node:fs` reports "no such file", "already exists" and "not a directory" as an `Error` with a
-// `.code` string (`ENOENT` / `EEXIST` / `ENOTDIR`), the same on both hosts since the Deno
-// runtime's `node:fs` shim raises the identical codes. These predicates replace the old
-// `instanceof` checks against the runtime's own error-class namespace.
+// `node:fs` reports "no such file", "already exists", "not a directory" and "directory not
+// empty" as an `Error` with a `.code` string (`ENOENT` / `EEXIST` / `ENOTDIR` / `ENOTEMPTY`), the
+// same on both hosts since the Deno runtime's `node:fs` shim raises the identical codes. These
+// predicates replace the old `instanceof` checks against the runtime's own error-class
+// namespace.
 
 interface ErrnoException {
   code?: string;
@@ -20,6 +21,18 @@ export function isNotFound(err: unknown): boolean {
 /** True when `err` is a `node:fs` "file already exists" error. */
 export function isAlreadyExists(err: unknown): boolean {
   return hasCode(err, 'EEXIST');
+}
+
+/**
+ * True when `err` is a `node:fs` "directory not empty" error.
+ *
+ * The one caller is {@link ensureDefaultConfig}'s `rename` of a staging directory onto its keyed
+ * target: a `rename` onto a directory that another process already populated fails this way
+ * (`EEXIST` is the same event on some platforms), and both mean "someone else won", not "this
+ * broke".
+ */
+export function isDirectoryNotEmpty(err: unknown): boolean {
+  return hasCode(err, 'ENOTEMPTY');
 }
 
 /** True when `err` is a `node:fs` "not a directory" error. */

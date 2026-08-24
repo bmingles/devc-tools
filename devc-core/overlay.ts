@@ -18,6 +18,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { parse as parseJsoncLoose, type ParseError } from 'jsonc-parser';
 import { CONFIG_DIR, substituteVars } from './default_config.ts';
 import { isNotADirectory, isNotFound } from './errors.ts';
+import { logWarning } from './log.ts';
 
 /**
  * Parse JSONC (comments and trailing commas both allowed), throwing when `jsonc-parser`
@@ -300,7 +301,7 @@ export async function loadOverlayFile(path: string): Promise<DevcOverlay> {
   const raw = parsed as Record<string, unknown>;
   for (const key of Object.keys(raw)) {
     if (!(OVERLAY_KEYS as readonly string[]).includes(key)) {
-      console.error(
+      logWarning(
         `devc: ignoring unknown key "${key}" in ${path} (known keys: ${
           OVERLAY_KEYS.join(', ')
         })`,

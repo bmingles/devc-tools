@@ -11,8 +11,10 @@ This is **not** a new tool. It is the library
 consumer — a coding-agent extension, a script — can call `startContainer` and
 get a `ContainerInfo` back as a value, without a `devcontainer`/`devc` binary
 on disk or stdout to parse. `devc`'s own CLI, install, and behavior are
-unchanged; see [`.plans/devc-core-npm-library.md`](../.plans/devc-core-npm-library.md)
-for the full design.
+unchanged; see [`.plans/archived/devc-core-npm-library.md`](../.plans/archived/devc-core-npm-library.md)
+for the full design, and
+[`.plans/archived/devc-core-consumer-prep.md`](../.plans/archived/devc-core-consumer-prep.md)
+for the logger seam, the runner factory and the content-addressed cache below.
 
 ## Install
 
@@ -71,6 +73,76 @@ export interface DevcontainerRunner {
 (`devc`'s own CLI binds a different one — a hidden self-exec subcommand, since
 a `deno compile` binary has no `node_modules` a separate process could open.
 See `devc/devcontainer_selfexec.ts`.)
+
+For the common case — the Node runner, but with the devcontainer CLI's stderr
+as data rather than on the terminal — there is a factory rather than a
+hand-rolled runner:
+
+```ts
+import { createNodeDevcontainerRunner, startContainer } from '@devc-tools/core';
+
+const info = await startContainer('/path/to/project', false, {
+  devcontainer: createNodeDevcontainerRunner({
+    onStderr: (chunk) => myTui.appendBuildLog(chunk),
+  }),
+});
+```
+
+With `onStderr` the CLI's stderr is piped and forwarded chunk by chunk; with no
+options it is inherited, exactly as `nodeDevcontainerRunner` (which _is_ the
+no-options instance) has always done. On a cold build that stream is minutes of
+the only progress there is, so a consumer that hides it usually wants it
+somewhere. `devcontainerJsPath()` is exported alongside, for a consumer building
+a runner of its own — it is the path this package resolves out of its own
+`node_modules`, and re-deriving it from outside would mean depending on where
+core's bundle happens to sit on disk.
+
+### Where core's output goes
+
+A handful of sites in core have something to say to a human: an ignored template
+file, a bridge mount that could not be injected, the build output of a failed
+`devcontainer up`. By default they go where they always went — `notice` to
+stdout, `warning` to stderr — which is what keeps `devc`'s own output
+byte-identical.
+
+That is the wrong destination for a consumer holding the terminal (a TUI): the
+text lands in _its_ stdout and stderr and corrupts the display. One call at load
+redirects all of it:
+
+```ts
+import { setLogger } from '@devc-tools/core';
+
+setLogger((level, message) => myTui.log(level, message)); // 'notice' | 'warning'
+setLogger(null); // back to the console default
+```
+
+It is process-global and deliberately so — the call sites sit at varying depths
+across three modules, several inside otherwise-pure helpers that no options
+object reaches. There is one core instance per process and one consumer driving
+it.
+
+### The zero-config cache
+
+With no `.devcontainer/` in the project, core materializes its bundled default
+config into `~/.cache/devc/default-<key>/` and points `devcontainer up --config`
+at it. The key is a 12-hex-char `sha256` over the bundled `default/` tree, the
+user's `~/.config/devc/templates` overlay, and the per-project bridge flag, so:
+
+- identical inputs reuse the directory and **write nothing** — a second start is
+  a hash and a `stat`;
+- different inputs (a different `devc` version, an edited template, a project
+  that opts into devc-bridge) get a _different_ directory, so two copies of core
+  on one machine never rewrite each other's config and never cause a rebuild
+  from nothing the user did;
+- a miss stages into a sibling `.tmp-…/` and `rename`s it into place, so a
+  concurrent `devcontainer up` reading that config never sees a half-written
+  tree.
+
+`ensureDefaultConfig` is that cache and is what the lifecycle calls.
+`materializeDefaultConfig` — which writes unconditionally to the directory it is
+handed — is the layer underneath it, kept separate because it is what the tests
+drive; calling it from production code reintroduces the shared-mutable-path bug
+the cache exists to fix.
 
 ## What's deliberately not here
 

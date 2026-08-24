@@ -35,6 +35,10 @@ export * from './init.ts';
 // substitution/remoteEnv resolution.
 export * from './default_config.ts';
 
+// Where core's user-facing notices go. A consumer holding a terminal (a TUI) calls `setLogger`
+// once at load; leaving it unset reproduces the console output the CLI has always had.
+export * from './log.ts';
+
 // Small path helpers shared across the lifecycle and worktree-resolution paths.
 export * from './posix.ts';
 export * from './paths.ts';

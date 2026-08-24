@@ -6,9 +6,9 @@ import {
   CLAUDE_SEED_HOST_DIR,
   declaresBridgeFeature,
   ensureClaudeSeedDir,
+  ensureDefaultConfig,
   findOwnDevcontainerConfig,
   loadResolvedRemoteEnv,
-  materializeDefaultConfig,
 } from './default_config.ts';
 import { displayPath } from './config.ts';
 import {
@@ -16,6 +16,7 @@ import {
   nodeDevcontainerRunner,
 } from './devcontainer.ts';
 import { output, status } from './exec.ts';
+import { logNotice, logWarning } from './log.ts';
 import {
   type DevcOverlay,
   isEmptyOverlay,
@@ -442,7 +443,7 @@ async function renameContainerIfNeeded(
         conflictId,
         '{{index .Config.Labels "devcontainer.local_folder"}}',
       );
-      console.error(
+      logWarning(
         `warning: could not rename container ${containerId} (workspace: ${localFolder}) to ` +
           `"${desiredName}" — container ${conflictId} (workspace: ${
             otherLocalFolder ?? 'unknown'
@@ -492,8 +493,8 @@ async function tagImageIfNeeded(
 }
 
 /**
- * Best-effort dump of captured `devcontainer up` stdout to stderr when a build
- * fails. The CLI emits one JSON log record per line (typically
+ * Best-effort dump of captured `devcontainer up` stdout as `warning` lines
+ * (stderr under the default sink — see `log.ts`) when a build fails. The CLI emits one JSON log record per line (typically
  * `{"type":"...","level":N,"text":"..."}`); we print each record's `text` field
  * when present, falling back to the raw line. This is the "print on failure"
  * diagnostic — stdout is otherwise consumed only to parse the final outcome JSON,
@@ -502,18 +503,18 @@ async function tagImageIfNeeded(
 function dumpBuildOutput(text: string): void {
   const trimmed = text.trim();
   if (!trimmed) return;
-  console.error('--- devcontainer up output ---');
+  logWarning('--- devcontainer up output ---');
   for (const line of trimmed.split('\n')) {
     try {
       const rec = JSON.parse(line);
-      console.error(
+      logWarning(
         typeof rec?.text === 'string' ? rec.text.replace(/\r?\n$/, '') : line,
       );
     } catch {
-      console.error(line);
+      logWarning(line);
     }
   }
-  console.error('--- end devcontainer up output ---');
+  logWarning('--- end devcontainer up output ---');
 }
 
 /**
@@ -598,7 +599,7 @@ export async function startContainer(
   // the container is a path they have to already know about.
   const seed = await ensureClaudeSeedDir();
   if (seed.created) {
-    console.log(
+    logNotice(
       `devc: created ${
         displayPath(CLAUDE_SEED_HOST_DIR)
       } — files you drop in here (CLAUDE.md, settings.json, statusline.sh, …) are linked into the container's ~/.claude`,
@@ -622,8 +623,12 @@ export async function startContainer(
   // Project mode gets no bridge injection: devc does not write into a project's
   // `.devcontainer/`. Those users declare the mount themselves, like any non-devc project.
   const ownConfig = await findOwnDevcontainerConfig(localFolder);
+  //
+  // `ensureDefaultConfig`, not `materializeDefaultConfig`: the content-addressed cache is what
+  // keeps this process from rewriting a directory another `devcontainer up` may be reading, and
+  // what keeps a per-project `bridge` flag from flip-flopping one shared config. See its own doc.
   const configPath = ownConfig ??
-    await materializeDefaultConfig(undefined, undefined, {
+    await ensureDefaultConfig(undefined, undefined, {
       bridge: declaresBridgeFeature(overlay.additionalFeatures),
     });
   // Only pay for the git subprocesses when there is actually something to substitute.

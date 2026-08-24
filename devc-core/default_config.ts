@@ -1,4 +1,5 @@
 import type { Dirent } from 'node:fs';
+import { createHash } from 'node:crypto';
 import {
   chmod,
   copyFile,
@@ -6,6 +7,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   writeFile,
@@ -14,7 +16,8 @@ import process from 'node:process';
 import { parse as parseJsoncLoose, type ParseError } from 'jsonc-parser';
 import { writeBlocks } from './jsonc_edit.ts';
 import { basenamePosix } from './posix.ts';
-import { isAlreadyExists, isNotFound } from './errors.ts';
+import { isAlreadyExists, isDirectoryNotEmpty, isNotFound } from './errors.ts';
+import { logWarning } from './log.ts';
 
 // Embedded `devc-core/default/` directory, read via `node:fs/promises`. Under `deno run` /
 // `node` from source this resolves to the real source tree; under a `deno compile --include
@@ -28,7 +31,7 @@ export const CONFIG_DIR = `${homeDir()}/.config/devc`;
 /**
  * User-level template directory, `~/.config/devc/templates`. A **sparse** overlay on the bundled
  * `default/` tree: any file placed here overrides the same-named bundled file, per file, in both
- * the zero-config cache ({@link materializeDefaultConfig}) and what `devc init` writes into a
+ * the zero-config cache ({@link ensureDefaultConfig}) and what `devc init` writes into a
  * project ({@link copyBundledAssets}).
  *
  * Never seeded. It stays absent until the user creates it and holds only the files they want to
@@ -49,7 +52,8 @@ export const TEMPLATES_DIR = `${CONFIG_DIR}/templates`;
  * {@link copyBundledAssets} and read back as that project's *own* overlay — the highest-precedence
  * slot — putting one machine's bind mounts into every scaffolded repo.
  *
- * So it is skipped, and {@link overlayDirFrom} says so on stderr: silently dropping the file would
+ * So it is skipped, and {@link overlayDirFrom} says so as a `warning` (stderr, by default —
+ * see `log.ts`): silently dropping the file would
  * leave exactly the "why isn't my overlay working" that put it there.
  */
 const TEMPLATE_OVERLAY_FILENAMES: readonly string[] = [
@@ -196,7 +200,7 @@ async function overlayDirFrom(
       topLevel && !entry.isDirectory() &&
       TEMPLATE_OVERLAY_FILENAMES.includes(entry.name)
     ) {
-      console.error(
+      logWarning(
         `devc: ignoring ${sourceDir}/${entry.name} — the devc.json overlay is read from ` +
           `${CONFIG_DIR}/devc.jsonc, not from the templates directory (which holds files copied ` +
           `into a project's .devcontainer/). Move it up one level to apply it to every project.`,
@@ -244,8 +248,8 @@ async function overlayDirFrom(
  * project `.devcontainer/` that does not exist in the zero-config path (the workspace is the
  * user's project, and this cache dir is not mounted into the container):
  *
- * - `initializeCommand` runs on the *host* → resolved to `initialize-command.sh` in this
- *   cache dir.
+ * - `initializeCommand` runs on the *host* → resolved to `initialize-command.sh` in the
+ *   directory this tree will finally live in (`opts.finalDir`, defaulting to `cacheDir`).
  * - `postCreateCommand` runs in the *container* → resolved to the image-baked
  *   `post-create.sh` (which the Dockerfile `COPY`s in for exactly this case).
  *
@@ -256,14 +260,38 @@ async function overlayDirFrom(
  * With `opts.bridge`, a fifth step injects the devc-bridge token mount — see
  * {@link injectBridgeMount}. It runs after the overlay for the same reason the rewrites do.
  *
+ * Writes **unconditionally**, to exactly the directory it is handed. That is the whole of its
+ * contract, and it is what makes it directly testable. Production code does not call it: the
+ * zero-config path goes through {@link ensureDefaultConfig}, whose content-addressed cache is
+ * what keeps two processes (or two projects) from rewriting one shared directory under each
+ * other.
+ *
  * `cacheDir` / `templatesDir` default to the real `~/.cache/devc/default` and
- * {@link TEMPLATES_DIR}, and only need overriding in tests.
+ * {@link TEMPLATES_DIR}, and only need overriding in tests. `opts.finalDir` is for the staging
+ * case — see its own note below.
  */
 export async function materializeDefaultConfig(
   cacheDir: string = `${homeDir()}/.cache/devc/default`,
   templatesDir: string = TEMPLATES_DIR,
-  opts: { bridge?: boolean } = {},
+  opts: {
+    bridge?: boolean;
+    /**
+     * The directory this tree will live in once it is in place; the `initializeCommand` rewrite
+     * resolves against it rather than against `cacheDir`. Defaults to `cacheDir`, so a caller
+     * that writes straight to the final location — every caller before
+     * {@link ensureDefaultConfig} existed, and every existing test — is unaffected.
+     *
+     * Set it when materializing into a staging directory that will be renamed into place: the
+     * baked `initializeCommand` path is absolute, so a tree written under `.tmp-…/` and renamed
+     * would point `initializeCommand` at a directory that no longer exists. The final path is
+     * known before the write (it is a pure function of the inputs), which is what makes passing
+     * it in possible at all.
+     */
+    finalDir?: string;
+  } = {},
 ): Promise<string> {
+  const finalDir = opts.finalDir ?? cacheDir;
+
   // Remove any prior copy so files dropped between versions don't linger.
   await rm(cacheDir, { recursive: true, force: true }).catch(() => {});
   await copyDir(DEFAULT_DIR_URL, cacheDir);
@@ -274,7 +302,7 @@ export async function materializeDefaultConfig(
   const rewritten = raw
     .replaceAll(
       '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
-      `${cacheDir}/initialize-command.sh`,
+      `${finalDir}/initialize-command.sh`,
     )
     .replaceAll(
       '${containerWorkspaceFolder}/.devcontainer/post-create.sh',
@@ -284,6 +312,195 @@ export async function materializeDefaultConfig(
     ? injectBridgeMount(rewritten, configPath)
     : rewritten;
   if (final !== raw) await writeFile(configPath, final);
+
+  return configPath;
+}
+
+/**
+ * Every file under a directory, as relative posix paths sorted lexicographically.
+ *
+ * Sorted **globally**, over the full relative path, rather than per directory as the recursion
+ * descends: it is the one ordering that does not depend on how the walk happens to interleave
+ * files and subdirectories, and the key below is only stable if the order is.
+ *
+ * `readdir` returns entries in whatever order the filesystem hands them over — insertion order on
+ * ext4, roughly alphabetical on APFS, arbitrary on a `deno compile` VFS — so nothing here may
+ * depend on it.
+ */
+async function listTreeUrl(root: URL, prefix = ''): Promise<string[]> {
+  const out: string[] = [];
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      out.push(
+        ...await listTreeUrl(
+          new URL(`${entry.name}/`, root),
+          `${prefix}${entry.name}/`,
+        ),
+      );
+    } else {
+      out.push(`${prefix}${entry.name}`);
+    }
+  }
+  return prefix === '' ? out.sort() : out;
+}
+
+/**
+ * {@link listTreeUrl} for a real on-disk directory. A missing directory contributes nothing —
+ * {@link TEMPLATES_DIR} is never seeded, so its absence is the common case, not an error.
+ */
+async function listTreeDir(root: string, prefix = ''): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (err) {
+    if (isNotFound(err)) return [];
+    throw err;
+  }
+  const out: string[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      out.push(
+        ...await listTreeDir(
+          `${root}/${entry.name}`,
+          `${prefix}${entry.name}/`,
+        ),
+      );
+    } else {
+      out.push(`${prefix}${entry.name}`);
+    }
+  }
+  return prefix === '' ? out.sort() : out;
+}
+
+/** Separates a file's path from its bytes in the key's hash stream. */
+const KEY_SEPARATOR = new Uint8Array([0]);
+
+/**
+ * The cache key for a materialized default config: `sha256`, hex, first 12 chars, over — in this
+ * order — every file of the bundled `default/` tree, every file of `templatesDir`, and the bridge
+ * flag. Each file contributes its posix relative path, a `NUL`, then its bytes.
+ *
+ * **Everything that changes the output must be in here.** {@link ensureDefaultConfig} skips the
+ * write entirely on a hit, so an input outside the key is an input the user can change with no
+ * visible effect — which is why `templatesDir` is hashed and not merely defaulted. That is the
+ * one way to get this design wrong.
+ *
+ * The path, the `NUL` and the sorted order are all load-bearing: without the path a file rename
+ * would not register, without the separator `ab`+`c` and `a`+`bc` would collide, and without the
+ * sort the key would depend on filesystem enumeration order and differ machine to machine.
+ *
+ * 12 hex chars is 48 bits. This is a cache key over a handful of directories on one machine, not
+ * a security boundary — a collision needs ~16M distinct devc/template combinations before it is
+ * even worth thinking about, and the cost of one would be a stale config, not a compromise.
+ */
+async function defaultConfigKey(
+  templatesDir: string,
+  bridge: boolean,
+): Promise<string> {
+  const hash = createHash('sha256');
+  for (const rel of await listTreeUrl(DEFAULT_DIR_URL)) {
+    hash.update(rel);
+    hash.update(KEY_SEPARATOR);
+    hash.update(await readFile(new URL(rel, DEFAULT_DIR_URL)));
+  }
+  for (const rel of await listTreeDir(templatesDir)) {
+    hash.update(rel);
+    hash.update(KEY_SEPARATOR);
+    hash.update(await readFile(`${templatesDir}/${rel}`));
+  }
+  hash.update(bridge ? '1' : '0');
+  return hash.digest('hex').slice(0, 12);
+}
+
+/**
+ * The content-addressed zero-config cache, and what the lifecycle actually calls. Returns the
+ * path to a materialized `devcontainer.json` for the current bundled `default/` tree, templates
+ * and bridge flag — writing **nothing** when a directory for those inputs already exists.
+ *
+ * This exists because the obvious implementation — {@link materializeDefaultConfig} straight into
+ * one shared `~/.cache/devc/default` on every start — is a shared mutable path, and three
+ * separate problems fall out of it:
+ *
+ * - The `bridge` flag is resolved *per project* (from that project's overlay) while the directory
+ *   was shared across *all* of them, so a bridge project and a non-bridge project wrote different
+ *   content to the same file.
+ * - Two copies of core on one machine (an installed `devc` binary and a library consumer's
+ *   embedded copy) each carry their own bundled `default/`. Alternating between them rewrote the
+ *   config under the other, which `devcontainer up` reads as a changed config — a container
+ *   rebuild from nothing the user did.
+ * - The unconditional `rm -rf` could land while another process's `devcontainer up` was reading
+ *   that same config.
+ *
+ * Keying the directory by its inputs closes all three at once: distinct versions, template
+ * revisions and bridge flags get distinct directories, so nothing clobbers anything; `rename` is
+ * atomic within a filesystem, so no reader ever sees a half-written tree; and identical inputs
+ * give an identical path, so the absolute `initialize-command.sh` baked into the config is stable
+ * and nothing rebuilds spuriously.
+ *
+ * It is also cheaper than what it replaces. Every `up` — and every `execInContainer`, which goes
+ * through `startContainer` — used to pay an `rm -rf` plus a full tree copy. A hit is now a hash
+ * and a `stat`.
+ *
+ * The miss path stages into a sibling `.tmp-<pid>-<rand>/` and `rename`s it onto the target.
+ * Losing that `rename` to another process is a success, not a failure: it won, its tree is
+ * complete and byte-identical (same key, same inputs), so the staging copy is simply discarded.
+ *
+ * `cacheRoot` holds *many* `default-<key>/` directories — it is the parent, unlike
+ * {@link materializeDefaultConfig}'s `cacheDir`, which is one materialized tree. Both it and
+ * `templatesDir` default to the real paths and only need overriding in tests.
+ */
+export async function ensureDefaultConfig(
+  cacheRoot: string = `${homeDir()}/.cache/devc`,
+  templatesDir: string = TEMPLATES_DIR,
+  opts: { bridge?: boolean } = {},
+): Promise<string> {
+  const bridge = opts.bridge === true;
+  const target = `${cacheRoot}/default-${await defaultConfigKey(
+    templatesDir,
+    bridge,
+  )}`;
+  const configPath = `${target}/devcontainer.json`;
+
+  // The hit test is on the config file rather than the directory, so a tree left half-written by
+  // something other than this function (an interrupted older devc, a manual `cp`) does not read
+  // as a hit. Within this function a partial tree is unreachable by construction — `rename` is
+  // atomic — but the cache root outlives any one version of this code.
+  try {
+    await stat(configPath);
+    return configPath;
+  } catch (err) {
+    if (!isNotFound(err)) throw err;
+  }
+
+  // Staged as a *sibling* of the target, which is what makes the `rename` a same-filesystem
+  // metadata operation rather than a copy. pid + random so two processes — or two concurrent
+  // starts inside one process — never share a staging directory.
+  await mkdir(cacheRoot, { recursive: true });
+  const staging = `${cacheRoot}/.tmp-${process.pid}-${
+    Math.random().toString(36).slice(2, 10)
+  }`;
+  try {
+    // `finalDir` is the trap this whole function has to avoid: the tree is written under
+    // `staging` but its `initializeCommand` must name `target`, which will not exist until the
+    // `rename` below succeeds.
+    await materializeDefaultConfig(staging, templatesDir, {
+      bridge,
+      finalDir: target,
+    });
+    try {
+      await rename(staging, target);
+    } catch (err) {
+      // Another process materialized the same key between our `stat` and our `rename`. Its tree
+      // is complete and identical to ours, so there is nothing to do but drop ours — overwriting
+      // would reintroduce exactly the write-under-a-reader race this design removes.
+      if (!isAlreadyExists(err) && !isDirectoryNotEmpty(err)) throw err;
+    }
+  } finally {
+    // A no-op after a successful `rename`; the cleanup that matters is the lost-race and
+    // thrown-partway cases, neither of which should leave a `.tmp-` directory behind.
+    await rm(staging, { recursive: true, force: true }).catch(() => {});
+  }
 
   return configPath;
 }
@@ -362,7 +579,7 @@ function injectBridgeMount(text: string, configPath: string): string {
     // cannot edit (not an object, an unterminated fence). Warn rather than fail: their config
     // is theirs, but a silently absent mount would surface much later as an unexplained
     // `cannot read token` from inside the container.
-    console.error(
+    logWarning(
       `devc: could not add the devc-bridge token mount to ${configPath} (${
         err instanceof Error ? err.message : err
       }) — add this to its "mounts" array yourself:\n  "${BRIDGE_MOUNT}"`,
@@ -509,7 +726,7 @@ export async function loadResolvedRemoteEnv(
       );
     }
   } catch (err) {
-    console.error(
+    logWarning(
       `devc: could not read remoteEnv from ${configPath} (${
         err instanceof Error ? err.message : err
       }) — continuing without it`,

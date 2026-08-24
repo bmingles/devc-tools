@@ -265,7 +265,10 @@ The **zero-config path** is where the mechanism hides its seams. There,
 `postCreateCommand` → the image-baked `/usr/local/share/devc/post-create.sh`
 (the Dockerfile `COPY`s the scripts in for this case; in project mode
 those baked copies simply go unused), and `initializeCommand` → the host-side
-`initialize-command.sh` in the cache dir. These are the only transforms, and
+`initialize-command.sh` in the cache dir. That second rewrite resolves against
+the directory the tree will _finally_ live in, not the one it is written to: the
+caching layer above stages into a temp directory and renames it into place, and
+the baked path is absolute. These are the only transforms, and
 they exist so the _project_ config can stay clean and edit-friendly while the
 hidden cache copy still runs. Docker cannot conditionally skip a `COPY`, and the
 Dockerfile needs `scripts/bashrc-additions.sh` at build time in both modes, so
@@ -322,7 +325,8 @@ runs on the _host_, the config references the script via
 `${localWorkspaceFolder}/.devcontainer/initialize-command.sh` — correct for a
 project whose own `.devcontainer/` holds it; in the zero-config path, where the
 workspace is the user's project (no `.devcontainer/`),
-`materializeDefaultConfig` rewrites that one host path to the cache copy. This
+`materializeDefaultConfig` rewrites that one host path to the cache copy (the
+keyed one it will end up in, not the staging directory it is written to). This
 is the _only_ transform applied to the materialized config. `devc` also calls
 `ensureClaudeSeedDir` on every `up`, which owns what a shell one-liner cannot:
 the not-a-directory guard and the created-it-just-now notice — so in the
@@ -365,6 +369,11 @@ colliding with other `devc` tooling; that is gone, and any doc still saying
 materialized directly (embedded assets → a cache dir passed to
 `devcontainer up --config`). There is no user-editable global template directory
 in this version; customization happens per-project via `devc config`.
+(Superseded twice since: `~/.config/devc/templates/` is that global overlay, and
+the cache dir is now content-addressed — `~/.cache/devc/default-<key>/`, keyed on
+the bundled tree, the templates overlay and the bridge flag, written once per
+distinct key and never rewritten. See
+[`../archived/devc-core-consumer-prep.md`](../archived/devc-core-consumer-prep.md).)
 
 ## First-run flow
 
