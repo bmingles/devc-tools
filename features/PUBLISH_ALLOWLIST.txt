@@ -9,7 +9,9 @@
 # directory, and this file lives at the collection root, outside every Feature directory — it
 # is never part of a published artifact. See features/README.md#the-publish-allowlist.
 
+agents
 bash-config
 devc-bridge
+git-container-config
 node-nvmrc
-shell-dirs
+project-hook
