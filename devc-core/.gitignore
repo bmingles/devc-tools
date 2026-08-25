@@ -3,3 +3,6 @@
 
 # npm dependencies (@devcontainers/cli, jsonc-parser, esbuild, typescript)
 /node_modules/
+
+# `npm pack` output — built on demand to test a consumer before publishing
+*.tgz
