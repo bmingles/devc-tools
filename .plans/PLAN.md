@@ -63,15 +63,6 @@ manifest contracts below already says so. Bump a Feature's `version` in the
 commit that changes it; a push to `main` under `features/` publishes it from its
 own matrix job.
 
-- [feature-claude-config](feature-claude-config.md) — the largest split, and the
-  only plan with a question that **must be measured before it can be finished**:
-  whether `${localWorkspaceFolderBasename}` substitutes inside Feature `mounts`.
-  If it does, the two per-workspace volumes move into the Feature; if it does
-  not, declaring them would give every project **one shared** Claude auth/history
-  volume — worse than declaring nothing. `${localEnv:HOME}` is measured working,
-  but that is a different variable class, so the plan says measure it rather than
-  reason about it. The `devc:seed-link` block is copied verbatim so
-  `devc/tests/seed_link_test.sh` runs against the Feature unchanged.
 - [feature-project-hook](feature-project-hook.md) — the smallest of the set, and
   the only one with **no options and no host-coupled half at all**: it reads the
   workspace and runs the project's own `devc-post-create.sh`, so `{}` is the
@@ -186,6 +177,82 @@ own matrix job.
   strings do (side-stepped here by writing the `mounted_identity` fixture to
   a fixed absolute path instead of a workspace-relative one, so the scenario
   does not depend on the answer).
+
+- [feature-claude-config](archived/feature-claude-config.md) — ✅ Done, safe
+  path. `features/claude-config/` installs the Claude Code CLI (and optionally
+  the GitHub Copilot CLI) at build time, as the remote user into
+  `~/.local/bin` — copied from `devc-core/default/Dockerfile`'s two RUN lines
+  (the plan's cited `devc/default/Dockerfile` had already become
+  `devc-core/default/` by the time this was implemented, same rename
+  `feature-git-config` already recorded) — and at create time wires
+  `~/.claude`/`~/.claude.json` to whatever persistence and seed the consumer
+  has mounted. A bare `{}` installs the Claude CLI and does nothing else: no
+  seed linking (`seedDir` empty), `~/.claude.json` untouched (`claudeJsonDir`
+  empty), Copilot absent (`installCopilotCli` defaults false). The
+  `devc:seed-link` block is copied verbatim from
+  `devc-core/default/scripts/agents-setup.sh`, parameterized by SEED/CLAUDE_DIR
+  exactly as it is there, so `devc/tests/seed_link_test.sh` runs against both
+  copies unmodified.
+
+  **The plan's one must-measure item could not be measured — no Docker in this
+  environment either** — so the safe path it specifies for that case was
+  taken rather than guessed: **no `mounts` are declared.** Whether
+  `${localWorkspaceFolderBasename}` substitutes inside a Feature's own
+  `mounts` (open question 2) decides whether devc's two per-workspace
+  volumes (`claude-code-config-*`, `claude-json-*`) can move into the Feature
+  self-sufficiently, or would instead give every project **one shared** Claude
+  auth/history volume if the answer turns out to be no — worse than declaring
+  nothing. The README carries the exact two-volume recipe as a paste instead
+  of a default. Open question 3 (whether a first-use empty named volume
+  mounted over a build-time-created, user-owned `claudeDir` inherits that
+  ownership) is likewise unmeasured; `post-create.sh` keeps the
+  belt-and-braces `sudo chown` regardless, per the plan's own instruction that
+  this step is required independent of the answer. Both recorded as an
+  explicit unmeasured note in
+  [design/devc-feature-split.md](design/devc-feature-split.md) rather than
+  guessed at or silently dropped.
+
+  Verified here, offline: `devc/tests/seed_link_test.sh` against both copies
+  (18 checks each, unmodified — the drift guard); new
+  `test/install_options_test.sh` (40 checks: the real `install.sh` run
+  repeatedly with `curl` and `runuser` stubbed on `PATH`, covering option
+  baking including `claudeDir`'s empty-default resolution to
+  `$_REMOTE_USER_HOME/.claude`, the path-option injection guard across all
+  three path options, the already-installed idempotent skip via a real
+  `command -v claude` guard — which needed the test's own `PATH` scrubbed of
+  this devcontainer's real `claude`/`copilot`, since this Feature's own test
+  suite runs inside a container that already has both — and that a failed
+  download fails the build); new `test/claude_json_test.sh` (24 checks: the
+  real, installed `post-create.sh` run against a temp `HOME` with `stat` and
+  `sudo` stubbed, covering the ownership-repair step and the
+  `~/.claude.json` seed/symlink/idempotence, including both with and without
+  `sudo` on `PATH`). `tests/features_test.sh` (6 Features in scope — the
+  collection walk picked up the new directory with no edit) and
+  `deno fmt --check` (163 files) both pass. **A deliberate break was run to
+  confirm the idempotence checks have teeth**: removing claude.json's
+  create-only guard so every run re-seeds `{}` fails exactly the 2 checks
+  that assert a prior run's own edits survive a second one.
+
+  **Not verified here (no Docker):** every `devcontainer features test`
+  scenario as a real container. All three are written — the default `test.sh`
+  is the bare `{}` case (asserting the baked defaults, `claude` on `PATH`
+  and executable, `~/.claude` owned by the remote user, nothing linked,
+  `~/.claude.json` untouched, `copilot` absent), and `test/scenarios.json`
+  adds `with_seed_and_json` (a seed and a claude.json directory written into a
+  fixed container path by the scenario's own `onCreateCommand` — the same
+  technique `git-container-config`'s `mounted_identity` scenario uses to
+  stand in for a mount a Feature cannot declare — asserting top-level seed
+  files land as symlinks, a seed subdirectory does not, and `~/.claude.json`
+  becomes a symlink reading back `{}`) and `with_copilot`
+  (`installCopilotCli: true` puts `copilot` on `PATH` alongside `claude`) —
+  but none has been run. What that leaves unmeasured, specifically: the image
+  build itself (the root/remote-user CLI-install split, and whether a real
+  `su`/`runuser` behaves the way the offline harness's stub only approximates),
+  the two open questions above, and — if a future measurement adds the two
+  volumes — whether two containers from different workspace folders actually
+  get different ones. `version` is `0.1.0` and `PUBLISH_ALLOWLIST.txt` is
+  untouched, so this publishes nothing; `devc-core/default/` and
+  `features/git-container-config/` are unchanged, per copy-don't-move.
 
 - [devc-core-consumer-prep](archived/devc-core-consumer-prep.md) — ✅ Done.
   Four changes to `devc-core/`, all falling out of its first out-of-tree
