@@ -12,3 +12,4 @@
 bash-config
 devc-bridge
 node-nvmrc
+shell-dirs
