@@ -63,14 +63,6 @@ manifest contracts below already says so. Bump a Feature's `version` in the
 commit that changes it; a push to `main` under `features/` publishes it from its
 own matrix job.
 
-- [feature-git-config](feature-git-config.md) — LFS filters,
-  `worktree.useRelativePaths` and `safe.directory` are pure container scope and
-  become the Feature — three of the four settings, working from a bare `{}`. The
-  fourth, your **identity**, is the one thing here a container genuinely cannot
-  invent: `user.name`/`user.email` live on the host. A Feature can neither read
-  nor mount them, but a consumer's `initializeCommand` + read-only bind can, so
-  the README ships that recipe with the devc paths taken out. The seam is a dumb
-  `identityIncludePath` option the Feature never parses.
 - [feature-claude-config](feature-claude-config.md) — the largest split, and the
   only plan with a question that **must be measured before it can be finished**:
   whether `${localWorkspaceFolderBasename}` substitutes inside Feature `mounts`.
@@ -112,6 +104,88 @@ own matrix job.
   release.
 
 ### Completed
+
+- [feature-git-config](archived/feature-git-config.md) — ✅ Done.
+  `features/git-container-config/` re-applies, on every container create, the
+  user-scope git settings a devcontainer needs and cannot keep: LFS filters for
+  the remote user, `worktree.useRelativePaths`, `safe.directory`, and an
+  `include.path` to a mounted identity file. A bare `{}` applies the first
+  three — pure container scope — and the fourth, `identityIncludePath`, is a
+  dumb path option the Feature never reads or parses; `install.sh` (root,
+  build time) bakes all five options into `post-create.sh`, which the
+  manifest's `postCreateCommand` runs **as the remote user** at create time —
+  never root, since `git config --global` writes `$HOME/.gitconfig` and the
+  whole bug class here is settings landing in `/root/.gitconfig`. Copied from
+  `devc-core/default/scripts/git-setup.sh` (the plan's cited
+  `devc/default/scripts/git-setup.sh` had already become
+  `devc-core/default/` by the time this was implemented; the Feature's README
+  and this entry use the real path), which keeps running unchanged, per
+  copy-don't-move. Not added to `features/PUBLISH_ALLOWLIST.txt` — this
+  Feature does not publish yet.
+
+  **A real bug was found and fixed while verifying the README's
+  `initializeCommand` recipe** (the one a non-devc consumer pastes) against a
+  throwaway `$HOME`: as first written, it piped `git config --get user.name`
+  into `xargs -I{}`, and `xargs` applies its own quote parsing by default — a
+  name containing an apostrophe (`O'Brien`, not an edge case) or a `"`
+  silently lost everything from that character onward
+  (`xargs: unmatched single quote`), with the recipe's own `exit 0` masking
+  the failure. Fixed to `git config --null --get ... | xargs -r -0 -I{} ...`,
+  which passes the value through with no shell-style interpretation at all;
+  re-verified against `Jane "JD" O'Brien #1`, a bare `\`, and a `;`, each read
+  back byte-for-byte, plus the plain-identity and no-identity cases, all
+  exiting 0. devc's own `initialize-command.sh` never had this bug — it
+  captures into a shell variable instead of piping through `xargs` — so the
+  README now says "equivalent", not "identical", for the two extractions.
+
+  Verified here, offline: `test/git_config_test.sh` (new — the real
+  `install.sh` installs the real `post-create.sh` into a temp `SHARE_DIR`,
+  then the installed hook runs against a temp `HOME` with `GIT_CONFIG_GLOBAL`
+  isolating every read and write, plus `GIT_CONFIG_NOSYSTEM=1` and a `cd`
+  away from this repo's own working tree — necessary because the hook's
+  identity check deliberately has no `--global` flag and would otherwise
+  resolve this repo's own local git identity instead of the case's isolated
+  one). 12 cases, 40 checks: the bare hostile default (no identity, no
+  git-lfs on `PATH`, both warnings on stderr, exit 0); git-lfs present via a
+  stub (filters land, `--skip-smudge` on by default); `lfsSkipSmudge=false`;
+  `lfsFilters=false` (git-lfs never invoked, no warning — an opt-out, not a
+  misconfiguration); `worktreeRelativePaths=false` (key left unset, not set
+  to `false`); `safeDirectory=""` (setting omitted entirely) and a non-default
+  value passed through as-is; an identity file that exists (included first,
+  the container's own settings still win, no missing-identity warning); a
+  name containing `#`, `"` and `'` surviving the include verbatim; a missing
+  identity file warning by name and still exiting 0; and idempotence across a
+  second run and five runs (no duplicate `include.path` or `safe.directory`).
+  **A deliberate break was run to prove the idempotence checks are checks, as
+  this repo's convention asks**: swapping `safe.directory`'s `--replace-all`
+  for a plain `--add` reintroduces duplicates across reruns and fails exactly
+  those 2 checks. `tests/features_test.sh` (5 Features in scope — the
+  collection walk picked the new directory up with no edit) and
+  `deno fmt --check` (160 files) both pass.
+
+  **Not verified here (no Docker):** every `devcontainer features test`
+  scenario as a real container. All three are written — the default `test.sh`
+  is the bare `{}` case (asserting the baked defaults and, via a manual
+  second invocation of the already-run hook, both warning paths and
+  `safe.directory` idempotence against the **remote user's** real
+  `~/.gitconfig`), and `test/scenarios.json` adds `with_git_lfs` (the
+  upstream `ghcr.io/devcontainers/features/git-lfs` Feature installed
+  alongside; asserts `filter.lfs.clean`/`smudge`/`process` for the remote
+  user, `--skip` present) and `mounted_identity` (an identity file written
+  directly into a fixed container path by the scenario's own
+  `onCreateCommand` — the same technique `shell-dirs`' `both_layers` scenario
+  uses to stand in for a mount a Feature cannot declare — asserting the
+  include resolves **and** that the container's own `safe.directory` wins
+  over the value the identity file also sets, which is the whole reason the
+  include runs first). None has been run, so what remains open is the image
+  build itself (the `chown`-free root/remote-user split has never been
+  exercised against a real container), whether `git-container-config` reaches
+  its manifest options as documented CLI env-var names in practice, and
+  whether a scenario `features` option value actually substitutes
+  `${containerWorkspaceFolder}`-style expressions the way `onCreateCommand`
+  strings do (side-stepped here by writing the `mounted_identity` fixture to
+  a fixed absolute path instead of a workspace-relative one, so the scenario
+  does not depend on the answer).
 
 - [devc-core-consumer-prep](archived/devc-core-consumer-prep.md) — ✅ Done.
   Four changes to `devc-core/`, all falling out of its first out-of-tree
