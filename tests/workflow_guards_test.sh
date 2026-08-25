@@ -131,6 +131,27 @@ check 'publish-feature.yml, devc/deno.json and devc-core/package.json pin the sa
   pins_agree
 
 echo
+echo 'the project-hook Feature devc injects is pinned to its own manifest version'
+# devc contributes PROJECT_HOOK_FEATURE to every container it starts, unlike every other
+# Feature reference in the repo — a comment saying "keep these in step" is how this drifts, and
+# a drifted pin here is invisible until someone bumps the Feature's version and devc keeps
+# injecting the old one. See .plans/archived/devc-inject-project-hook.md.
+project_hook_pin_agrees() {
+  local overlay manifest
+  overlay="$(grep -A1 '^export const PROJECT_HOOK_FEATURE' devc-core/overlay.ts \
+    | sed -n "s/.*ghcr.io\/bmingles\/devc-tools\/project-hook:\([^']*\)'.*/\1/p")"
+  manifest="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' \
+    features/project-hook/devcontainer-feature.json)"
+  [ -n "$overlay" ] || { echo '       (no PROJECT_HOOK_FEATURE pin in devc-core/overlay.ts)'; return 1; }
+  [ -n "$manifest" ] || { echo '       (no "version" in features/project-hook/devcontainer-feature.json)'; return 1; }
+  [ "$overlay" = "$manifest" ] && return 0
+  echo "       (devc-core/overlay.ts pins $overlay, features/project-hook/devcontainer-feature.json is $manifest)"
+  return 1
+}
+check 'devc-core/overlay.ts PROJECT_HOOK_FEATURE and the manifest version agree' \
+  project_hook_pin_agrees
+
+echo
 echo 'both workflows still declare the dry_run input they are gated on'
 for f in .github/workflows/release.yml .github/workflows/publish-feature.yml; do
   check "$(basename "$f") declares dry_run" grep -q '^      dry_run:' "$f"

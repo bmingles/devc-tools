@@ -20,9 +20,9 @@ bash tests/install_test.sh install.sh                              # ALL PASS
 bash tests/workflow_guards_test.sh                                 # ALL PASS
 bash tests/features_test.sh                                        # ALL PASS
 (cd devc && for t in seed_link:default/scripts/agents-setup.sh \
-                     shell_dirs:default/scripts/bashrc-additions.sh \
-                     project_hook:default/scripts/project-hook.sh; do
+                     shell_dirs:default/scripts/bashrc-additions.sh; do
   bash "tests/${t%%:*}_test.sh" "${t#*:}"; done)
+bash devc/tests/project_hook_test.sh features/project-hook/post-create.sh    # ALL PASS
 bash features/devc-bridge/test/install_link_test.sh                # ALL PASS
 ```
 
@@ -388,3 +388,52 @@ whichever process ran last.
 same against a project that has its own `.devcontainer/` (which never touches
 the cache at all). Byte-identical output vs. `$old` was already verified without
 a daemon, apart from `spawn docker ENOENT` stack-trace line numbers.
+
+---
+
+## 8. `devc-inject-project-hook` — Docker host
+
+From `.plans/archived/devc-inject-project-hook.md`. Everything before `devcontainer up`
+actually runs is exercised by `deno task test`; these are the items that need a
+real daemon.
+
+- [ ] **Project mode, the case this plan exists for.** A repo with its own
+      `.devcontainer/devcontainer.json` that has never heard of devc, plus an
+      executable `.devc/devc-post-create.sh`. `devc up` runs it. The project's
+      `.devcontainer/` is byte-identical afterwards (`git diff` empty, or a
+      `diff` against a pre-`up` copy).
+- [ ] **Zero-config.** The hook still runs, exactly once — have it `>>` append
+      rather than `>` touch a marker file, so a double-run would be visible.
+- [ ] **Ordering.** A hook that records `git config --get user.email` and
+      whether `~/.claude` exists sees both already set up — proving devc's
+      `onCreateCommand` (agents-setup, git-setup, bashrc-additions) really
+      precedes the project-hook Feature's `postCreateCommand`.
+- [ ] **The double-install case.** A project declaring
+      `"ghcr.io/bmingles/devc-tools/project-hook:0.2.0": {}` in its own
+      `features` while devc injects `:0.1.0`. The hook runs **once**, and
+      `devcontainer up`'s output installs exactly one `project-hook`. (This is
+      the case that proves `withBaselineFeatures`' name-match skip is doing
+      real work — the pinned CLI dedupes `--additional-features` against a
+      config's `features` by exact id string, so two different tags would
+      otherwise both install.)
+- [ ] **`baselineFeatures: false`.** Set in a `devc.json` overlay — the hook
+      does not run, and `devcontainer up`'s verbose output shows no
+      `project-hook` install at all.
+- [ ] **`devc init` output runs without devc.** Scaffold a project with
+      `devc init`, then bring it up with a plain `devcontainer up` (no `devc`
+      on `PATH`) and confirm the hook still runs — the invariant the bundled
+      `devcontainer.json`'s own `features` entry exists to protect.
+- [ ] **Does an existing container pick this up?** Bring up a project on the
+      version of devc from before this change, then `devc up` again on this
+      branch with no `--rebuild`. Note whether the container recreates on its
+      own (a merged config gaining a Feature may or may not force it) — if not,
+      that is a README line (`devc up --rebuild` needed once), not a bug.
+- [ ] **Rebuild churn on first upgrade.** Confirm the image gains the
+      `project-hook` Feature layer exactly once — a second `up` should not
+      re-pull or re-build — and that `ensureDefaultConfig`'s content-addressed
+      cache settles on one new key rather than thrashing.
+- [ ] **Offline builds.** A project-mode repo whose `devcontainer.json`
+      declares no Features today now pulls `project-hook` from ghcr.io at
+      build time. Confirm a cached image does not re-pull, and that
+      `baselineFeatures: false` is a working escape hatch for an air-gapped
+      build.

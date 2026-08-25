@@ -9,57 +9,56 @@ publish matrix from the collection rather than naming its members, and so does
 
 ## Published Features
 
-| Feature                                                | Ref                                                | What it does                                                                                                                                                       |
-| ------------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [agents](agents/README.md)                             | `ghcr.io/bmingles/devc-tools/agents`               | Installs coding-agent CLIs (Claude Code, optionally Copilot); wires `~/.claude`/`~/.claude.json` to whatever persistence and seed the consumer has mounted.        |
-| [bash-config](bash-config/README.md)                   | `ghcr.io/bmingles/devc-tools/bash-config`          | Sources `bashrc_*.sh` from `~/.bashrc` out of two fixed directories.                                                                                               |
-| [devc-bridge](devc-bridge/README.md)                   | `ghcr.io/bmingles/devc-tools/devc-bridge`          | Installs the devc-bridge client so container code can invoke host commands.                                                                                        |
-| [git-container-config](git-container-config/README.md) | `ghcr.io/bmingles/devc-tools/git-container-config` | Re-applies the user-scope git settings a devcontainer needs and cannot keep — LFS filters, `worktree.useRelativePaths`, `safe.directory`, and an identity include. |
-| [node-nvmrc](node-nvmrc/README.md)                     | `ghcr.io/bmingles/devc-tools/node-nvmrc`           | Makes the Node version a workspace pins in `.nvmrc` the one every process in the container gets.                                                                   |
-| [project-hook](project-hook/README.md)                 | `ghcr.io/bmingles/devc-tools/project-hook`         | On every container create, runs the project's own `devc-post-create.sh` if it has one — `.devc/` first, then `.devcontainer/`, first hit wins.                     |
-| [shell-dirs](shell-dirs/README.md)                     | `ghcr.io/bmingles/devc-tools/shell-dirs`           | Sources every `*.sh` in a project (and optionally a personal) directory in every interactive shell.                                                                |
+| Feature                                                | Ref                                                | What it does                                                                                                                                                                                                                      |
+| ------------------------------------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [agents](agents/README.md)                             | `ghcr.io/bmingles/devc-tools/agents`               | Installs coding-agent CLIs (Claude Code, optionally Copilot); wires `~/.claude`/`~/.claude.json` to whatever persistence and seed the consumer has mounted.                                                                       |
+| [bash-config](bash-config/README.md)                   | `ghcr.io/bmingles/devc-tools/bash-config`          | Sources `bashrc_*.sh` from `~/.bashrc` out of two fixed directories.                                                                                                                                                              |
+| [devc-bridge](devc-bridge/README.md)                   | `ghcr.io/bmingles/devc-tools/devc-bridge`          | Installs the devc-bridge client so container code can invoke host commands.                                                                                                                                                       |
+| [git-container-config](git-container-config/README.md) | `ghcr.io/bmingles/devc-tools/git-container-config` | Re-applies the user-scope git settings a devcontainer needs and cannot keep — LFS filters, `worktree.useRelativePaths`, `safe.directory`, and an identity include.                                                                |
+| [node-nvmrc](node-nvmrc/README.md)                     | `ghcr.io/bmingles/devc-tools/node-nvmrc`           | Makes the Node version a workspace pins in `.nvmrc` the one every process in the container gets.                                                                                                                                  |
+| [project-hook](project-hook/README.md)                 | `ghcr.io/bmingles/devc-tools/project-hook`         | On every container create, runs the project's own `devc-post-create.sh` if it has one — `.devc/` first, then `.devcontainer/`, first hit wins. **devc contributes this one to every container it starts by default** — see below. |
+| [shell-dirs](shell-dirs/README.md)                     | `ghcr.io/bmingles/devc-tools/shell-dirs`           | Sources every `*.sh` in a project (and optionally a personal) directory in every interactive shell.                                                                                                                               |
 
 The tag tracks **each Feature's own** version line: `:0` while that Feature is
 pre-1.0, `:1` at its first 1.x release. It is not the repo's version — see
 [Versions](#versions).
 
-`node-nvmrc` is **published and public** — `0.1.0` pushed `0`, `0.1`, `0.1.0` and
-`latest`, and an unauthenticated pull resolves, so the `:0` refs in the tables
-above and in `devc/README.md` work today. `devc-bridge` is on the publish
-allowlist but **not published yet**: it pins `DEVC_TOOLS_RELEASE='v0.1.0'`, and
-until that release is tagged its publish job fails the pin guard by design.
-Nothing else is blocked by that — see [Versions](#versions) for why each Feature
-publishes on its own.
-
-`shell-dirs`, `bash-config`, `git-container-config`, `agents` and
-`project-hook` are **not on the publish allowlist** — all five are still under
-active development and deliberately held back from ghcr.io. `project-hook`'s
-offline drift-guard harness is green against both copies (see its own
-README), but every container-dependent validation item is unverified in an
-environment with no Docker, so it is held back the same way the other four
-are. See [The publish allowlist](#the-publish-allowlist).
+`node-nvmrc`, `agents`, `bash-config`, `git-container-config` and
+`project-hook` are **published and public** — an unauthenticated pull
+resolves each, so the `:0` refs in the tables above and in `devc/README.md`
+work today. `project-hook` is pinned at an exact version (`0.1.0`) rather than
+`:0` when devc injects it — see `devc-core/overlay.ts`'s `PROJECT_HOOK_FEATURE`
+— because that injection reaches every container devc starts, with no opt-in
+anywhere; a manual `"project-hook": {}` in your own config still floats on
+`:0` like any other Feature here. `devc-bridge` is on the publish allowlist
+but **not published yet**: it pins `DEVC_TOOLS_RELEASE='v0.1.0'`, and until
+that release is tagged its publish job fails the pin guard by design.
+`shell-dirs` is **not on the publish allowlist** — still under active
+development and deliberately held back from ghcr.io. See
+[The publish allowlist](#the-publish-allowlist), and
+[Versions](#versions) for why each Feature publishes on its own.
 
 **`bash-config` supersedes `shell-dirs`**, and the two are not meant to be
 enabled together: they write different blocks, so a container with both sources
 its project directory twice. `shell-dirs` stays in the tree until `bash-config`
-has been verified under Docker — retiring it, and swapping devc's own baseline
-onto a published Feature, are later plans. The difference is structural:
-`shell-dirs` keeps its sourcing loop _inside_ `~/.bashrc` and has both halves of
-the Feature rewrite lines within it, while `bash-config` puts a static
-one-line block in `~/.bashrc` naming two fixed container directories, so
-nothing rewrites anything. See
+has been verified under Docker — retiring it is a later plan. The difference
+is structural: `shell-dirs` keeps its sourcing loop _inside_ `~/.bashrc` and
+has both halves of the Feature rewrite lines within it, while `bash-config`
+puts a static one-line block in `~/.bashrc` naming two fixed container
+directories, so nothing rewrites anything. See
 [bash-config/README.md](bash-config/README.md#relationship-to-shell-dirs).
 
-**Do not enable `project-hook` in a devc container until devc's own copy of
-the same script is retired.** devc's baseline still runs
-`devc-core/default/scripts/project-hook.sh` on every create; a devc container
-that also enables the `project-hook` Feature runs the project's own
-`devc-post-create.sh` **twice**. Unlike `bash-config`/`shell-dirs`, there is
-no guard available here — the sourcing-idempotence trick those two use
-(`_DEVC_SHELL_DIRS_DONE`) works because both copies run inside one shell,
-while these are two separate create-time processes, with the Feature's copy
-running first and unable to detect that devc's own copy has not run yet. See
-[project-hook/README.md](project-hook/README.md#the-double-run-hazard--read-this-before-enabling-in-a-devc-container).
+**`project-hook` is the one Feature devc contributes to every container it
+starts, with no opt-in.** `devc up` adds it to whatever `devcontainer.json` is
+in play via `--additional-features`; devc's own former copy of the same
+script (`devc-core/default/scripts/project-hook.sh`) is retired, so there is
+now exactly one copy to run and no double-run hazard. Declaring the Feature
+yourself, under any tag, replaces devc's injected entry rather than adding a
+second one — see
+[project-hook/README.md](project-hook/README.md#devc-includes-this-automatically)
+and `devc/README.md`'s
+[Project post-create hook](https://github.com/bmingles/devc-tools/blob/main/devc/README.md#project-post-create-hook-devc-post-createsh)
+section.
 
 ## Layout
 

@@ -1,6 +1,11 @@
 import { assertEquals } from 'jsr:@std/assert@^1';
 import { buildUpArgs } from '../container.ts';
-import { emptyOverlay, loadMergedOverlay } from '../overlay.ts';
+import {
+  emptyOverlay,
+  loadMergedOverlay,
+  PROJECT_HOOK_FEATURE,
+  withBaselineFeatures,
+} from '../overlay.ts';
 import { withTemp } from './helpers.ts';
 
 const BASE = {
@@ -54,6 +59,7 @@ Deno.test("overlay args are appended after devc's own args", () => {
         mounts: ['type=bind,source=/a,target=/b'],
         additionalFeatures: { 'ghcr.io/x/rust:1': { version: 'latest' } },
         remoteEnv: { A: '1' },
+        baselineFeatures: true,
       },
     }),
     [
@@ -120,6 +126,7 @@ Deno.test('buildUpArgs substitutes mounts against the pre-up containerWorkspaceF
         ],
         additionalFeatures: {},
         remoteEnv: {},
+        baselineFeatures: true,
       },
     }),
     [
@@ -130,4 +137,35 @@ Deno.test('buildUpArgs substitutes mounts against the pre-up containerWorkspaceF
       'type=bind,source=/home/me/src/p,target=/workspaces/outer/wt/self',
     ],
   );
+});
+
+// The end-to-end shape startContainer relies on: withBaselineFeatures runs first, and its
+// result is what buildUpArgs turns into --additional-features — the argv devcontainer up
+// actually sees for a project that declares nothing about project-hook itself.
+Deno.test("buildUpArgs emits the injected baseline Feature's --additional-features", () => {
+  const effective = withBaselineFeatures(emptyOverlay(), []);
+  assertEquals(
+    buildUpArgs({ ...BASE, overlay: effective }),
+    [
+      'up',
+      '--workspace-folder',
+      '/home/me/src/p',
+      '--additional-features',
+      JSON.stringify({ [PROJECT_HOOK_FEATURE]: {} }),
+    ],
+  );
+});
+
+// declaredInConfig (rule 3) suppresses the injection before buildUpArgs ever sees it, so the
+// argv carries no --additional-features at all — proving the skip happens upstream, not that
+// the CLI happens to dedupe it away.
+Deno.test('buildUpArgs emits nothing extra when the in-play config already declares project-hook', () => {
+  const effective = withBaselineFeatures(emptyOverlay(), [
+    'ghcr.io/bmingles/devc-tools/project-hook:0.2.0',
+  ]);
+  assertEquals(buildUpArgs({ ...BASE, overlay: effective }), [
+    'up',
+    '--workspace-folder',
+    '/home/me/src/p',
+  ]);
 });

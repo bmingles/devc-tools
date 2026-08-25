@@ -8,6 +8,7 @@ import {
   ensureClaudeSeedDir,
   ensureDefaultConfig,
   findOwnDevcontainerConfig,
+  loadDeclaredFeatureIds,
   loadResolvedRemoteEnv,
 } from './default_config.ts';
 import { displayPath } from './config.ts';
@@ -23,6 +24,7 @@ import {
   loadMergedOverlay,
   overlayArgs,
   resolveOverlayRemoteEnv,
+  withBaselineFeatures,
 } from './overlay.ts';
 
 export type ContainerStatus = 'running' | 'stopped' | 'missing';
@@ -719,7 +721,20 @@ export async function startContainer(
     await ensureDefaultConfig(undefined, undefined, {
       bridge: declaresBridgeFeature(overlay.additionalFeatures),
     });
-  // Only pay for the git subprocesses when there is actually something to substitute.
+
+  // Devc's own baseline Features (project-hook today), added under whatever the overlay and
+  // the in-play config already declare. Read after the config exists — in the zero-config path
+  // it was just materialized above — since a Feature the config declares itself must suppress
+  // devc's injected one.
+  const declaredFeatureIds = await loadDeclaredFeatureIds(configPath);
+  const effectiveOverlay = withBaselineFeatures(overlay, declaredFeatureIds);
+
+  // `isEmptyOverlay(overlay)`, deliberately NOT `effectiveOverlay`: after baseline injection the
+  // overlay is (almost) never empty, so testing the effective one would make this branch dead
+  // and every `up` — and every `devc exec`, which goes through `startContainer` — would pay for
+  // `computeContainerWorkspaceFolder`'s git subprocesses forever. See `isEmptyOverlay`'s own doc
+  // comment. Only pay for those subprocesses when the *user's* overlay has something to
+  // substitute.
   const containerWorkspaceFolder = isEmptyOverlay(overlay)
     ? ''
     : await computeContainerWorkspaceFolder(localFolder);
@@ -730,7 +745,7 @@ export async function startContainer(
     rebuild,
     noCache: opts.noCache === true,
     configArg: ownConfig === null ? configPath : null,
-    overlay,
+    overlay: effectiveOverlay,
     containerWorkspaceFolder,
   });
 

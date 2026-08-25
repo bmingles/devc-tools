@@ -63,25 +63,96 @@ manifest contracts below already says so. Bump a Feature's `version` in the
 commit that changes it; a push to `main` under `features/` publishes it from its
 own matrix job.
 
-- [devc-inject-project-hook](devc-inject-project-hook.md) — **blocked on
-  `project-hook` being published**, and the only swap in the whole split that is
-  not a manual one. devc contributes the Feature to whatever `devcontainer.json`
-  is in play, so a project-mode repo that has never heard of devc still runs its
-  `devc-post-create.sh`; the user configures nothing. It is also the swap —
-  `devc-core/default/scripts/project-hook.sh` is deleted in the same change,
-  because injecting without retiring runs a project's hook twice. Four things a
-  manual swap never has to answer, and each has a contract here: precedence, an
-  opt-out (`baselineFeatures`, the one overlay key where the user-level file
-  vetoes the project), double-install avoidance (the pinned CLI dedupes
-  `--additional-features` against `features` by **exact id string**, so `:0` and
-  `:0.1.0` both install), and lifecycle ordering (a Feature's `postCreateCommand`
-  runs before the config's, fixed by the bundled config's `postCreateCommand`
-  becoming `onCreateCommand`). Pins the Feature at an **exact version** rather
-  than `:0`, guarded the way the devcontainer CLI pin is — it is forced on every
-  container, so a bad publish would otherwise reach every user with no devc
-  release.
-
 ### Completed
+
+- [devc-inject-project-hook](archived/devc-inject-project-hook.md) — ✅ Done,
+  code complete and unit-tested; the Docker-host items in the plan's own
+  Validation list are unrun (see below). Its blocking precondition —
+  `project-hook` being published — had already cleared by the time this plan
+  was picked up: confirmed with an anonymous `ghcr.io` tag-list pull returning
+  `["0","0.1","0.1.0","latest"]`, and `agents`, `bash-config` and
+  `git-container-config` had likewise been published and added to
+  `features/PUBLISH_ALLOWLIST.txt` since [feature-project-hook](archived/feature-project-hook.md)'s
+  own entry below was written — `features/README.md` is corrected accordingly.
+  devc now contributes the `project-hook` Feature (pinned at an **exact**
+  `0.1.0`, not the floating `:0` every other bundled Feature uses — guarded by
+  a new `tests/workflow_guards_test.sh` check against the manifest's own
+  `version`) to every `devcontainer up`, via `overlay.ts`'s new
+  `withBaselineFeatures(overlay, declaredInConfig)`, called from
+  `startContainer` once the in-play config is resolved. It skips injecting
+  when the overlay already names a Feature called `project-hook`
+  (`declaresFeatureNamed`, generalized out of `declaresBridgeFeature`, which is
+  now a one-line wrapper over it) at **any** tag, or when the in-play config's
+  own `features` already does (`loadDeclaredFeatureIds`, mirroring
+  `loadResolvedRemoteEnv`'s forgiving-parse-degrades-to-`[]` shape) — closing
+  the double-install hazard the pinned CLI's exact-string
+  `--additional-features` dedupe would otherwise open. `DevcOverlay` gains a
+  fourth key, `baselineFeatures` (default `true`), the one key where
+  `mergeOverlays` is a **veto** (`user.baselineFeatures && project.baselineFeatures`)
+  rather than project-wins, stated in both the doc comment and
+  `devc/README.md`. This is also the swap:
+  `devc-core/default/scripts/project-hook.sh` is deleted, `post-create.sh`
+  drops its line, and the bundled `devcontainer.json`'s `postCreateCommand`
+  becomes `onCreateCommand` so devc's baseline (agents-setup, git-setup,
+  bashrc-additions) still precedes the Feature-declared `postCreateCommand`
+  the CLI would otherwise run first. The bundled config also gains
+  `"…/project-hook:0.1.0": {}` directly in its own `features` — not redundant
+  with injection, since it is what keeps `devc init` output (and any project
+  that copies the bundled config) standalone without devc installed;
+  `withBaselineFeatures`' config-declared rule means the two never collide.
+
+  **The named trap has its own test, and it caught a real design gap in its
+  own first draft.** `isEmptyOverlay` must be called on the user's own
+  overlay, never the post-injection effective one — after injection the
+  overlay is (almost) never empty, so testing the effective one would make the
+  `computeContainerWorkspaceFolder` skip branch dead and pay for its git
+  subprocesses on every `up`/`exec` forever, silently.
+  `devc-core/tests/start_container_trap_test.ts` proves it with no Docker: a
+  fake `DevcontainerRunner` stands in for `devcontainer up`, and a fake `git`
+  shim on `PATH` turns "did `computeContainerWorkspaceFolder` run" into an
+  observable — `--show-cdup` is the one flag only it asks for, while
+  `isGitWorktree` (which always runs) never does. **The first version of the
+  test silently passed for the wrong reason**: it exercised the zero-config
+  path, where the bundled config now declares `project-hook` in its own
+  `features`, so `withBaselineFeatures` always skips injecting it there and
+  `effective` never diverges from `overlay` — the trap would go undetected. A
+  project config that says nothing about `project-hook` is the only case where
+  injection actually adds something, which is what makes `overlay` and
+  `effective` different enough for the test to tell apart. Confirmed both
+  directions with a deliberate revert (`isEmptyOverlay(effectiveOverlay)`): the
+  test failed, naming the unwanted `--show-cdup` call; restored, green again.
+
+  Verified here, offline: `cd devc-core && deno task check && deno task test`
+  (242 passed — new cases cover baseline injection under a user's
+  `additionalFeatures`, name-match suppression at any tag, config-declared
+  suppression, the `baselineFeatures: false` veto surviving a project's
+  `true`, a non-boolean warning and defaulting rather than failing, and
+  `withBaselineFeatures` not mutating its argument; 3 pre-existing
+  `node-setup.sh` failures unrelated to this plan, confirmed via `git stash`
+  against `main` before this branch's changes); `cd devc && deno task check &&
+  deno task test` (91 passed, unaffected); `bash devc/tests/project_hook_test.sh
+  features/project-hook/post-create.sh` (8 cases, now the only copy — devc's
+  own copy is deleted); `bash tests/workflow_guards_test.sh` (the new pin
+  guard confirmed to fail, naming both values, when a deliberate break set
+  `overlay.ts`'s `PROJECT_HOOK_FEATURE` to `0.2.0` while the manifest stayed
+  `0.1.0`; restored, ALL PASS); `bash tests/features_test.sh`; `deno fmt
+  --check` (167 files).
+
+  **Not verified here (no Docker):** every Docker-dependent item in the
+  plan's own Validation list — project mode end-to-end (a repo with its own
+  `.devcontainer/devcontainer.json` and an executable
+  `.devc/devc-post-create.sh`, `.devcontainer/` byte-identical afterward),
+  zero-config running the hook exactly once, the ordering proof (a hook
+  seeing git identity and `~/.claude` already set up), the double-install
+  case (a project pinning `:0.2.0` while devc injects `:0.1.0`, hook running
+  once), `baselineFeatures: false` emitting no `--additional-features` arg,
+  and `devc init` output running the hook under a plain `devcontainer up`
+  with no devc installed. Also unmeasured, per the plan's own open
+  questions: whether an existing container picks up the injected Feature
+  without `--rebuild`, one-time rebuild churn on first upgrade, and
+  offline-build behavior with `baselineFeatures: false` as the air-gapped
+  escape hatch. All added to `docs/manual-verification.md` §8 for the next
+  Docker-host session.
 
 - [feature-project-hook](archived/feature-project-hook.md) — ✅ Done, split
   but not published. `features/project-hook/` runs the project's own
@@ -1326,5 +1397,5 @@ own matrix job.
 | `git-container-config` Feature — container-scope git settings; identity stays devc's                 | [feature-git-config](archived/feature-git-config.md)                               | complete |
 | `agents` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's (renamed from `claude-config`) | [feature-claude-config](archived/feature-claude-config.md)                         | complete |
 | `project-hook` Feature — runs the project's own `devc-post-create.sh` at create                      | [feature-project-hook](archived/feature-project-hook.md)                           | complete |
-| devc injects `project-hook` — the baseline reaches project-mode containers too                       | [devc-inject-project-hook](devc-inject-project-hook.md)                            | pending  |
+| devc injects `project-hook` — the baseline reaches project-mode containers too                       | [devc-inject-project-hook](archived/devc-inject-project-hook.md)                   | complete |
 | `node-nvmrc` 0.2.0 — `containerEnv` PATH pin for every process; drop the `cd` hook                   | [feature-node-nvmrc-container-wide](archived/feature-node-nvmrc-container-wide.md) | complete |

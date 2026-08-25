@@ -294,54 +294,65 @@ not run there at all.
 
 ## Checklist
 
-- [ ] `devc-core/default_config.ts` — `declaresFeatureNamed`,
+- [x] `devc-core/default_config.ts` — `declaresFeatureNamed`,
       `declaresBridgeFeature` reduced to a wrapper, `loadDeclaredFeatureIds`
-- [ ] `devc-core/overlay.ts` — `baselineFeatures` in `DevcOverlay`,
+- [x] `devc-core/overlay.ts` — `baselineFeatures` in `DevcOverlay`,
       `OVERLAY_KEYS`, `emptyOverlay`, the veto in `mergeOverlays`, validation and
       warning for a non-boolean; `PROJECT_HOOK_FEATURE`; `withBaselineFeatures`;
       the `isEmptyOverlay` doc note
-- [ ] `devc-core/container.ts` — the sequencing above, with the `isEmptyOverlay`
+- [x] `devc-core/container.ts` — the sequencing above, with the `isEmptyOverlay`
       trap commented at the call site
-- [ ] `devc-core/default/devcontainer.json` — the Feature in `features`;
+- [x] `devc-core/default/devcontainer.json` — the Feature in `features`;
       `postCreateCommand` → `onCreateCommand`
-- [ ] `devc-core/default/post-create.sh` — drop the `project-hook.sh` line
-- [ ] `devc-core/default/scripts/project-hook.sh` — delete
-- [ ] `devc-core/tests/overlay_test.ts` — the new key and `withBaselineFeatures`
-- [ ] `devc-core/tests/up_args_test.ts` — the emitted `--additional-features`
-- [ ] `devc-core/tests/default_config_test.ts` — the bundled config's new
+- [x] `devc-core/default/post-create.sh` — drop the `project-hook.sh` line
+- [x] `devc-core/default/scripts/project-hook.sh` — delete
+- [x] `devc-core/tests/overlay_test.ts` — the new key and `withBaselineFeatures`
+- [x] `devc-core/tests/up_args_test.ts` — the emitted `--additional-features`
+- [x] `devc-core/tests/default_config_test.ts` — the bundled config's new
       `features` entry, the `onCreateCommand` rename, the rewrite still matching
-- [ ] `tests/workflow_guards_test.sh` — the pin guard
-- [ ] `devc/README.md` — how the hook now arrives, the `baselineFeatures` key and
+- [x] `tests/workflow_guards_test.sh` — the pin guard
+- [x] `devc/README.md` — how the hook now arrives, the `baselineFeatures` key and
       its veto rule, the ordering note; drop devc's copy from the harness list
-- [ ] `features/project-hook/README.md` — replace the "do not enable this in a
+- [x] `features/project-hook/README.md` — replace the "do not enable this in a
       devc container" warning with "devc includes this automatically; declaring
       it yourself replaces devc's entry"
-- [ ] `features/README.md` — note that devc contributes this one by default
-- [ ] `docs/manual-verification.md` — a project-mode scenario
-- [ ] `.plans/PLAN.md` — register, and move
+- [x] `features/README.md` — note that devc contributes this one by default
+- [x] `docs/manual-verification.md` — a project-mode scenario
+- [x] `.plans/PLAN.md` — register, and move
       [feature-project-hook](archived/feature-project-hook.md) to Completed if it is not
       already
 
 ## Validation
 
-- [ ] `cd devc-core && deno task check && deno task test` — green, with new cases
+- [x] `cd devc-core && deno task check && deno task test` — green, with new cases
       covering: the baseline is added under a user's `additionalFeatures`; a user
       entry named `project-hook` at **any** tag suppresses devc's, and only one
       entry survives; a `features` entry in the in-play config suppresses it too;
       `baselineFeatures: false` at user level suppresses it even when the project
       says true; a non-boolean warns and is ignored; `withBaselineFeatures` does
-      not mutate its argument.
-- [ ] `cd devc && deno task check && deno task test` — green.
-- [ ] **The `isEmptyOverlay` trap has its own test**, the way `finalDir` does in
+      not mutate its argument. (242 passed, 0 new failures — 3 pre-existing
+      `node-setup.sh` failures unrelated to this plan, confirmed via `git stash`
+      against `main`.)
+- [x] `cd devc && deno task check && deno task test` — green (91 passed).
+- [x] **The `isEmptyOverlay` trap has its own test**, the way `finalDir` does in
       `ensureDefaultConfig`: with no `devc.json` anywhere, `startContainer` must
       not call `computeContainerWorkspaceFolder`. Reverting the call site to
       `isEmptyOverlay(effective)` must make exactly that test fail — a test that
       does not fail when the trap is reintroduced has not earned its place.
-- [ ] `bash devc/tests/project_hook_test.sh features/project-hook/post-create.sh`
-      — still green, now the only copy of the block.
-- [ ] `bash tests/workflow_guards_test.sh` — the new pin guard fails when the
-      Feature's `version` and `PROJECT_HOOK_FEATURE` disagree.
-- [ ] `bash tests/features_test.sh` — green.
+      `devc-core/tests/start_container_trap_test.ts`, added — a fake
+      `DevcontainerRunner` plus a fake `git` on PATH that logs its args, in
+      **project mode** (zero-config can't distinguish the two call sites, since
+      the bundled config already declares project-hook itself, so injection is a
+      no-op there — see the test's own comment). Confirmed both ways: passes
+      against the fix, fails naming the unwanted `--show-cdup` invocation when
+      the call site is reverted to `isEmptyOverlay(effectiveOverlay)`.
+- [x] `bash devc/tests/project_hook_test.sh features/project-hook/post-create.sh`
+      — still green, now the only copy of the block. (8 cases, all ok.)
+- [x] `bash tests/workflow_guards_test.sh` — the new pin guard fails when the
+      Feature's `version` and `PROJECT_HOOK_FEATURE` disagree. Confirmed with a
+      deliberate break (bumped the overlay.ts pin to 0.2.0 while the manifest
+      stayed 0.1.0) — the guard named both values and failed; restored, ALL PASS.
+- [x] `bash tests/features_test.sh` — green.
 - [ ] (needs Docker) **Project mode, the case this whole plan exists for**: a
       repo with its own `.devcontainer/devcontainer.json` that has never heard of
       devc, plus an executable `.devc/devc-post-create.sh`. `devc up` runs it.
@@ -363,7 +374,7 @@ not run there at all.
       project, then bring it up with a plain `devcontainer up` and confirm the
       hook still runs. This is the invariant the bundled `features` entry exists
       to protect.
-- [ ] `deno fmt --check` clean.
+- [x] `deno fmt --check` clean (167 files).
 
 ## Open questions to measure, not assume
 

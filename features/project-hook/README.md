@@ -95,43 +95,37 @@ per-package logic can do that entirely inside its own
 `devc-post-create.sh` — that is a shell script's job, not something this
 Feature needs an option for.
 
-## The double-run hazard — read this before enabling in a devc container
+## devc includes this automatically
 
-**Do not enable this Feature in a devc container yet.** During the interim,
-devc's own baseline still runs its own copy of this exact script from
-`post-create.sh`. A **devc** container that also enables `project-hook` runs
-your `devc-post-create.sh` **twice** — once from devc's baseline, once from
-this Feature.
+**`devc up` contributes this Feature to every container it starts, with no
+configuration from you.** It adds `"ghcr.io/bmingles/devc-tools/project-hook:0.1.0": {}`
+to whatever `devcontainer.json` is in play via `--additional-features` — a
+project with its own hand-written `.devcontainer/devcontainer.json` that has
+never heard of devc included. See `devc/README.md`'s [Project post-create hook](https://github.com/bmingles/devc-tools/blob/main/devc/README.md#project-post-create-hook-devc-post-createsh)
+section.
 
-Unlike `shell-dirs` (superseded by `bash-config`; see
-[../README.md](../README.md)), there is no guard available here. The
-sourcing-idempotence trick `shell-dirs`/`bash-config` use
-(`_DEVC_SHELL_DIRS_DONE`) works because both copies run inside **one shell**
-and can leave a variable for the other to see. These are two **separate
-create-time processes**, and this Feature's copy runs **first** — so it has no
-way to detect that devc's own copy has not run yet and is about to run the
-same script again.
+**Declaring it yourself replaces devc's entry, it does not add a second
+one.** devc matches by this Feature's _name_, not by exact id string: if your
+own `devcontainer.json` `features`, or a `devc.json` overlay's
+`additionalFeatures`, already names `project-hook` under any tag (`:0`, a
+pinned `:0.2.0`, …), devc steps aside rather than installing both — which
+matters because the devcontainer CLI itself dedupes `--additional-features`
+against a config's `features` by **exact id string**, so two different tags of
+the same Feature would otherwise both install and your hook would run twice.
 
-A project's `devc-post-create.sh` is arbitrary and is not guaranteed to be
-idempotent (unlike `git config` assignments, or sourcing a shell file twice),
-so this is not a caveat to work around — it is a reason not to enable this
-Feature in a devc container until devc's own copy is retired. See
-[Relationship to devc](#relationship-to-devc).
+To opt out of this (and every other Feature devc contributes on its own),
+set `"baselineFeatures": false` in a `devc.json` overlay.
 
 ## Relationship to devc
 
-**This Feature and `devc-core/default/scripts/project-hook.sh` are two files
-with the same behavior inside one fenced block, not one file.** devc's copy
-keeps running exactly as it does today — swapping devc onto this published
-Feature (and retiring devc's own copy, so the double-run above stops being
-possible) is a separate, later plan. Both this Feature's `post-create.sh` and
-devc's `project-hook.sh` carry the same `devc:project-hook` fence, kept
-byte-for-byte identical on purpose: `devc/tests/project_hook_test.sh` extracts
-that fence and runs it — unmodified — against **both** copies, so the two
-cannot silently drift apart. If you are editing "the project hook script,"
-check which one you mean: this Feature's copy is namespaced under
-`/usr/local/share/devc-features/project-hook/`, devc's own runs from
-`/usr/local/share/devc/scripts/` and writes nothing under that prefix.
+**devc no longer carries its own copy of this script.** It used to run an
+identical copy from `devc-core/default/scripts/project-hook.sh`, retired in
+the same change that started injecting this Feature (see
+`.plans/archived/devc-inject-project-hook.md`) — running both would have run your
+`devc-post-create.sh` twice. `devc/tests/project_hook_test.sh` still extracts
+the `devc:project-hook` fence from this Feature's `post-create.sh` and runs it
+directly, so the historical drift-guard shape of the test survives even though
+there is only one copy left to check it against.
 
 ## What this is not
 
@@ -148,19 +142,15 @@ Feature:
 
 ```sh
 bash devc/tests/project_hook_test.sh features/project-hook/post-create.sh
-bash devc/tests/project_hook_test.sh devc-core/default/scripts/project-hook.sh
 ```
 
-Both must pass, **unmodified**, against both copies: eight cases each — a
-`.devc/` hook running, a `.devcontainer/` hook running when `.devc/` is
-absent, `.devc/` winning when both are present and executable (no
+Eight cases: a `.devc/` hook running, a `.devcontainer/` hook running when
+`.devc/` is absent, `.devc/` winning when both are present and executable (no
 fall-through), a non-executable `.devc/` failing the create without falling
 through to `.devcontainer/`, a dangling symlink being graded as a failure
 rather than an absence, neither path present being a silent no-op, a hook
 that exits non-zero failing the block, and the hook's cwd being the project
-root regardless of the caller's own cwd. If the harness ever needs an edit to
-pass against one copy but not the other, the copy has drifted and the fix is
-the copy, not the harness.
+root regardless of the caller's own cwd.
 
 Needs Docker and a network:
 
@@ -198,8 +188,6 @@ cases are exactly what `project_hook_test.sh` covers offline above.
 
 ## Publishing
 
-This Feature is **not yet** on
+Published at `ghcr.io/bmingles/devc-tools/project-hook`, on
 [`features/PUBLISH_ALLOWLIST.txt`](../PUBLISH_ALLOWLIST.txt) — see
-[../README.md#the-publish-allowlist](../README.md#the-publish-allowlist) for
-what that gate is and isn't, and `.plans/PLAN.md` for what is still open
-before it is added.
+[../README.md#the-publish-allowlist](../README.md#the-publish-allowlist).

@@ -514,24 +514,38 @@ const BRIDGE_FENCE = 'bridge-mount';
 const BRIDGE_MOUNT_TARGET = 'target=/run/devc-bridge';
 
 /**
- * True when `additionalFeatures` opts into the devc-bridge Feature, by any spelling.
+ * True when `features` declares a Feature whose id names `name`, by any spelling.
  *
- * Matched on the id's last path segment with the tag stripped, so `…/devc-bridge`,
- * `…/devc-bridge:0`, `:1`, a pinned `:0.1.0` and a local `./features/devc-bridge` all count.
- * A registry other than ghcr.io/bmingles counts too — a Feature *named* devc-bridge needs the
- * same token mount whoever published it, and guessing otherwise would silently withhold it.
+ * Matched on the id's last path segment with the tag stripped, so `…/<name>`, `…/<name>:0`,
+ * `:1`, a pinned `:0.1.0` and a local `./features/<name>` all count. A registry other than
+ * ghcr.io/bmingles counts too — a Feature *named* `name` means the same thing whoever
+ * published it, and guessing otherwise would silently miss it.
  */
-export function declaresBridgeFeature(
-  additionalFeatures: Record<string, unknown>,
+export function declaresFeatureNamed(
+  features: Record<string, unknown>,
+  name: string,
 ): boolean {
-  return Object.keys(additionalFeatures).some((id) => {
+  return Object.keys(features).some((id) => {
     // Strip an OCI tag, but not a `:` that belongs to a path or a port.
     const colon = id.lastIndexOf(':');
     const untagged = colon >= 0 && !id.slice(colon + 1).includes('/')
       ? id.slice(0, colon)
       : id;
-    return untagged.replace(/\/+$/, '').split('/').pop() === 'devc-bridge';
+    return untagged.replace(/\/+$/, '').split('/').pop() === name;
   });
+}
+
+/**
+ * True when `additionalFeatures` opts into the devc-bridge Feature, by any spelling — a Feature
+ * *named* devc-bridge needs the token mount below regardless of who published it. A thin wrapper
+ * over {@link declaresFeatureNamed}: this call site predates the general form and keeps its own
+ * name because callers reach for "does this opt into the bridge" more directly than the general
+ * question.
+ */
+export function declaresBridgeFeature(
+  additionalFeatures: Record<string, unknown>,
+): boolean {
+  return declaresFeatureNamed(additionalFeatures, 'devc-bridge');
 }
 
 /**
@@ -745,4 +759,48 @@ export async function loadResolvedRemoteEnv(
         substituteVars(v, containerWorkspaceFolder, localWorkspaceFolder),
       ]),
   );
+}
+
+interface DevcontainerFeaturesJson {
+  features?: Record<string, unknown>;
+}
+
+/**
+ * Ids in the `features` object of the devcontainer config at `configPath` — the raw keys, with
+ * no name normalization and no substitution.
+ *
+ * Mirrors {@link loadResolvedRemoteEnv}'s treatment of a config that may be a user's own,
+ * hand-written file: forgiving JSONC parse (comments, trailing commas), and a config this
+ * cannot read degrades to **`[]`**, "nothing declared", with a `logWarning` rather than
+ * throwing. That default is deliberate, not merely convenient: skipping baseline injection
+ * whenever a config is unreadable would silently withhold devc's contributions from anyone with
+ * an exotic config, which is worse than the alternative's cost — a double-run for someone who
+ * both has a config this cannot parse *and* declares the Feature themselves.
+ */
+export async function loadDeclaredFeatureIds(
+  configPath: string,
+): Promise<string[]> {
+  let config: DevcontainerFeaturesJson | null;
+  try {
+    const text = await readFile(configPath, 'utf8');
+    const errors: ParseError[] = [];
+    config = parseJsoncLoose(text, errors, { allowTrailingComma: true }) as
+      | DevcontainerFeaturesJson
+      | null;
+    if (errors.length > 0) {
+      const [first] = errors;
+      throw new SyntaxError(
+        `JSONC parse error ${first.error} at offset ${first.offset}`,
+      );
+    }
+  } catch (err) {
+    logWarning(
+      `devc: could not read features from ${configPath} (${
+        err instanceof Error ? err.message : err
+      }) — continuing without it`,
+    );
+    return [];
+  }
+
+  return Object.keys(config?.features ?? {});
 }

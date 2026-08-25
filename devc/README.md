@@ -108,6 +108,11 @@ Notes:
   never written into the project's config. This is also where `devc config`
   writes the source/skills mounts it manages, so that flow never touches
   `.devcontainer/` either.
+- Before those flags are built, devc adds its own baseline Features (the
+  [`project-hook` hook](#project-post-create-hook-devc-post-createsh) today) to
+  `additionalFeatures`, skipping any it, your overlay, or the winning config
+  already declares by name — so `:0` and a devc-pinned exact version never both
+  install. Turn all of it off with the overlay's `"baselineFeatures": false`.
 - **exec / attach** run via `docker exec` under `remoteUser` in
   `remoteWorkspaceFolder`. `remoteEnv` is not stored on the container — it is
   applied by the _client_ per connection (VS Code to its terminals,
@@ -182,7 +187,7 @@ written into the project's `devcontainer.json`. A checkout without `devc` still
 builds and runs from the standard config; it just does not get the overlay's
 extra mounts, features and env. Un-augmented, not broken.
 
-Three optional keys, in a file that is itself optional:
+Four optional keys, in a file that is itself optional:
 
 ```jsonc
 {
@@ -196,7 +201,12 @@ Three optional keys, in a file that is itself optional:
     "ghcr.io/devcontainers/features/rust:1": { "version": "latest" }
   },
   // → --remote-env, overriding the base config's `remoteEnv` per key
-  "remoteEnv": { "MY_VAR": "value" }
+  "remoteEnv": { "MY_VAR": "value" },
+  // false disables every Feature devc contributes on its own (project-hook today — see
+  // "Project post-create hook" below). Default true. Unlike the other three keys, this one
+  // is a *veto*: a user-level `false` wins even when a project sets it back to `true` — see
+  // below.
+  "baselineFeatures": true
 }
 ```
 
@@ -226,6 +236,11 @@ Where it can live — **first hit wins per level, and the losers are not merged*
 - **User under project**: `mounts` concatenate (yours first), `remoteEnv`
   overrides per key, and `additionalFeatures` merges per feature id —
   whole-value replace, options objects are _not_ deep-merged.
+- **`baselineFeatures` is the one key where the project does not win.** The
+  other three follow "project is more specific, so it wins"; this one is
+  `user.baselineFeatures && project.baselineFeatures` — a machine owner's
+  `false` at the user level cannot be talked back on by a project's `devc.json`.
+  A project can still turn it off on its own even when the user left it on.
 - `.json` vs `.jsonc` is naming convention only; both are parsed as JSONC
   (comments, trailing commas).
 - **Substitution.** Mount specs and `remoteEnv` values resolve
@@ -234,17 +249,23 @@ Where it can live — **first hit wins per level, and the losers are not merged*
   without passing through the devcontainer CLI. `additionalFeatures` is
   deliberately left alone: the CLI merges that JSON into the config and runs its
   own substitution over it.
-- **Errors are loud.** A `devc.json` that doesn't parse fails the command,
-  naming the file — this file exists only for `devc`, and silently starting a
-  container without your mounts is worse. An unrecognized top-level key warns on
-  stderr naming the key (so a typo like `"mount"` is visible) and is otherwise
-  ignored. An empty file is simply no overlay.
+- **Errors are loud, with one exception.** A `devc.json` that doesn't parse
+  fails the command, naming the file — this file exists only for `devc`, and
+  silently starting a container without your mounts is worse. An unrecognized
+  top-level key warns on stderr naming the key (so a typo like `"mount"` is
+  visible) and is otherwise ignored. An empty file is simply no overlay. The one
+  exception is a non-boolean `baselineFeatures`, which warns and falls back to
+  the default (`true`) rather than failing the command — there is no
+  container-missing-your-mounts asymmetry to justify a hard error either way.
 - Mounts take effect at container-create time, so run `devc build` after editing
   one.
-- Only these three keys have a `devcontainer up` flag. A project needing
-  `containerEnv`, `forwardPorts`, `runArgs` and friends should run `devc init`
-  and edit its own `devcontainer.json`. There is no flag for a lifecycle command
-  either — to run something at create time, use the
+- Only `mounts`, `additionalFeatures` and `remoteEnv` have a `devcontainer up`
+  flag of their own — `baselineFeatures` has none; it is consulted before those
+  flags are built, to decide what devc adds to `additionalFeatures` on your
+  behalf. A project needing `containerEnv`, `forwardPorts`, `runArgs` and
+  friends should run `devc init` and edit its own `devcontainer.json`. There is
+  no flag for a lifecycle command either — to run something at create time, use
+  the
   [project post-create hook](#project-post-create-hook-devc-post-createsh), which
   works without a `.devcontainer/` at all.
 - `devc config` writes the `mounts` key's two managed fences here — see
@@ -293,9 +314,9 @@ surfacing later as the CLI's context-free `Unmatched argument format`.
 ## Project post-create hook: `devc-post-create.sh`
 
 The overlay covers **declarative** extension — mounts, features, env. This is the
-**imperative** half: a script devc runs at container-create time, after its own
-baseline setup. Together they let a zero-config project extend its container
-without owning a `.devcontainer/` at all.
+**imperative** half: a script that runs at container-create time, after devc's
+own baseline setup. Together they let a project extend its container without
+owning (or even being aware of) a `.devcontainer/` devc controls.
 
 Drop an executable script at either location — first hit wins, same order and
 same both-are-first-class rule as the overlay itself:
@@ -305,10 +326,23 @@ same both-are-first-class rule as the overlay itself:
 .devcontainer/devc-post-create.sh
 ```
 
-`post-create.sh` runs it as its **last** step, so devc's baseline (the `.claude`
-volume + seed links, `nvm install`, git identity) is already in place. It works
-identically in both modes: zero-config finds it through `$PROJECT_PATH`, with no
-project `.devcontainer/` involved.
+It runs via the
+[`project-hook` Feature](https://github.com/bmingles/devc-tools/tree/main/features/project-hook),
+which devc contributes to **every** container it starts — `devc up` adds it to
+whatever `devcontainer.json` is in play via `--additional-features`, with no
+configuration from you. That reaches every project devc starts, including one
+with its own hand-written `.devcontainer/devcontainer.json` that devc has never
+touched. A Feature's `postCreateCommand` runs after the base config's own
+lifecycle commands, so devc's baseline (the `.claude` volume + seed links,
+`nvm install`, git identity — all in the top-level `onCreateCommand`) is already
+in place by the time the hook runs.
+
+Turn it off with `"baselineFeatures": false` in a `devc.json` overlay — see
+[Optional overlay: `devc.json`](#optional-overlay-devcjson) — which also
+disables any other Feature devc contributes on its own. If your own
+`devcontainer.json` (or overlay `additionalFeatures`) already declares
+`project-hook` under any tag, devc's injection steps aside rather than
+installing a second copy.
 
 ```bash
 #!/bin/bash
@@ -320,8 +354,8 @@ cd tools/mycli && cargo install --path .
 The contract:
 
 - **cwd is the project root** (`$PROJECT_PATH`), so relative paths resolve
-  against the repo. Each `post-create.sh` step is a separate process, so the hook
-  establishes this itself rather than inheriting it.
+  against the repo. The Feature's own `post-create.sh` establishes this itself
+  rather than inheriting it from anything devc runs.
 - **It must be executable.** A hook that exists but is not executable — or is a
   dangling symlink — **fails the create** naming the path, rather than being
   skipped. A hook that never runs is the failure mode this is designed to
@@ -330,10 +364,10 @@ The contract:
   cannot run, devc does not quietly fall back to `.devcontainer/`'s.
 - **A nonzero exit fails the create.** The hook is invoked directly under
   `set -e`.
-- **devc never writes or reads it.** `post-create.sh` is devc's and gets
-  regenerated; the hook is yours. Like the overlay, it is equally at home
-  committed (the repo depends on devc) or gitignored (one developer's local
-  setup).
+- **devc never writes or reads it.** The Feature it runs through gets installed
+  by the devcontainer CLI, not by devc; the hook is yours. Like the overlay, it
+  is equally at home committed (the repo depends on devc) or gitignored (one
+  developer's local setup).
 - Changes take effect on the next container **create**, so run `devc build` after
   editing one.
 
@@ -640,15 +674,15 @@ cd ../devc-core && deno task check && deno task test
 # from the implementation:
 bash tests/seed_link_test.sh ../devc-core/default/scripts/agents-setup.sh      # devc:seed-link
 bash tests/shell_dirs_test.sh ../devc-core/default/scripts/bashrc-additions.sh # devc:shell-dirs
-bash tests/project_hook_test.sh ../devc-core/default/scripts/project-hook.sh   # devc:project-hook
 
 # shell_dirs_test.sh takes the script path so it can run against *both* copies of the
 # devc:shell-dirs block — devc's above, and the shell-dirs Feature's. It must pass unmodified
 # against each; if it needs changes for one of them, the two have drifted:
 bash tests/shell_dirs_test.sh ../features/shell-dirs/install.sh             # devc:shell-dirs
 
-# project_hook_test.sh takes the script path too, for the same reason — devc's copy above, and
-# the project-hook Feature's post-create.sh below. Must pass unmodified against both:
+# devc no longer carries its own copy of the project-hook block — devc contributes the
+# project-hook Feature to every container it starts instead (see devc-core/overlay.ts's
+# PROJECT_HOOK_FEATURE and withBaselineFeatures), so this is the only copy left to test:
 bash tests/project_hook_test.sh ../features/project-hook/post-create.sh       # devc:project-hook
 
 # seed_link_test.sh takes the script path too, for the same reason — devc's copy above, and the

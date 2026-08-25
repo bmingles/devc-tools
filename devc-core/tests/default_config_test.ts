@@ -1,10 +1,16 @@
-import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import {
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from 'jsr:@std/assert@^1';
 import { fromFileUrl } from 'jsr:@std/path@^1';
 import {
   declaresBridgeFeature,
+  declaresFeatureNamed,
   ensureClaudeSeedDir,
   findOwnDevcontainerConfig,
   installBundledAssets,
+  loadDeclaredFeatureIds,
   loadResolvedRemoteEnv,
   materializeDefaultConfig,
   substituteVars,
@@ -283,7 +289,6 @@ Deno.test('materializeDefaultConfig copies the embedded tree flat to cacheDir an
         'scripts/agents-setup.sh',
         'scripts/node-setup.sh',
         'scripts/git-setup.sh',
-        'scripts/project-hook.sh',
         'scripts/bashrc-additions.sh',
       ]
     ) {
@@ -292,7 +297,7 @@ Deno.test('materializeDefaultConfig copies the embedded tree flat to cacheDir an
   });
 });
 
-Deno.test('materialized (zero-config) devcontainer.json has no Feature and a top-level postCreateCommand', async () => {
+Deno.test('materialized (zero-config) devcontainer.json has no local Feature, keeps the ghcr ones, and the baseline runs via a top-level onCreateCommand', async () => {
   await withTempDir(async (cacheDir) => {
     await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
 
@@ -309,16 +314,28 @@ Deno.test('materialized (zero-config) devcontainer.json has no Feature and a top
       Object.hasOwn(dc.features, 'ghcr.io/devcontainers/features/node:1'),
       true,
     );
-    // ...and the baseline runtime runs via a top-level postCreateCommand, rewritten from the
-    // in-project workspace path to the image-baked path (the cache dir is not mounted in).
+    // ...the pinned project-hook Feature is declared here too, so `devc init` output and any
+    // project that copies this file stays standalone (see overlay.ts's PROJECT_HOOK_FEATURE)...
     assertEquals(
-      dc.postCreateCommand,
+      Object.hasOwn(
+        dc.features,
+        'ghcr.io/bmingles/devc-tools/project-hook:0.1.0',
+      ),
+      true,
+    );
+    // ...and the baseline runtime runs via a top-level **onCreateCommand** — not
+    // postCreateCommand, so it still precedes a Feature-declared postCreateCommand (the
+    // project-hook Feature's included) — rewritten from the in-project workspace path to the
+    // image-baked path (the cache dir is not mounted in).
+    assertEquals(dc.postCreateCommand, undefined);
+    assertEquals(
+      dc.onCreateCommand,
       'bash "/usr/local/share/devc/post-create.sh"',
     );
   });
 });
 
-Deno.test('canonical default devcontainer.json has no Feature and a project-relative postCreateCommand', async () => {
+Deno.test('canonical default devcontainer.json has no local Feature and a project-relative onCreateCommand', async () => {
   // The embedded source is what `devc config` writes into a project: it references the copies
   // in the project's own .devcontainer/, so edits apply on recreate. (The zero-config cache
   // rewrites this to the baked path — see the materialize test above.)
@@ -327,8 +344,12 @@ Deno.test('canonical default devcontainer.json has no Feature and a project-rela
   );
   const dc = JSON.parse(stripLineComments(text));
   assertEquals(Object.hasOwn(dc.features, './features/devc'), false);
+  // `postCreateCommand` was renamed to `onCreateCommand` (see the Ordering section of
+  // .plans/archived/devc-inject-project-hook.md); the rewrite in materializeDefaultConfig matches on the
+  // *value*, not the key, so it still finds and rewrites this regardless of the rename.
+  assertEquals(dc.postCreateCommand, undefined);
   assertEquals(
-    dc.postCreateCommand,
+    dc.onCreateCommand,
     'bash "${containerWorkspaceFolder}/.devcontainer/post-create.sh"',
   );
 });
@@ -439,7 +460,6 @@ Deno.test('materializeDefaultConfig writes the embedded tree to real disk (defau
       'scripts/agents-setup.sh',
       'scripts/node-setup.sh',
       'scripts/git-setup.sh',
-      'scripts/project-hook.sh',
       'scripts/bashrc-additions.sh',
     ]
   ) {
@@ -889,6 +909,128 @@ Deno.test('declaresBridgeFeature matches the Feature by id, whatever the tag', a
     }),
     true,
   );
+});
+
+// declaresBridgeFeature is now a one-line wrapper over the general form; this asserts that
+// wrapping held, not the matching logic itself (already covered above).
+Deno.test('declaresBridgeFeature: an alias for declaresFeatureNamed(_, "devc-bridge")', () => {
+  const features = { 'ghcr.io/bmingles/devc-tools/devc-bridge:0': {} };
+  assertEquals(
+    declaresBridgeFeature(features),
+    declaresFeatureNamed(features, 'devc-bridge'),
+  );
+});
+
+Deno.test('declaresFeatureNamed matches by name, whatever the tag or registry', async (t) => {
+  const yes = [
+    'ghcr.io/bmingles/devc-tools/project-hook',
+    'ghcr.io/bmingles/devc-tools/project-hook:0',
+    'ghcr.io/bmingles/devc-tools/project-hook:0.1.0',
+    'ghcr.io/someone-else/project-hook:1',
+    './features/project-hook',
+  ];
+  const no = [
+    'ghcr.io/devcontainers/features/node:1',
+    'ghcr.io/bmingles/devc-tools/project-hook-extra:0', // near-miss, different Feature
+    './features/devc',
+    '',
+  ];
+
+  for (const id of yes) {
+    await t.step(`matches: ${id}`, () => {
+      assertEquals(declaresFeatureNamed({ [id]: {} }, 'project-hook'), true);
+    });
+  }
+  for (const id of no) {
+    await t.step(`does not match: ${id || '(empty)'}`, () => {
+      assertEquals(declaresFeatureNamed({ [id]: {} }, 'project-hook'), false);
+    });
+  }
+
+  assertEquals(declaresFeatureNamed({}, 'project-hook'), false);
+});
+
+// --- loadDeclaredFeatureIds ------------------------------------------------------------------
+//
+// The baseline-injection half of the contract: withBaselineFeatures needs the raw ids the
+// in-play config already declares, so it can skip injecting a Feature the config names itself.
+
+Deno.test("loadDeclaredFeatureIds returns the config's raw feature ids", async () => {
+  await withTempDir(async (dir) => {
+    const path = `${dir}/devcontainer.json`;
+    await Deno.writeTextFile(
+      path,
+      JSON.stringify({
+        features: {
+          'ghcr.io/x/rust:1': { version: 'latest' },
+          'ghcr.io/bmingles/devc-tools/project-hook:0.1.0': {},
+        },
+      }),
+    );
+    assertEquals(await loadDeclaredFeatureIds(path), [
+      'ghcr.io/x/rust:1',
+      'ghcr.io/bmingles/devc-tools/project-hook:0.1.0',
+    ]);
+  });
+});
+
+Deno.test('loadDeclaredFeatureIds returns [] when the config declares no features', async () => {
+  await withTempDir(async (dir) => {
+    const path = `${dir}/devcontainer.json`;
+    await Deno.writeTextFile(path, JSON.stringify({ image: 'x' }));
+    assertEquals(await loadDeclaredFeatureIds(path), []);
+  });
+});
+
+Deno.test('loadDeclaredFeatureIds parses real JSONC: comments and trailing commas', async () => {
+  await withTempDir(async (dir) => {
+    const path = `${dir}/devcontainer.json`;
+    await Deno.writeTextFile(
+      path,
+      `{
+  // a hand-written config
+  "features": {
+    "ghcr.io/x/rust:1": {}, // trailing comma below
+  },
+}`,
+    );
+    assertEquals(await loadDeclaredFeatureIds(path), ['ghcr.io/x/rust:1']);
+  });
+});
+
+// Degrades to [] ("nothing declared") rather than throwing — deliberately, so devc still
+// injects the baseline rather than silently withholding it from a config it cannot parse. See
+// loadDeclaredFeatureIds's own doc comment for why this is the safer default than the reverse.
+Deno.test('loadDeclaredFeatureIds degrades to [] with a warning when the config cannot be read', async () => {
+  await withTempDir(async (dir) => {
+    const path = `${dir}/devcontainer.json`;
+    await Deno.writeTextFile(path, '{ not json');
+    const warnings: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => warnings.push(args.join(' '));
+    try {
+      assertEquals(await loadDeclaredFeatureIds(path), []);
+    } finally {
+      console.error = original;
+    }
+    assertEquals(warnings.length, 1);
+    assertStringIncludes(warnings[0], path);
+  });
+});
+
+Deno.test('loadDeclaredFeatureIds degrades to [] with a warning when the file does not exist', async () => {
+  await withTempDir(async (dir) => {
+    const path = `${dir}/nope/devcontainer.json`;
+    const warnings: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => warnings.push(args.join(' '));
+    try {
+      assertEquals(await loadDeclaredFeatureIds(path), []);
+    } finally {
+      console.error = original;
+    }
+    assertEquals(warnings.length, 1);
+  });
 });
 
 Deno.test('materializeDefaultConfig injects the bridge mount only when opted in', async () => {

@@ -13,8 +13,10 @@ import {
   mergeOverlays,
   MOUNT_SPEC_RE,
   overlayArgs,
+  PROJECT_HOOK_FEATURE,
   resolveOverlayRemoteEnv,
   resolveProjectOverlayTarget,
+  withBaselineFeatures,
 } from '../overlay.ts';
 import { loadResolvedRemoteEnv } from '../default_config.ts';
 import { fixture, withTemp } from './helpers.ts';
@@ -176,6 +178,7 @@ Deno.test('loadOverlayFile parses real JSONC: comments and trailing commas', asy
       mounts: ['type=bind,source=/a,target=/b'],
       additionalFeatures: {},
       remoteEnv: { FOO: 'bar' },
+      baselineFeatures: true,
     });
   });
 });
@@ -317,15 +320,183 @@ Deno.test('mergeOverlays leaves both inputs untouched', () => {
     mounts: ['u'],
     additionalFeatures: { f: 1 },
     remoteEnv: { A: 'u' },
+    baselineFeatures: true,
   };
   const project = {
     mounts: ['p'],
     additionalFeatures: { f: 2 },
     remoteEnv: { A: 'p' },
+    baselineFeatures: true,
   };
   mergeOverlays(user, project);
   assertEquals(user.mounts, ['u']);
   assertEquals(project.remoteEnv, { A: 'p' });
+});
+
+// ── baselineFeatures ────────────────────────────────────────────────────────────────────────
+
+Deno.test('baselineFeatures defaults true when the key is omitted', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/.devc/devc.json`;
+    await write(path, '{"remoteEnv":{"A":"1"}}');
+    assertEquals((await loadOverlayFile(path)).baselineFeatures, true);
+  });
+});
+
+Deno.test('baselineFeatures: false is read back as false', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/.devc/devc.json`;
+    await write(path, '{"baselineFeatures":false}');
+    assertEquals((await loadOverlayFile(path)).baselineFeatures, false);
+  });
+});
+
+// Unlike every other known key, a malformed baselineFeatures warns and falls back to the
+// default rather than failing the load — there is no container-missing-your-mounts asymmetry
+// to justify a hard error either way.
+Deno.test('a non-boolean baselineFeatures warns and defaults to true, without failing the load', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/.devc/devc.json`;
+    await write(path, '{"baselineFeatures":"nope"}');
+    let overlay = emptyOverlay();
+    const warnings = await captureStderr(async () => {
+      overlay = await loadOverlayFile(path);
+    });
+    assertEquals(warnings.length, 1);
+    assertStringIncludes(warnings[0], 'baselineFeatures');
+    assertStringIncludes(warnings[0], path);
+    assertEquals(overlay.baselineFeatures, true);
+  });
+});
+
+// The one overlay key where the user does not lose to the project: a user-level `false` is a
+// veto no project-level `true` can undo.
+Deno.test('mergeOverlays: baselineFeatures is a user-side veto, not project-wins', () => {
+  const on = {
+    mounts: [],
+    additionalFeatures: {},
+    remoteEnv: {},
+    baselineFeatures: true,
+  };
+  const off = {
+    mounts: [],
+    additionalFeatures: {},
+    remoteEnv: {},
+    baselineFeatures: false,
+  };
+
+  // User off, project on: still off.
+  assertEquals(mergeOverlays(off, on).baselineFeatures, false);
+  // User on, project off: a project can still opt itself out.
+  assertEquals(mergeOverlays(on, off).baselineFeatures, false);
+  // Both on: on.
+  assertEquals(mergeOverlays(on, on).baselineFeatures, true);
+  // Both off: off.
+  assertEquals(mergeOverlays(off, off).baselineFeatures, false);
+});
+
+Deno.test('loadMergedOverlay: a user-level baselineFeatures:false survives even when the project says true', async () => {
+  await withTemp(async (dir) => {
+    await write(`${dir}/config/devc.json`, '{"baselineFeatures":false}');
+    await write(
+      `${dir}/project/.devc/devc.json`,
+      '{"baselineFeatures":true}',
+    );
+    const overlay = await loadMergedOverlay(`${dir}/project`, `${dir}/config`);
+    assertEquals(overlay.baselineFeatures, false);
+  });
+});
+
+// ── withBaselineFeatures ────────────────────────────────────────────────────────────────────
+
+Deno.test("withBaselineFeatures: adds the baseline Feature under the overlay's own additionalFeatures", () => {
+  const overlay = {
+    mounts: [],
+    additionalFeatures: { 'ghcr.io/x/rust:1': { version: 'latest' } },
+    remoteEnv: {},
+    baselineFeatures: true,
+  };
+  const effective = withBaselineFeatures(overlay, []);
+  assertEquals(effective.additionalFeatures, {
+    [PROJECT_HOOK_FEATURE]: {},
+    'ghcr.io/x/rust:1': { version: 'latest' },
+  });
+  // Never mutates its argument.
+  assertEquals(overlay.additionalFeatures, {
+    'ghcr.io/x/rust:1': { version: 'latest' },
+  });
+});
+
+Deno.test('withBaselineFeatures: baselineFeatures:false skips injection entirely', () => {
+  const overlay = {
+    mounts: [],
+    additionalFeatures: {},
+    remoteEnv: {},
+    baselineFeatures: false,
+  };
+  assertEquals(withBaselineFeatures(overlay, []), overlay);
+});
+
+// Rule 2: a user entry named project-hook at *any* tag suppresses devc's, and only one survives.
+Deno.test('withBaselineFeatures: an overlay entry named project-hook at any tag suppresses the injected one', () => {
+  for (
+    const id of [
+      'ghcr.io/bmingles/devc-tools/project-hook',
+      'ghcr.io/bmingles/devc-tools/project-hook:0',
+      'ghcr.io/bmingles/devc-tools/project-hook:0.2.0',
+      'ghcr.io/someone-else/project-hook:1',
+      './features/project-hook',
+    ]
+  ) {
+    const overlay = {
+      mounts: [],
+      additionalFeatures: { [id]: {} },
+      remoteEnv: {},
+      baselineFeatures: true,
+    };
+    const effective = withBaselineFeatures(overlay, []);
+    assertEquals(effective, overlay, `should not inject alongside ${id}`);
+    assertEquals(Object.keys(effective.additionalFeatures), [id]);
+  }
+});
+
+// Rule 3: the in-play devcontainer.json's own `features` suppresses it too — this is what
+// covers the "devc init output runs without devc" invariant: the bundled config declares
+// project-hook itself, so injection must step aside for it.
+Deno.test('withBaselineFeatures: a Feature already declared in the in-play config suppresses injection', () => {
+  const overlay = {
+    mounts: [],
+    additionalFeatures: {},
+    remoteEnv: {},
+    baselineFeatures: true,
+  };
+  const effective = withBaselineFeatures(overlay, [
+    'ghcr.io/bmingles/devc-tools/project-hook:0.1.0',
+  ]);
+  assertEquals(effective, overlay);
+});
+
+Deno.test('withBaselineFeatures: an unrelated declared Feature does not suppress injection', () => {
+  const overlay = {
+    mounts: [],
+    additionalFeatures: {},
+    remoteEnv: {},
+    baselineFeatures: true,
+  };
+  const effective = withBaselineFeatures(overlay, ['ghcr.io/x/rust:1']);
+  assertEquals(effective.additionalFeatures, { [PROJECT_HOOK_FEATURE]: {} });
+});
+
+Deno.test('withBaselineFeatures: returns a new object, never mutates the argument', () => {
+  const overlay = {
+    mounts: [],
+    additionalFeatures: {},
+    remoteEnv: {},
+    baselineFeatures: true,
+  };
+  const effective = withBaselineFeatures(overlay, []);
+  assertEquals(effective === overlay, false);
+  assertEquals(overlay.additionalFeatures, {});
 });
 
 // ── emitted args ────────────────────────────────────────────────────────────────────────────
@@ -336,6 +507,7 @@ Deno.test('overlayArgs emits --mount, --additional-features, --remote-env in tha
       mounts: ['m1', 'm2'],
       additionalFeatures: { 'ghcr.io/x/rust:1': { version: 'latest' } },
       remoteEnv: { A: '1', B: '2' },
+      baselineFeatures: true,
     },
     '/workspaces/p',
     '/home/me/p',
@@ -356,7 +528,12 @@ Deno.test('overlayArgs emits --mount, --additional-features, --remote-env in tha
 
 Deno.test('an empty merged additionalFeatures emits no --additional-features arg', () => {
   const args = overlayArgs(
-    { mounts: ['m1'], additionalFeatures: {}, remoteEnv: {} },
+    {
+      mounts: ['m1'],
+      additionalFeatures: {},
+      remoteEnv: {},
+      baselineFeatures: true,
+    },
     '/workspaces/p',
     '/home/me/p',
   );
@@ -401,6 +578,7 @@ Deno.test('a ${containerWorkspaceFolder} in overlay remoteEnv is substituted in 
         mounts: [],
         additionalFeatures: {},
         remoteEnv: { NOTES: '${containerWorkspaceFolder}/../notes' },
+        baselineFeatures: true,
       },
       '/workspaces/p',
       '/home/me/p',
@@ -419,6 +597,7 @@ Deno.test('additionalFeatures values are not substituted', () => {
         'ghcr.io/x/f:1': { dir: '${containerWorkspaceFolder}/x' },
       },
       remoteEnv: {},
+      baselineFeatures: true,
     },
     '/workspaces/p',
     '/home/me/p',
