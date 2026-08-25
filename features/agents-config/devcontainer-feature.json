@@ -1,9 +1,9 @@
 {
-  "id": "claude-config",
+  "id": "agents-config",
   "version": "0.1.0",
-  "name": "Claude Code config",
-  "description": "Installs the Claude Code CLI (and optionally the GitHub Copilot CLI) at build time, and at create time wires ~/.claude and ~/.claude.json to whatever persistence and seed the consumer has mounted. A bare `{}` installs the Claude CLI and does nothing else — no seed linking, ~/.claude.json left alone. Declares no mounts: whether `${localWorkspaceFolderBasename}` substitutes inside a Feature's own `mounts` is unmeasured, so the two per-workspace volumes stay a two-line paste from the README rather than a Feature declaration that risks one shared volume across every project.",
-  "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/claude-config",
+  "name": "Agent CLI config",
+  "description": "Installs coding-agent CLIs at build time — the Claude Code CLI, and optionally the GitHub Copilot CLI, with room for more to join the same install-guard shape later — and at create time wires ~/.claude and ~/.claude.json to whatever persistence and seed the consumer has mounted. A bare `{}` installs the Claude CLI and does nothing else — no seed linking, ~/.claude.json left alone. Declares no mounts: whether `${localWorkspaceFolderBasename}` substitutes inside a Feature's own `mounts` is unmeasured, so the two per-workspace volumes stay a two-line paste from the README rather than a Feature declaration that risks one shared volume across every project.",
+  "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/agents-config",
   "licenseURL": "https://github.com/bmingles/devc-tools/blob/main/LICENSE",
   "options": {
     "installClaudeCli": {
@@ -14,7 +14,7 @@
     "installCopilotCli": {
       "type": "boolean",
       "default": false,
-      "description": "Install the GitHub Copilot CLI at build time, same shape as installClaudeCli. Defaults false: a Feature named claude-config should not silently install a second vendor's CLI for everyone else."
+      "description": "Install the GitHub Copilot CLI at build time, same shape as installClaudeCli. Defaults false: each agent CLI stays opt-in on its own, so enabling this Feature for Claude does not silently install a second vendor's CLI too."
     },
     "claudeDir": {
       "type": "string",
@@ -32,5 +32,5 @@
       "description": "Container path to a directory backing ~/.claude.json. A volume can only mount at a directory, which is the whole reason for this option: non-empty replaces ~/.claude.json with a symlink to \"<claudeJsonDir>/claude.json\", seeded with {} on first use. Empty (the default) leaves ~/.claude.json alone entirely — the plain file Claude Code creates itself, for a consumer with no volume mounted here."
     }
   },
-  "postCreateCommand": "bash /usr/local/share/devc-features/claude-config/post-create.sh"
+  "postCreateCommand": "bash /usr/local/share/devc-features/agents-config/post-create.sh"
 }

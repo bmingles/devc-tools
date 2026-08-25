@@ -13,8 +13,8 @@ set -e
 
 source dev-container-features-test-lib
 
-SEED=/usr/local/share/claude-config-test/seed
-JSON_DIR=/usr/local/share/claude-config-test/claude-json
+SEED=/usr/local/share/agents-config-test/seed
+JSON_DIR=/usr/local/share/agents-config-test/claude-json
 
 check "the seed landed before create" test -f "$SEED/CLAUDE.md"
 

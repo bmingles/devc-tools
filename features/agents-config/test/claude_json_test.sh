@@ -1,9 +1,9 @@
 #!/bin/bash
-# claude-config offline harness — the ownership-repair and ~/.claude.json steps of the real
+# agents-config offline harness — the ownership-repair and ~/.claude.json steps of the real
 # post-create.sh, run against a temp HOME with `stat` and `sudo` stubbed on PATH. No Docker, no
 # root, no network:
 #
-#   bash features/claude-config/test/claude_json_test.sh
+#   bash features/agents-config/test/claude_json_test.sh
 #
 # The devc:seed-link step in the middle of the same file is NOT re-tested here — that block is
 # copied verbatim from devc-core/default/scripts/agents-setup.sh and is exercised by

@@ -1,13 +1,16 @@
-# claude-config (devcontainer Feature)
+# agents-config (devcontainer Feature)
 
-Installs the **Claude Code CLI** (and optionally the **GitHub Copilot CLI**) at build
-time, and at create time wires `~/.claude` and `~/.claude.json` to whatever
-persistence and seed the consumer has mounted. **Not** the `anthropic.claude-code`
-VS Code extension — see [What this is not](#what-this-is-not).
+Installs coding-agent CLIs at build time — the **Claude Code CLI**, and optionally
+the **GitHub Copilot CLI** — and at create time wires `~/.claude` and
+`~/.claude.json` to whatever persistence and seed the consumer has mounted. Named
+for the plural: only two CLIs today, but the install-guard shape each one uses
+(idempotent, remote-user, network-required-or-fail-the-build) is meant to take a
+third without a rename. **Not** the `anthropic.claude-code` VS Code extension —
+see [What this is not](#what-this-is-not).
 
 ```jsonc
 "features": {
-  "ghcr.io/bmingles/devc-tools/claude-config:0": {}
+  "ghcr.io/bmingles/devc-tools/agents-config:0": {}
 }
 ```
 
@@ -101,9 +104,10 @@ other Feature in this collection.
 
 devc's own baseline installs both CLIs unconditionally today, and will pass
 `installCopilotCli: true` when it eventually swaps onto this Feature (see
-[Relationship to devc](#relationship-to-devc)). A Feature named `claude-config`
-installing a second vendor's CLI by default for everyone else who enables it
-would be a surprise, so the default here is the narrower one and devc opts in
+[Relationship to devc](#relationship-to-devc)). Even though this Feature is
+named and scoped for agent CLIs plural, a consumer who enables it for Claude
+should not silently get a second vendor's CLI too — each install stays
+opt-in per CLI, so the default here is the narrower one and devc opts in
 explicitly.
 
 ## What a consumer mounts in itself
@@ -115,14 +119,14 @@ both, unavoidably, the consumer's own `devcontainer.json` — paste what you wan
 ```jsonc
 // persistence: per-workspace auth + config that survives a rebuild
 "mounts": [
-  "type=volume,source=claude-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
+  "type=volume,source=agents-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
   "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/usr/local/share/claude-json",
   // seed: your own host config, read-only and live
   "type=bind,source=${localEnv:HOME}/.config/claude-seed,target=/usr/local/share/claude-seed,readonly"
 ],
 "initializeCommand": "mkdir -p ${localEnv:HOME}/.config/claude-seed",
 "features": {
-  "ghcr.io/bmingles/devc-tools/claude-config:0": {
+  "ghcr.io/bmingles/devc-tools/agents-config:0": {
     "seedDir": "/usr/local/share/claude-seed",
     "claudeJsonDir": "/usr/local/share/claude-json"
   }
@@ -170,13 +174,15 @@ belt-and-braces, regardless of how question 2 eventually lands.
 **This Feature and `devc-core/default/scripts/agents-setup.sh` are two files
 with the same behavior, not one.** `agents-setup.sh` is devc's own copy — it
 keeps running exactly as it does today; swapping devc onto this published
-Feature is a separate, later change (see `.plans/PLAN.md`). It is named for
-_agents_ plural (`# Copilot or other agent setup would join here` in its own
-comment) while this Feature is named for Claude specifically — if you are
-editing "the agent/Claude setup script," check which one you mean: this
-Feature's `post-create.sh` is namespaced under
-`/usr/local/share/devc-features/claude-config/`, devc's copy runs from
-`devc-core/default/scripts/` and writes nothing under that namespace.
+Feature is a separate, later change (see `.plans/PLAN.md`). Both are named for
+_agents_ plural now (`agents-setup.sh` already says so in its own comment,
+`# Copilot or other agent setup would join here`; this Feature was originally
+published as `claude-config` and renamed to `agents-config` to match, before
+any consumer depended on the old id) — if you are editing "the agent setup
+script," check which file you mean regardless: this Feature's `post-create.sh`
+is namespaced under `/usr/local/share/devc-features/agents-config/`, devc's
+copy runs from `devc-core/default/scripts/` and writes nothing under that
+namespace.
 
 The path devc's own script and docs cite has moved since this plan was
 written: the plan that produced this Feature cites `devc/default/scripts/`,
@@ -213,9 +219,9 @@ baseline config, and nothing about them is Feature-shaped.
 No Docker needed:
 
 ```sh
-bash devc/tests/seed_link_test.sh features/claude-config/post-create.sh
-bash features/claude-config/test/install_options_test.sh
-bash features/claude-config/test/claude_json_test.sh
+bash devc/tests/seed_link_test.sh features/agents-config/post-create.sh
+bash features/agents-config/test/install_options_test.sh
+bash features/agents-config/test/claude_json_test.sh
 ```
 
 `seed_link_test.sh` is devc's own shared harness (see
@@ -233,7 +239,7 @@ already covers).
 Needs Docker and a network:
 
 ```sh
-bash features/claude-config/test/run-features-test.sh
+bash features/agents-config/test/run-features-test.sh
 ```
 
 The default scenario (`test.sh`) is the bare `{}` case: `claude` on `PATH` and

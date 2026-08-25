@@ -1,5 +1,5 @@
 #!/bin/sh
-# claude-config Feature install — install the agent CLIs at build time, pre-create claudeDir, and
+# agents-config Feature install — install the agent CLIs at build time, pre-create claudeDir, and
 # place the create-time script with the option values baked in.
 #
 # Runs as root at image *build* time. Two things happen here that post-create.sh cannot:
@@ -22,7 +22,7 @@
 set -e
 
 die() {
-  echo "claude-config: $*" >&2
+  echo "agents-config: $*" >&2
   exit 1
 }
 
@@ -64,7 +64,7 @@ check_path_opt claudeJsonDir "$CLAUDE_JSON_DIR_OPT"
 # /usr/local/share/devc-features/<id>/ is the Feature namespace. /usr/local/share/devc/ is
 # devc's own baseline namespace and no Feature writes into it — not sharing the prefix is what
 # keeps "did devc put this here, or a Feature?" answerable. Overridable for the test harness.
-SHARE_DIR="${SHARE_DIR:-/usr/local/share/devc-features/claude-config}"
+SHARE_DIR="${SHARE_DIR:-/usr/local/share/devc-features/agents-config}"
 
 FEATURE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -111,7 +111,7 @@ EOF
   chmod 0755 "$_script"
   run_as_remote_user "$_script" || die "$_name CLI install failed (network required)"
   rm -f "$_script"
-  echo "claude-config: $_name CLI installed for $REMOTE_USER"
+  echo "agents-config: $_name CLI installed for $REMOTE_USER"
 }
 
 if [ "$INSTALL_CLAUDE_CLI_OPT" = true ]; then
@@ -127,7 +127,7 @@ fi
 mkdir -p "$CLAUDE_DIR_RESOLVED"
 if [ "$(id -un)" != "$REMOTE_USER" ]; then
   chown "$REMOTE_USER" "$CLAUDE_DIR_RESOLVED" 2> /dev/null ||
-    echo "claude-config: could not chown $CLAUDE_DIR_RESOLVED to $REMOTE_USER (post-create.sh repairs this)"
+    echo "agents-config: could not chown $CLAUDE_DIR_RESOLVED to $REMOTE_USER (post-create.sh repairs this)"
 fi
 
 # --- the create-time script -----------------------------------------------------------------
@@ -161,7 +161,7 @@ bake "$SHARE_DIR/post-create.sh" SEED_DIR "$SEED_DIR_OPT"
 bake "$SHARE_DIR/post-create.sh" CLAUDE_JSON_DIR "$CLAUDE_JSON_DIR_OPT"
 chmod 0755 "$SHARE_DIR/post-create.sh"
 
-echo "claude-config: create-time script installed at $SHARE_DIR/post-create.sh"
-echo "claude-config: claudeDir='$CLAUDE_DIR_RESOLVED' seedDir='$SEED_DIR_OPT'" \
+echo "agents-config: create-time script installed at $SHARE_DIR/post-create.sh"
+echo "agents-config: claudeDir='$CLAUDE_DIR_RESOLVED' seedDir='$SEED_DIR_OPT'" \
   "claudeJsonDir='$CLAUDE_JSON_DIR_OPT' installClaudeCli=$INSTALL_CLAUDE_CLI_OPT" \
   "installCopilotCli=$INSTALL_COPILOT_CLI_OPT"
