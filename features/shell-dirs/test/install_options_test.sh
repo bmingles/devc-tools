@@ -26,7 +26,7 @@ run_install() { # sets rc / share / status
   mkdir -p "$home"
   [ -f "$home/.bashrc" ] || : > "$home/.bashrc"
   share="$home.share"
-  env -u PROJECTDIR -u USERDIR SHARE_DIR="$share" _REMOTE_USER_HOME="$home" "$@" \
+  env -u PROJECTDIR SHARE_DIR="$share" _REMOTE_USER_HOME="$home" "$@" \
     sh "$INSTALL" > "$WORK/out.log" 2>&1
   status=$?
   rc="$home/.bashrc"
@@ -38,7 +38,7 @@ assigned() { # assigned <bashrc> <VAR>
   grep -m1 "^$2=" "$1"
 }
 
-echo "case 1: bare {} — the project layer, workspace-relative, user layer off"
+echo "case 1: bare {} — the project layer, workspace-relative, user layer at its fixed path"
 H="$WORK/c1"
 run_install "$H"
 check "install.sh succeeds" test "$status" -eq 0
@@ -49,8 +49,8 @@ check "the fence markers are preserved verbatim" \
 check "projectDir defaults to .devcontainer/shell, behind the PROJECT_PATH guard" \
   test "$(assigned "$rc" PROJECT_SHELL_DIR)" = \
     'PROJECT_SHELL_DIR="${PROJECT_PATH:+$PROJECT_PATH/.devcontainer/shell}"'
-check "userDir defaults to empty — the layer is off" \
-  test "$(assigned "$rc" USER_SHELL_DIR)" = 'USER_SHELL_DIR=""'
+check "the user layer is this Feature's own fixed path — not an option" \
+  test "$(assigned "$rc" USER_SHELL_DIR)" = 'USER_SHELL_DIR=/usr/local/share/devc-features/shell-dirs/user'
 # The create-time half. post_create_test.sh covers what it does; this is that install.sh
 # actually placed it, with the option carried across.
 check "the create-time script is installed" test -f "$share/post-create.sh"
@@ -73,17 +73,14 @@ check "sourcing it is silent" bash -c \
 check "and leaves \$? at 0" bash -c \
   "unset PROJECT_PATH; . '$WORK/c2/block.sh'; [ \$? -eq 0 ]"
 
-echo "case 3: userDir — an absolute container path, sourced before the project layer"
+echo "case 3: the user layer's fixed path is not affected by any option"
 H="$WORK/c3"
-run_install "$H" USERDIR=/usr/local/share/myshell
+run_install "$H" PROJECTDIR=/opt/other.d
 check "install.sh succeeds" test "$status" -eq 0
-check "userDir is used verbatim" \
-  test "$(assigned "$rc" USER_SHELL_DIR)" = 'USER_SHELL_DIR="/usr/local/share/myshell"'
-check "the project layer is untouched by it" \
-  test "$(assigned "$rc" PROJECT_SHELL_DIR)" = \
-    'PROJECT_SHELL_DIR="${PROJECT_PATH:+$PROJECT_PATH/.devcontainer/shell}"'
-check "no devc path is ever defaulted in" bash -c \
-  "! grep -q '/usr/local/share/devc/shell' '$rc'"
+check "the user layer is still this Feature's own fixed path" \
+  test "$(assigned "$rc" USER_SHELL_DIR)" = 'USER_SHELL_DIR=/usr/local/share/devc-features/shell-dirs/user'
+check "and projectDir moved independently of it" \
+  test "$(assigned "$rc" PROJECT_SHELL_DIR)" = 'PROJECT_SHELL_DIR="/opt/other.d"'
 
 echo "case 4: an absolute projectDir bypasses the PROJECT_PATH guard"
 H="$WORK/c4"
@@ -108,7 +105,7 @@ check "install.sh succeeds" test "$status" -eq 0
 # `${VAR-default}`, not `${VAR:-default}`: an explicitly empty option must not fall back.
 check "empty, not the default" \
   test "$(assigned "$rc" PROJECT_SHELL_DIR)" = 'PROJECT_SHELL_DIR=""'
-check "and both layers off is still a valid, silent block" bash -c \
+check "and a silent block, with the user layer still fixed but unmounted here" bash -c \
   "awk '/# devc:shell-dirs \(start\)/{f=1;next} /# devc:shell-dirs \(end\)/{f=0} f' '$rc' \
      > '$WORK/c5/block.sh'
    out=\$(PROJECT_PATH=/nowhere; . '$WORK/c5/block.sh' 2>&1); [ -z \"\$out\" ]"

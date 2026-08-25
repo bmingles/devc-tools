@@ -38,12 +38,8 @@ check "and is owned by root" bash -c \
 check "with the default projectDir baked in" \
   grep -qx 'PROJECT_DIR=".devcontainer/shell"' "$SHARE/post-create.sh"
 
-check "userDir defaults to empty — that layer is off" \
-  grep -qxF 'USER_SHELL_DIR=""' "$HOME/.bashrc"
-# A userDir defaulted to a devc path would bind nothing for everyone else while looking like
-# devc plumbing. It must never appear unless the consumer asked for it.
-check "no devc path was defaulted in" bash -c \
-  "! grep -q '/usr/local/share/devc/shell' $HOME/.bashrc"
+check "the user layer is always this Feature's own fixed path — not an option" \
+  grep -qxF 'USER_SHELL_DIR=/usr/local/share/devc-features/shell-dirs/user' "$HOME/.bashrc"
 
 # --- what the create-time hook did ---------------------------------------------------------
 

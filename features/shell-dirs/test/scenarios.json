@@ -21,11 +21,9 @@
     "remoteEnv": {
       "PROJECT_PATH": "${containerWorkspaceFolder}"
     },
-    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer/shell /tmp/myshell && printf 'ORDER=\"$ORDER proj\"\\nexport WINNER=project\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/10-a.sh && printf 'ORDER=\"$ORDER user\"\\nexport WINNER=user\\nexport USER_LAYER=1\\n' > /tmp/myshell/10-a.sh",
+    "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer/shell && sudo mkdir -p /usr/local/share/devc-features/shell-dirs/user && sudo chmod 777 /usr/local/share/devc-features/shell-dirs/user && printf 'ORDER=\"$ORDER proj\"\\nexport WINNER=project\\n' > ${containerWorkspaceFolder}/.devcontainer/shell/10-a.sh && printf 'ORDER=\"$ORDER user\"\\nexport WINNER=user\\nexport USER_LAYER=1\\n' > /usr/local/share/devc-features/shell-dirs/user/10-a.sh",
     "features": {
-      "shell-dirs": {
-        "userDir": "/tmp/myshell"
-      }
+      "shell-dirs": {}
     }
   },
   "no_project_layer": {

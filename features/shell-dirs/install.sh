@@ -12,10 +12,12 @@
 # that deferral with a real path at create time.
 #
 # Copied out of devc's baseline — the `devc:shell-dirs` fenced block in
-# devc-core/default/scripts/bashrc-additions.sh — with only the two *_SHELL_DIR assignments
-# substituted. That copy is deliberate and load-bearing: devc/tests/shell_dirs_test.sh runs
-# against *this file* unmodified, which is what stops the two copies drifting apart. devc's own
-# block keeps running as it does today; swapping devc onto this Feature is a separate plan.
+# devc-core/default/scripts/bashrc-additions.sh — with the PROJECT_SHELL_DIR assignment
+# substituted per install, and USER_SHELL_DIR hardcoded to this Feature's own path rather than
+# devc's (see "Relationship to devc" in README.md for why the two deliberately differ). That
+# copy is deliberate and load-bearing: devc/tests/shell_dirs_test.sh runs against *this file*
+# unmodified, which is what stops the two copies drifting apart otherwise. devc's own block
+# keeps running as it does today; swapping devc onto this Feature is a separate plan.
 #
 # bash only. zsh and fish are not written and not half-written — see README.md.
 #
@@ -30,14 +32,13 @@ die() {
 
 # Options reach install.sh uppercased with non-word characters stripped (the CLI's getSafeId).
 # `${VAR-default}` rather than `${VAR:-default}`: an explicitly empty option *disables* that
-# layer and must not fall back to the default. The defaults are repeated from the manifest so
+# layer and must not fall back to the default. The default is repeated from the manifest so
 # this script also runs standalone.
 PROJECT_DIR_OPT="${PROJECTDIR-.devcontainer/shell}"
-USER_DIR_OPT="${USERDIR-}"
 
-# Both values are pasted into a double-quoted shell assignment, so anything that could end that
-# string or start an expansion is rejected outright rather than silently producing a block that
-# does something else. These are container paths; none of it is a real restriction.
+# Pasted into a double-quoted shell assignment, so anything that could end that string or start
+# an expansion is rejected outright rather than silently producing a block that does something
+# else. This is a container path; none of it is a real restriction.
 check_path_opt() { # check_path_opt <option name> <value>
   case "$2" in
     *'"'*) die "$1 may not contain a double quote: $2" ;;
@@ -47,7 +48,6 @@ check_path_opt() { # check_path_opt <option name> <value>
   esac
 }
 check_path_opt projectDir "$PROJECT_DIR_OPT"
-check_path_opt userDir "$USER_DIR_OPT"
 
 # /usr/local/share/devc-features/<id>/ is the Feature namespace, the same one node-nvmrc uses.
 # /usr/local/share/devc/ is devc's own baseline namespace and no Feature writes into it — not
@@ -105,16 +105,20 @@ trap 'rm -f "$BLOCK" "$BLOCK.rewrite"' EXIT
 # both.
 cat > "$BLOCK" << 'SHELL_DIRS_BLOCK'
 # devc:shell-dirs (start) — devc/tests/shell_dirs_test.sh runs everything between these two
-# markers against temp dirs, so keep the block self-contained: parameterized only by the two
-# *_SHELL_DIR assignments below, which the harness rewrites, and which install.sh rewrites the
-# same way when it appends this block to ~/.bashrc. The fence name still says `devc` because
+# markers against temp dirs, so keep the block self-contained: parameterized only by the
+# PROJECT_SHELL_DIR assignment below, which the harness rewrites, and which install.sh rewrites
+# the same way when it appends this block to ~/.bashrc. The fence name still says `devc` because
 # that harness is the contract; see this Feature's README for the four things named `shell`.
 #
-# Optional shell customization, in two layers:
+# Shell customization, in two layers:
 #
-#   userDir      an absolute container path — your preferences, every project. Empty by
-#                default. Nothing here creates or mounts it; the consumer's devcontainer.json
-#                binds a host directory there (README.md has the two lines).
+#   /usr/local/share/devc-features/shell-dirs/user   fixed — your preferences, every project.
+#         Not an option: every consumer of this Feature gets the same container path. It is a
+#         subdirectory, not this Feature's own share dir itself, because that dir already holds
+#         post-create.sh (below) — a mount targeting the dir directly would shadow it. Nothing
+#         here creates or mounts the subdirectory; the consumer's devcontainer.json binds a host
+#         directory there (README.md has the two lines, and recommends
+#         ${localEnv:HOME}/.config/devc/shell as the source).
 #   projectDir   workspace-relative — this project's committed settings, found via
 #                PROJECT_PATH. Defaults to .devcontainer/shell.
 #
@@ -130,7 +134,7 @@ cat > "$BLOCK" << 'SHELL_DIRS_BLOCK'
 # PROJECT_PATH is the container-side workspace root, which the consumer sets as remoteEnv. No
 # fallback to $PWD: a shell started outside the workspace should not source whatever repo it
 # happens to open in. Unset, the project layer is a silent no-op.
-USER_SHELL_DIR=""
+USER_SHELL_DIR=/usr/local/share/devc-features/shell-dirs/user
 PROJECT_SHELL_DIR="${PROJECT_PATH:+$PROJECT_PATH/.devcontainer/shell}"
 
 _devc_source_shell_dir() {
@@ -158,31 +162,31 @@ unset USER_SHELL_DIR PROJECT_SHELL_DIR
 # devc:shell-dirs (end)
 SHELL_DIRS_BLOCK
 
-# --- substitute the two assignments -------------------------------------------------------
+# --- substitute the one assignment --------------------------------------------------------
 #
 # The project layer keeps the ${PROJECT_PATH:+...} guard only while the option is relative —
 # that is the whole reason the guard exists. An absolute projectDir names a fixed container
 # path, so it is used as-is and works with no PROJECT_PATH at all.
+#
+# USER_SHELL_DIR is not touched here: it is not an option, so the fixed path the heredoc above
+# already wrote — this Feature's own namespaced path, not devc's — is what lands in ~/.bashrc.
 case "$PROJECT_DIR_OPT" in
   '') PROJECT_LINE='PROJECT_SHELL_DIR=""' ;;
   /*) PROJECT_LINE="PROJECT_SHELL_DIR=\"$PROJECT_DIR_OPT\"" ;;
   *) PROJECT_LINE='PROJECT_SHELL_DIR="${PROJECT_PATH:+$PROJECT_PATH/'"$PROJECT_DIR_OPT"'}"' ;;
 esac
-USER_LINE="USER_SHELL_DIR=\"$USER_DIR_OPT\""
 
-# awk with the replacements passed as -v values, rather than sed: a `&` or a `\` in an option
+# awk with the replacement passed as a -v value, rather than sed: a `&` or a `\` in the option
 # is data here, not a back-reference into the replacement text.
-awk -v u="$USER_LINE" -v p="$PROJECT_LINE" '
-  /^USER_SHELL_DIR=/    { print u; next }
+awk -v p="$PROJECT_LINE" '
   /^PROJECT_SHELL_DIR=/ { print p; next }
                         { print }
 ' "$BLOCK" > "$BLOCK.rewrite"
 mv -f "$BLOCK.rewrite" "$BLOCK"
 
-# A rename or a reformat of either assignment would otherwise leave the option silently
-# unwired, with the block's own default quietly standing in for whatever the consumer asked
-# for. The same failure mode devc/tests/shell_dirs_test.sh has when its sed stops matching.
-grep -qxF "$USER_LINE" "$BLOCK" || die 'could not substitute userDir into the ~/.bashrc block'
+# A rename or a reformat of the assignment would otherwise leave the option silently unwired,
+# with the block's own default quietly standing in for whatever the consumer asked for. The
+# same failure mode devc/tests/shell_dirs_test.sh has when its sed stops matching.
 grep -qxF "$PROJECT_LINE" "$BLOCK" ||
   die 'could not substitute projectDir into the ~/.bashrc block'
 
@@ -200,5 +204,5 @@ if [ -n "${_REMOTE_USER:-}" ]; then
 fi
 
 echo "shell-dirs: block appended to $BASHRC"
-echo "shell-dirs:   $USER_LINE"
+echo "shell-dirs:   USER_SHELL_DIR=/usr/local/share/devc-features/shell-dirs/user"
 echo "shell-dirs:   $PROJECT_LINE"

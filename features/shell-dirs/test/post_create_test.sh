@@ -26,7 +26,7 @@ setup() {
   H="$WORK/$NAME/home"; SHARE="$WORK/$NAME/share"; WS="$WORK/$NAME/ws"
   rm -rf "$WORK/$NAME"; mkdir -p "$H" "$WS/.devcontainer/shell"; : > "$H/.bashrc"
   echo 'export MARKER=project' > "$WS/.devcontainer/shell/10-a.sh"
-  env -u PROJECTDIR -u USERDIR SHARE_DIR="$SHARE" _REMOTE_USER_HOME="$H" "$@" \
+  env -u PROJECTDIR SHARE_DIR="$SHARE" _REMOTE_USER_HOME="$H" "$@" \
     sh "$FEATURE_DIR/install.sh" > "$WORK/install.log" 2>&1
   HOOK="$SHARE/post-create.sh"
 }

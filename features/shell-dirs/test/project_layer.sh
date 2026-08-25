@@ -44,7 +44,9 @@ rm -f "$PROJECT_PATH/.devcontainer/shell/30-c.sh"
 check "and deleting it stops it being read" \
   test "$(probe 'printf %s "${ADDED_LATER:-}" > /tmp/probe')" = ''
 
-# The user layer was not asked for, so it must not exist as anything.
-check "userDir is off — no second layer" grep -qxF 'USER_SHELL_DIR=""' "$HOME/.bashrc"
+# The user layer is always the fixed path, but nothing was mounted there in this scenario, so
+# it is a silent no-op.
+check "the user layer's fixed path is in the block" \
+  grep -qxF 'USER_SHELL_DIR=/usr/local/share/devc-features/shell-dirs/user' "$HOME/.bashrc"
 
 reportResults

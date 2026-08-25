@@ -60,29 +60,39 @@ consulted once, at create time, where the CLI chose it.
 
 ## The second layer: personal scripts from your host
 
-The optional `userDir` layer is your own preferences, applied in every project.
-It is an **absolute container path**, and this Feature neither creates it nor
-mounts anything into it — a Feature cannot declare an `initializeCommand`, and the
-published Feature schema's `Mount` cannot express `readonly`
-([why](../../.plans/design/devc-feature-split.md)). So the bind belongs to your
-`devcontainer.json`, which is three lines you own:
+The user layer is your own preferences, applied in every project. Its container
+path is **fixed** at `/usr/local/share/devc-features/shell-dirs/user` and it is
+not an option: there is nothing to configure. That path is deliberately a
+subdirectory rather than this Feature's own share directory
+(`/usr/local/share/devc-features/shell-dirs/`) — that directory already holds
+`post-create.sh`, and a mount targeting it directly would shadow that file at
+container start, breaking the project layer's create-time resolution. This
+Feature neither creates the subdirectory nor mounts anything into it — a Feature
+cannot declare an `initializeCommand`, and the published Feature schema's `Mount`
+cannot express `readonly` ([why](../../.plans/design/devc-feature-split.md)). So
+the bind belongs to your `devcontainer.json`, which is three lines you own:
 
 ```jsonc
-"initializeCommand": "mkdir -p ${localEnv:HOME}/.config/myshell",
+"initializeCommand": "mkdir -p ${localEnv:HOME}/.config/devc/shell",
 "mounts": [
-  "type=bind,source=${localEnv:HOME}/.config/myshell,target=/usr/local/share/myshell,readonly"
+  "type=bind,source=${localEnv:HOME}/.config/devc/shell,target=/usr/local/share/devc-features/shell-dirs/user,readonly"
 ],
 "features": {
-  "ghcr.io/bmingles/devc-tools/shell-dirs:0": { "userDir": "/usr/local/share/myshell" }
+  "ghcr.io/bmingles/devc-tools/shell-dirs:0": {}
 }
 ```
 
-The host path is **yours** — pick anything. This Feature will never default
-`userDir` to a devc path, or to any path at all: a default there would look like
-plumbing that works while quietly binding nothing for everyone who is not devc.
+The host path is recommended, not enforced — nothing here checks where the mount's
+source lives, only that its target is
+`/usr/local/share/devc-features/shell-dirs/user`. Point the mount at whatever host
+directory you already use for this if you have one; `~/.config/devc/shell` is
+recommended only because it is the same convention devc's own containers use, not
+because this Feature knows about it.
 
 The `initializeCommand` is what makes the mount source exist. A bind mount with a
-missing source is a hard error, not an auto-created directory.
+missing source is a hard error, not an auto-created directory. With no mount at
+all, the subdirectory simply does not exist in the container and the layer is a
+silent no-op — the Feature is safe to leave enabled with nothing bound there.
 
 Mount it `readonly` if you can. Written as a **string** (as above) the devcontainer
 CLI passes the spec through to `docker --mount` verbatim, so `readonly` survives;
@@ -104,7 +114,10 @@ silent no-op — the Feature is safe to leave enabled in a repo that ships no sc
 | Option       | Default               | Meaning                                                                                                                        |
 | ------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `projectDir` | `.devcontainer/shell` | Workspace-relative directory, resolved to an absolute path at create time. An absolute value is used as-is. Empty disables it. |
-| `userDir`    | _(empty)_             | Absolute container path, sourced **before** the project layer. Empty disables it. Nothing here creates or mounts it.           |
+
+The user layer is not in this table because it is not an option: it is always
+`/usr/local/share/devc-features/shell-dirs/user`, sourced **before** the project
+layer, and a no-op until you bind something there yourself (see above).
 
 The asymmetry is on purpose: one directory is found _through_ the workspace, the
 other is a fixed container path with a mount behind it.
@@ -120,19 +133,24 @@ Worth naming in full once, because they are easy to confuse:
   `devc/tests/shell_dirs_test.sh` finds the block by those markers and runs against
   both copies unmodified — that is what stops the two drifting apart.
 - **`.devcontainer/shell/`** — the default **project** directory, in your workspace.
-- **`~/.config/devc/shell/`** — the **host** directory devc happens to bind for its
-  own containers. It is not a default here and this Feature does not know about it.
+- **`~/.config/devc/shell/`** — the **recommended host** directory to bind for the
+  user layer, the same one devc happens to bind for its own containers. Its
+  container-side target here is this Feature's own
+  `/usr/local/share/devc-features/shell-dirs/user`, not devc's
+  `/usr/local/share/devc/shell` — only the host side matches devc's convention.
+  This Feature does not create or check for it; you name it in your own `mounts`.
 
 ## What it does
 
 At **build time** (as root) it does two things and fetches nothing: it appends one
 marker-guarded block to the remote user's `~/.bashrc`, between
-`# >>> shell-dirs >>>` and `# <<< shell-dirs <<<`, with the two options substituted
-into its two directory assignments; and it places `post-create.sh` at
-`/usr/local/share/devc-features/shell-dirs/`, with `projectDir` baked in — the
-manifest's `postCreateCommand` takes no arguments, so that is how the option crosses
-over. The append is guarded by the opening marker, so a rebuild does not
-double-append.
+`# >>> shell-dirs >>>` and `# <<< shell-dirs <<<`, with `projectDir` substituted
+into its directory assignment (`USER_SHELL_DIR` is fixed, not an option — the
+heredoc already carries `/usr/local/share/devc-features/shell-dirs/user`); and it
+places `post-create.sh` at `/usr/local/share/devc-features/shell-dirs/`, with
+`projectDir` baked in — the manifest's `postCreateCommand` takes no arguments, so
+that is how the option crosses over. The append is guarded by the opening marker,
+so a rebuild does not double-append.
 
 At **create time** (as the remote user, before any `postCreateCommand` your own
 `devcontainer.json` declares) `post-create.sh` resolves a workspace-relative
@@ -171,29 +189,34 @@ to change; see [Relationship to devc](#relationship-to-devc).
 ## Relationship to devc
 
 The block here was copied out of [devc](../../devc/README.md)'s baseline — the
-`devc:shell-dirs` fence in `devc-core/default/scripts/bashrc-additions.sh` — with only
-the two directory assignments substituted. **devc's copy still runs unchanged**;
-swapping devc onto this published Feature is a separate change.
+`devc:shell-dirs` fence in `devc-core/default/scripts/bashrc-additions.sh` — with
+the `PROJECT_SHELL_DIR` assignment substituted per install. `USER_SHELL_DIR` is
+**not** copied: it is hardcoded to this Feature's own
+`/usr/local/share/devc-features/shell-dirs/user`, deliberately different from
+devc's `/usr/local/share/devc/shell`. Reusing devc's own path would have muddied
+the one thing `/usr/local/share/devc-features/<id>/` exists to keep answerable —
+whether devc or a Feature put something there — for no real benefit, since this
+Feature cannot create or mount the directory either way. **devc's copy still runs
+unchanged**; swapping devc onto this published Feature is a separate change.
 
 Until that happens, enabling this Feature in a devc container is **redundant and
-mildly harmful**: devc already sources both layers, so the project layer would be
-sourced twice. That is idempotent for aliases and `export`, and not for
-`PATH="…:$PATH"`.
+mildly harmful** for the project layer only: devc already sources
+`.devcontainer/shell` at the same path, so it would be sourced twice. That is
+idempotent for aliases and `export`, and not for `PATH="…:$PATH"`. The user layers
+do not collide — they are two different container paths — so nothing needs
+guarding there.
 
-This Feature's copy guards against it as far as one side can. The block records
-what it sourced in `_DEVC_SHELL_DIRS_DONE` (a `:`-separated list of paths, one per
-shell, deliberately **not** exported so a subshell that legitimately re-sources
-`~/.bashrc` starts clean) and skips a directory already listed. devc's copy has no
-such guard yet, and it runs first — so it sources, and this one skips. That happens
-to work, but it is one-sided by construction. Do not rely on it; wait for the swap.
+This Feature's copy guards against the project-layer collision as far as one side
+can. The block records what it sourced in `_DEVC_SHELL_DIRS_DONE` (a
+`:`-separated list of paths, one per shell, deliberately **not** exported so a
+subshell that legitimately re-sources `~/.bashrc` starts clean) and skips a
+directory already listed. devc's copy has no such guard yet, and it runs first —
+so it sources, and this one skips. That happens to work, but it is one-sided by
+construction. Do not rely on it; wait for the swap.
 
 `post-create.sh` rewrites **only** the line between this Feature's own
 `# >>> shell-dirs >>>` markers. devc's block carries an identically named
 `PROJECT_SHELL_DIR=` assignment, and an unscoped rewrite would edit it too.
-
-One difference from devc's copy beyond the guard: **nothing here defaults to a devc
-path.** devc's `USER_SHELL_DIR` is `/usr/local/share/devc/shell`, which is where its
-own mount lands. Here `userDir` is empty until you say otherwise.
 
 ## Tests
 
