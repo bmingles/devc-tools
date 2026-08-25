@@ -63,19 +63,6 @@ manifest contracts below already says so. Bump a Feature's `version` in the
 commit that changes it; a push to `main` under `features/` publishes it from its
 own matrix job.
 
-- [feature-project-hook](feature-project-hook.md) — the smallest of the set, and
-  the only one with **no options and no host-coupled half at all**: it reads the
-  workspace and runs the project's own `devc-post-create.sh`, so `{}` is the
-  entire configuration surface and the README has no mount recipe to carry. The
-  `devc:project-hook` block is copied verbatim and `devc/tests/project_hook_test.sh`
-  runs against the Feature unchanged — the drift guard, and the plan's first
-  validation item. Its container scenario doubles as the measurement of
-  [design/devc-feature-split.md](design/devc-feature-split.md)'s open question 1
-  (the cwd of a Feature-declared `postCreateCommand`), which has only ever been
-  read from the CLI's source. The one sharp edge is that a devc container
-  enabling this Feature during the interim runs the project's hook **twice**, and
-  unlike `shell-dirs` there is no guard available — two create-time processes,
-  with the Feature running first.
 - [devc-inject-project-hook](devc-inject-project-hook.md) — **blocked on
   `project-hook` being published**, and the only swap in the whole split that is
   not a manual one. devc contributes the Feature to whatever `devcontainer.json`
@@ -95,6 +82,65 @@ own matrix job.
   release.
 
 ### Completed
+
+- [feature-project-hook](archived/feature-project-hook.md) — ✅ Done, split
+  but not published. `features/project-hook/` runs the project's own
+  `devc-post-create.sh` on every container create — `.devc/` first, then
+  `.devcontainer/`, first hit wins, existence selects and executability is
+  enforced. The smallest Feature in the collection: no options, no mounts, no
+  host state, no network — `{}` is the entire configuration surface, and
+  `install.sh` (root, build time) does nothing but `cp` + `chmod 0755` one
+  file, with no `DEVC_TOOLS_RELEASE` pin since nothing is fetched. The
+  `devc:project-hook` fence in `post-create.sh` is copied byte-for-byte from
+  `devc-core/default/scripts/project-hook.sh` (confirmed with a real `diff`
+  of the two `awk`-extracted regions — empty), and
+  `devc/tests/project_hook_test.sh` runs **unmodified** against both copies:
+  8 cases each, all green (`.devc/` running, `.devcontainer/` running when
+  `.devc/` is absent, `.devc/` winning with no fall-through when both are
+  present, a non-executable `.devc/` failing without falling through, a
+  dangling symlink graded as failure not absence, neither-present as a
+  silent no-op, a failing hook failing the block, and cwd = project root
+  regardless of the caller's own cwd). `devc-core/` is untouched, per
+  copy-don't-move; `devc/README.md`'s fence-harness list now cites both
+  copies, matching how `shell_dirs_test.sh`'s two copies are listed.
+
+  **Not added to `features/PUBLISH_ALLOWLIST.txt`, deliberately** — the
+  plan's own checklist says to add it "last, once the validation below is
+  green," and it is not: every container-dependent item
+  (`run-features-test.sh`'s bare `{}` scenario, `with_hook`,
+  `devcontainer_dir_hook`) needs Docker, which this environment does not
+  have (`docker` not on `PATH`). Given the plan's own precondition is
+  unmet, the allowlist addition was withheld rather than added early — the
+  same reasoning `features/README.md` already gives for holding back
+  `devc-bridge`, `bash-config`, `shell-dirs`, `git-container-config` and
+  `claude-config`; `project-hook` is now a sixth name on that list, with the
+  offline drift guard (the item the plan itself calls "the most important
+  item here") green and recorded above.
+
+  Verified here, offline: `bash devc/tests/project_hook_test.sh` against
+  both copies (16 checks total, unmodified — the drift guard), the fence
+  `diff` (empty), `bash tests/features_test.sh --feature project-hook` and
+  the whole-collection run (7 Features in scope — the collection walk
+  picked up the new directory with no edit), and `deno fmt --check` (166
+  files, one markdown emphasis-style fix applied by `deno fmt` itself in
+  the new README).
+
+  **Not verified here (no Docker):** all three `devcontainer features test`
+  scripts are written but none has run — the default `test.sh` (the bare
+  `{}` inert case: install path, executable and root-owned, nothing
+  appended to `~/.bashrc`, a manual re-run with `env -u PROJECT_PATH`
+  staying a silent no-op) and `test/scenarios.json`'s `with_hook` and
+  `devcontainer_dir_hook` (each writes an executable
+  `devc-post-create.sh` at one of the two candidate paths via the
+  scenario's own `onCreateCommand`, since the command generates the
+  workspace folder itself and copies the test directory in only after
+  create). `with_hook`/`devcontainer_dir_hook` are also what would measure
+  [design/devc-feature-split.md](design/devc-feature-split.md) open
+  question 1 (the cwd of a Feature-declared `postCreateCommand`) against a
+  real container rather than the CLI's source — still unmeasured. What
+  remains open before this can publish: running those three scenarios
+  under Docker, then adding `project-hook` to
+  `features/PUBLISH_ALLOWLIST.txt` once they are green.
 
 - [feature-git-config](archived/feature-git-config.md) — ✅ Done.
   `features/git-container-config/` re-applies, on every container create, the
