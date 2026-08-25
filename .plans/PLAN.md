@@ -80,6 +80,36 @@ own matrix job.
   but that is a different variable class, so the plan says measure it rather than
   reason about it. The `devc:seed-link` block is copied verbatim so
   `devc/tests/seed_link_test.sh` runs against the Feature unchanged.
+- [feature-project-hook](feature-project-hook.md) — the smallest of the set, and
+  the only one with **no options and no host-coupled half at all**: it reads the
+  workspace and runs the project's own `devc-post-create.sh`, so `{}` is the
+  entire configuration surface and the README has no mount recipe to carry. The
+  `devc:project-hook` block is copied verbatim and `devc/tests/project_hook_test.sh`
+  runs against the Feature unchanged — the drift guard, and the plan's first
+  validation item. Its container scenario doubles as the measurement of
+  [design/devc-feature-split.md](design/devc-feature-split.md)'s open question 1
+  (the cwd of a Feature-declared `postCreateCommand`), which has only ever been
+  read from the CLI's source. The one sharp edge is that a devc container
+  enabling this Feature during the interim runs the project's hook **twice**, and
+  unlike `shell-dirs` there is no guard available — two create-time processes,
+  with the Feature running first.
+- [devc-inject-project-hook](devc-inject-project-hook.md) — **blocked on
+  `project-hook` being published**, and the only swap in the whole split that is
+  not a manual one. devc contributes the Feature to whatever `devcontainer.json`
+  is in play, so a project-mode repo that has never heard of devc still runs its
+  `devc-post-create.sh`; the user configures nothing. It is also the swap —
+  `devc-core/default/scripts/project-hook.sh` is deleted in the same change,
+  because injecting without retiring runs a project's hook twice. Four things a
+  manual swap never has to answer, and each has a contract here: precedence, an
+  opt-out (`baselineFeatures`, the one overlay key where the user-level file
+  vetoes the project), double-install avoidance (the pinned CLI dedupes
+  `--additional-features` against `features` by **exact id string**, so `:0` and
+  `:0.1.0` both install), and lifecycle ordering (a Feature's `postCreateCommand`
+  runs before the config's, fixed by the bundled config's `postCreateCommand`
+  becoming `onCreateCommand`). Pins the Feature at an **exact version** rather
+  than `:0`, guarded the way the devcontainer CLI pin is — it is forced on every
+  container, so a bad publish would otherwise reach every user with no devc
+  release.
 
 ### Completed
 
@@ -1100,4 +1130,6 @@ own matrix job.
 | `bash-config` 0.2.0 — `~/.bashrc` only; the login profile half dropped entirely          | [feature-bash-config-bashrc-only](archived/feature-bash-config-bashrc-only.md)     | complete |
 | `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                        | pending  |
 | `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                                  | pending  |
+| `project-hook` Feature — runs the project's own `devc-post-create.sh` at create          | [feature-project-hook](feature-project-hook.md)                                    | pending  |
+| devc injects `project-hook` — the baseline reaches project-mode containers too           | [devc-inject-project-hook](devc-inject-project-hook.md)                            | pending  |
 | `node-nvmrc` 0.2.0 — `containerEnv` PATH pin for every process; drop the `cd` hook       | [feature-node-nvmrc-container-wide](archived/feature-node-nvmrc-container-wide.md) | complete |
