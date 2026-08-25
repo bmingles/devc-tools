@@ -11,7 +11,7 @@ publish matrix from the collection rather than naming its members, and so does
 
 | Feature                                                | Ref                                                | What it does                                                                                                                                                       |
 | ------------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [agents-config](agents-config/README.md)               | `ghcr.io/bmingles/devc-tools/agents-config`        | Installs coding-agent CLIs (Claude Code, optionally Copilot); wires `~/.claude`/`~/.claude.json` to whatever persistence and seed the consumer has mounted.        |
+| [agents](agents/README.md)                             | `ghcr.io/bmingles/devc-tools/agents`               | Installs coding-agent CLIs (Claude Code, optionally Copilot); wires `~/.claude`/`~/.claude.json` to whatever persistence and seed the consumer has mounted.        |
 | [bash-config](bash-config/README.md)                   | `ghcr.io/bmingles/devc-tools/bash-config`          | Sources `bashrc_*.sh` from `~/.bashrc` out of two fixed directories.                                                                                               |
 | [devc-bridge](devc-bridge/README.md)                   | `ghcr.io/bmingles/devc-tools/devc-bridge`          | Installs the devc-bridge client so container code can invoke host commands.                                                                                        |
 | [git-container-config](git-container-config/README.md) | `ghcr.io/bmingles/devc-tools/git-container-config` | Re-applies the user-scope git settings a devcontainer needs and cannot keep — LFS filters, `worktree.useRelativePaths`, `safe.directory`, and an identity include. |
@@ -31,7 +31,7 @@ until that release is tagged its publish job fails the pin guard by design.
 Nothing else is blocked by that — see [Versions](#versions) for why each Feature
 publishes on its own.
 
-`shell-dirs`, `bash-config`, `git-container-config`, `agents-config` and
+`shell-dirs`, `bash-config`, `git-container-config`, `agents` and
 `project-hook` are **not on the publish allowlist** — all five are still under
 active development and deliberately held back from ghcr.io. `project-hook`'s
 offline drift-guard harness is green against both copies (see its own

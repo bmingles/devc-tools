@@ -1,6 +1,6 @@
 #!/bin/bash
 # `devcontainer features test` default scenario — runs INSIDE a container built from this
-# Feature with **no options** (`"agents-config": {}`).
+# Feature with **no options** (`"agents": {}`).
 #
 # That combination is the bare-`{}` case every Feature in this collection has to survive (see
 # .plans/design/devc-feature-split.md): the Claude CLI installs and nothing else — no seed
@@ -12,7 +12,7 @@ set -e
 
 source dev-container-features-test-lib
 
-SHARE=/usr/local/share/devc-features/agents-config
+SHARE=/usr/local/share/devc-features/agents
 
 check "create-time script is installed" test -f "$SHARE/post-create.sh"
 check "and is executable" test -x "$SHARE/post-create.sh"

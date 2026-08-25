@@ -1,0 +1,20 @@
+{
+  "with_seed_and_json": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "onCreateCommand": "sudo mkdir -p /usr/local/share/agents-test/seed/skills /usr/local/share/agents-test/claude-json && sudo chmod -R 777 /usr/local/share/agents-test && printf '# md\\n' > /usr/local/share/agents-test/seed/CLAUDE.md && printf '{}\\n' > /usr/local/share/agents-test/seed/settings.json && echo 'a skill' > /usr/local/share/agents-test/seed/skills/inner.md",
+    "features": {
+      "agents": {
+        "seedDir": "/usr/local/share/agents-test/seed",
+        "claudeJsonDir": "/usr/local/share/agents-test/claude-json"
+      }
+    }
+  },
+  "with_copilot": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "agents": {
+        "installCopilotCli": true
+      }
+    }
+  }
+}

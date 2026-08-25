@@ -385,7 +385,7 @@ not run there at all.
 ## Not in this plan
 
 - **Any other Feature.** `bash-config`, `shell-dirs`, `node-nvmrc`,
-  `git-container-config` and `agents-config` are swapped by hand, separately.
+  `git-container-config` and `agents` are swapped by hand, separately.
   `withBaselineFeatures` takes a list so a later plan can add to it, but it has
   exactly one entry here.
 - **Per-Feature opt-out.** `baselineFeatures` is a boolean covering everything

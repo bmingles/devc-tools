@@ -1,12 +1,12 @@
 # `claude-config` Feature — agent CLIs and their per-workspace config
 
-> **Renamed after this plan landed.** The Feature this plan produced was
-> published as `claude-config`, then renamed to **`agents-config`** shortly
-> after — it already installs a second vendor's CLI (Copilot), so the plural,
-> vendor-neutral id was the better fit; see `features/agents-config/README.md`
-> ("Relationship to devc") and the completion note in `.plans/PLAN.md`. Every
-> `claude-config` below is this plan as originally written and as it named
-> things at the time.
+> **Renamed twice after this plan landed.** The Feature this plan produced was
+> published as `claude-config`, then renamed to `agents-config`, then
+> shortened to plain **`agents`** — it already installs a second vendor's CLI
+> (Copilot), so the plural, vendor-neutral id was the better fit; see
+> `features/agents/README.md` ("Relationship to devc") and the completion note
+> in `.plans/PLAN.md`. Every `claude-config` below is this plan as originally
+> written and as it named things at the time.
 
 ## Goal
 

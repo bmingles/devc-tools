@@ -1,9 +1,9 @@
 #!/bin/bash
-# agents-config offline harness — the real install.sh, run repeatedly against a temp SHARE_DIR
+# agents offline harness — the real install.sh, run repeatedly against a temp SHARE_DIR
 # and a temp $_REMOTE_USER_HOME, with `curl` and `runuser` stubbed on PATH so no network call and
 # no real privilege switch happens. No Docker, no root, no network:
 #
-#   bash features/agents-config/test/install_options_test.sh
+#   bash features/agents/test/install_options_test.sh
 #
 # What this cannot cover, because it needs a real container: whether the CLI installers
 # (claude.ai/install.sh, gh.io/copilot-install) actually work, and whether `runuser`/`su` really
@@ -63,7 +63,7 @@ RUNUSER
 chmod +x "$STUBS/runuser"
 
 # This devcontainer has a real `claude` (and possibly `copilot`) already on PATH — this file IS
-# agents-config's own test suite, run inside a container built from an `agents-config`-like setup.
+# this Feature's own test suite, run inside a container built from an `agents`-like setup.
 # Left in the PATH handed down to install.sh, the installer's own idempotent
 # `! command -v claude` guard would find the real one and skip the fake install silently, so every
 # case below would "pass" without curl ever running. Strip those directories out.

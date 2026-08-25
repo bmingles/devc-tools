@@ -103,7 +103,7 @@ For all four, yes:
 | `node-nvmrc`           | Everything. `.nvmrc` installed at create; every process gets that version.                  | n/a — it has no mount                              |
 | `shell-dirs`           | The project layer: every `*.sh` in the repo's own `.devcontainer/shell/`.                   | A second layer of _personal_ scripts from the host |
 | `git-container-config` | LFS filters, `worktree.useRelativePaths`, `safe.directory` — the majority of the script.    | Your host `user.name` / `user.email`               |
-| `agents-config`        | The CLI installs. Plus the `~/.claude.json` and seed wiring as soon as anything is mounted. | Per-workspace persistence; a host config seed      |
+| `agents`               | The CLI installs. Plus the `~/.claude.json` and seed wiring as soon as anything is mounted. | Per-workspace persistence; a host config seed      |
 
 The optional half is **personal-host-machine state** in every case — your shell
 preferences, your git identity, your Claude config. That is the one category a
@@ -190,7 +190,7 @@ all block calling it done.
    an `onCreateCommand` wrote at the workspace root.
 2. **Substitution inside Feature `mounts`.** `${localEnv:HOME}` is measured
    working (devc-bridge-feature findings). `${localWorkspaceFolderBasename}` and
-   `${containerWorkspaceFolder}` are **not** — and the `agents-config` volumes
+   `${containerWorkspaceFolder}` are **not** — and the `agents` volumes
    need them for per-workspace isolation.
 3. **Named-volume ownership seeding.** If `install.sh` creates
    `$_REMOTE_USER_HOME/.claude` owned by the remote user at build time, Docker
@@ -206,7 +206,7 @@ all block calling it done.
 in the environment that plan was implemented in either — the same constraint
 every other plan here has hit, just fatal to these two specifically instead of
 merely postponing a container scenario. The Feature it produced — published as
-`claude-config`, renamed to `agents-config` shortly after (see its README's
+`claude-config`, renamed to `agents` shortly after (see its README's
 "Relationship to devc") — took the safe path the
 plan itself specifies for the unmeasured case: it declares **no** `mounts`, and
 its README carries the two-volume recipe as a consumer paste instead. Question

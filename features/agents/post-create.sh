@@ -1,8 +1,8 @@
 #!/bin/bash
-# agents-config create-time step — wires ~/.claude and ~/.claude.json to whatever persistence and
+# agents create-time step — wires ~/.claude and ~/.claude.json to whatever persistence and
 # seed the consumer has mounted.
 #
-# install.sh copies this file to /usr/local/share/devc-features/agents-config/post-create.sh at
+# install.sh copies this file to /usr/local/share/devc-features/agents/post-create.sh at
 # image build time and bakes CLAUDE_DIR, SEED_DIR and CLAUDE_JSON_DIR below; the manifest's
 # postCreateCommand names that copy, and the devcontainer CLI runs it as the remote user, before
 # any user postCreateCommand.
@@ -19,7 +19,7 @@
 set -e
 
 warn() {
-  echo "agents-config: $*" >&2
+  echo "agents: $*" >&2
 }
 
 # --- baked by install.sh from the Feature's options ------------------------------------------
