@@ -1315,8 +1315,8 @@ own matrix job.
 | `shell-dirs` Feature — sourced `*.sh` layers; devc keeps the read-only user layer        | [feature-shell-dirs](archived/feature-shell-dirs.md)                               | complete |
 | `bash-config` Feature — two fixed dirs, static blocks; supersedes `shell-dirs`           | [feature-bash-config](archived/feature-bash-config.md)                             | complete |
 | `bash-config` 0.2.0 — `~/.bashrc` only; the login profile half dropped entirely          | [feature-bash-config-bashrc-only](archived/feature-bash-config-bashrc-only.md)     | complete |
-| `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](feature-git-config.md)                                        | pending  |
-| `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](feature-claude-config.md)                                  | pending  |
-| `project-hook` Feature — runs the project's own `devc-post-create.sh` at create          | [feature-project-hook](feature-project-hook.md)                                    | pending  |
+| `git-container-config` Feature — container-scope git settings; identity stays devc's     | [feature-git-config](archived/feature-git-config.md)                               | complete |
+| `claude-config` Feature — agent CLIs + `~/.claude` wiring; seed stays devc's             | [feature-claude-config](archived/feature-claude-config.md)                         | complete |
+| `project-hook` Feature — runs the project's own `devc-post-create.sh` at create          | [feature-project-hook](archived/feature-project-hook.md)                           | complete |
 | devc injects `project-hook` — the baseline reaches project-mode containers too           | [devc-inject-project-hook](devc-inject-project-hook.md)                            | pending  |
 | `node-nvmrc` 0.2.0 — `containerEnv` PATH pin for every process; drop the `cd` hook       | [feature-node-nvmrc-container-wide](archived/feature-node-nvmrc-container-wide.md) | complete |

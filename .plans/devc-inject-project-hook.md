@@ -14,7 +14,7 @@ copy from `post-create.sh`, so injecting the Feature without retiring the copy
 runs a project's hook **twice** — and a `devc-post-create.sh` is arbitrary and
 need not be idempotent.
 
-Depends on [feature-project-hook](feature-project-hook.md) being **published**. A
+Depends on [feature-project-hook](archived/feature-project-hook.md) being **published**. A
 baseline referencing an unpublished `ghcr.io` ref breaks every `devc up` — the
 failure [devc-bridge-feature](archived/devc-bridge-feature.md) already had to
 reverse once.
@@ -319,7 +319,7 @@ not run there at all.
 - [ ] `features/README.md` — note that devc contributes this one by default
 - [ ] `docs/manual-verification.md` — a project-mode scenario
 - [ ] `.plans/PLAN.md` — register, and move
-      [feature-project-hook](feature-project-hook.md) to Completed if it is not
+      [feature-project-hook](archived/feature-project-hook.md) to Completed if it is not
       already
 
 ## Validation
@@ -393,7 +393,7 @@ not run there at all.
   one of them, that is a shape change (`false | string[]`) made then, with a real
   case in hand.
 - **A `projectDir` option** on the Feature — see
-  [feature-project-hook](feature-project-hook.md)'s reasoning; devc could not set
+  [feature-project-hook](archived/feature-project-hook.md)'s reasoning; devc could not set
   it through `--additional-features` anyway.
 - **Splitting `post-create.sh` into two orchestrators.** Named above as the
   fallback if `bashrc-additions` preceding the project hook turns out to matter.
