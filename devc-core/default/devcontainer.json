@@ -5,6 +5,7 @@
     "context": "."
   },
   "features": {
+    "ghcr.io/bmingles/devc-tools/bash-config:0": {},
     "ghcr.io/devcontainers-community/features/deno:1": {},
     "ghcr.io/devcontainers/features/git-lfs:1": {
       "autoPull": false
@@ -16,6 +17,7 @@
       "pnpmVersion": "none",
       "nvmVersion": "latest"
     },
+    "ghcr.io/bmingles/devc-tools/node-nvmrc:0": {},
     "ghcr.io/devcontainers/features/python:1": {
       "installTools": true,
       "version": "3.12"
@@ -47,11 +49,8 @@
     // deliberately not the host's ~/.gitconfig — see that script for why.
     "type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc/gitconfig-identity,consistency=cached,readonly",
 
-    // User-level shell customization: every *.sh in here is sourced by every interactive
-    // container shell, before the project's own .devcontainer/shell/. See the devc:shell-dirs
-    // block in scripts/bashrc-additions.sh. Read-only and live — host edits apply to the next
-    // new shell. initialize-command.sh creates the source, since a bind mount will not.
-    "type=bind,source=${localEnv:HOME}/.config/devc/shell,target=/usr/local/share/devc/shell,consistency=cached,readonly",
+    // bash-config feature user config
+    "type=bind,source=${localEnv:HOME}/.config/devc/shell,target=/usr/local/share/devc-features/bash-config/dirs/user,readonly",
 
     "type=volume,source=go-cache-${localWorkspaceFolderBasename},target=/home/vscode/go/pkg",
     "type=volume,source=go-build-cache-${localWorkspaceFolderBasename},target=/root/.cache/go-build",

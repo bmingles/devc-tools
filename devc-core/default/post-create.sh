@@ -11,6 +11,6 @@ set -e
 scripts="$(cd "$(dirname "$0")/scripts" && pwd)"
 
 bash "$scripts/agents-setup.sh"        # Claude/agent config: ~/.claude volume, seed links, ~/.claude.json
-bash "$scripts/node-setup.sh"          # nvm install from the project's .nvmrc
 bash "$scripts/git-setup.sh"           # git user scope: host identity, LFS filters, worktree/safe.directory
 bash "$scripts/project-hook.sh"        # the project's own .devc/devc-post-create.sh, if it has one
+bash "$scripts/bashrc-additions.sh"    # inject this script's own content into ~/.bashrc, marker-guarded
