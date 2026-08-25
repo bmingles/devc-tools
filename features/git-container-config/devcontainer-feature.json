@@ -1,0 +1,37 @@
+{
+  "id": "git-container-config",
+  "version": "0.1.0",
+  "name": "Git container config",
+  "description": "Re-applies, on every container create, the user-scope git settings a devcontainer needs and cannot keep: LFS filters for the remote user, worktree.useRelativePaths, safe.directory, and an include.path to an identity file if one has been mounted in. ~/.gitconfig is container-local and wiped on every rebuild, while the repo's working tree and .git are host bind mounts, so anything git needs at user scope has to be re-applied on every create. Installs neither git nor git-lfs — it configures a git that is already there.",
+  "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/git-container-config",
+  "licenseURL": "https://github.com/bmingles/devc-tools/blob/main/LICENSE",
+  "options": {
+    "identityIncludePath": {
+      "type": "string",
+      "default": "",
+      "description": "Container path to a git-config-format file to include as your identity (user.name/user.email), first, so the container-mandated settings below win over anything it carries. The Feature never reads, parses or validates the file — it only names it. Empty (the default) skips silently; a non-devc consumer has no such file and that is not an error. See the README for the initializeCommand + mount recipe that produces one."
+    },
+    "lfsFilters": {
+      "type": "boolean",
+      "default": true,
+      "description": "Run `git lfs install --force --skip-repo` for the remote user when git-lfs is on PATH. Needed because a git-lfs Feature that installs at build time (as root) writes its filters to /root/.gitconfig, which the remote user never sees. No git-lfs on PATH warns and continues rather than failing create."
+    },
+    "lfsSkipSmudge": {
+      "type": "boolean",
+      "default": true,
+      "description": "Add --skip-smudge to the LFS install above, so a checkout does not materialize LFS objects — most work does not need them and checkouts stay fast. Run `git lfs pull` (all) or `git lfs checkout -- <path>` (targeted) when you do; the clean filter stays active either way, so materialized files still read as unmodified."
+    },
+    "worktreeRelativePaths": {
+      "type": "boolean",
+      "default": true,
+      "description": "Set worktree.useRelativePaths so `git worktree add` run inside the container writes relative links instead of container-absolute paths a host could never resolve — the host and container mount the same .git at different absolute paths."
+    },
+    "safeDirectory": {
+      "type": "string",
+      "default": "*",
+      "description": "Passed to `git config --global --replace-all safe.directory`. The workspace bind mount can present a different owner than the container user, which git otherwise refuses to operate on. Empty disables this setting entirely; any other value is passed through as-is, so a consumer can scope it to one path instead of `*`."
+    }
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/git-lfs"],
+  "postCreateCommand": "bash /usr/local/share/devc-features/git-container-config/post-create.sh"
+}

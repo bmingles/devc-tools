@@ -145,31 +145,32 @@ The devc equivalent, for reference rather than for copying, is
 
 ## Checklist
 
-- [ ] `features/git-container-config/devcontainer-feature.json` — id/version/name,
+- [x] `features/git-container-config/devcontainer-feature.json` — id/version/name,
       five options, `installsAfter`, `postCreateCommand`
-- [ ] `features/git-container-config/install.sh` — hook placement + option baking
-- [ ] `features/git-container-config/post-create.sh` — the five steps in order,
+- [x] `features/git-container-config/install.sh` — hook placement + option baking
+- [x] `features/git-container-config/post-create.sh` — the five steps in order,
       rationale comments carried over, exit 0 on every warning path
-- [ ] `features/git-container-config/README.md` — what it does _not_ install, the
+- [x] `features/git-container-config/README.md` — what it does _not_ install, the
       identity seam (with the exact devc mount + `initialize-command.sh` recipe a
       non-devc consumer can copy), the `--skip-smudge` consequence (`git lfs pull`)
-- [ ] `features/git-container-config/test/test.sh` — scenario
-- [ ] `features/git-container-config/test/run-features-test.sh` — wrapper
-- [ ] `features/git-container-config/test/git_config_test.sh` — offline harness
-- [ ] `features/README.md` — row
-- [ ] `.plans/PLAN.md` — register
+- [x] `features/git-container-config/test/test.sh` — scenario
+- [x] `features/git-container-config/test/run-features-test.sh` — wrapper
+- [x] `features/git-container-config/test/git_config_test.sh` — offline harness
+- [x] `features/README.md` — row
+- [x] `.plans/PLAN.md` — register (already listed under Pending; moved to Completed
+      as part of archiving, per the standard plan-orchestrating flow)
 
 ## Validation
 
-- [ ] `bash features/git-container-config/test/git_config_test.sh` — runs the hook
+- [x] `bash features/git-container-config/test/git_config_test.sh` — runs the hook
       against a temp `HOME` with `GIT_CONFIG_GLOBAL` pointed into it (no
       container, no root): identity include set when the file exists and skipped
       when the option is empty; `worktree.useRelativePaths` and `safe.directory`
       present; `safeDirectory: ""` omits it; a second run is idempotent (no
       duplicate `include.path`, no duplicate `safe.directory`); the missing-identity
-      warning goes to **stderr** and the exit code is still 0
-- [ ] Same harness with `git-lfs` absent from `PATH`: warns, exits 0, other
-      settings still applied
+      warning goes to **stderr** and the exit code is still 0 — 40 checks, ALL PASS
+- [x] Same harness with `git-lfs` absent from `PATH`: warns, exits 0, other
+      settings still applied — case 1 of `git_config_test.sh`
 - [ ] (needs Docker) `bash features/git-container-config/test/run-features-test.sh`
       — settings land in the **remote user's** `~/.gitconfig`, not `/root/`;
       with the git-lfs Feature also enabled, `git config --get filter.lfs.clean`
@@ -180,10 +181,19 @@ The devc equivalent, for reference rather than for copying, is
 - [ ] (needs Docker) **the bare `{}` scenario** — no options, no mounts: the
       three container-scope settings are applied and create succeeds with only a
       stderr warning about the missing identity
-- [ ] The README's `initializeCommand` recipe, run on this machine against a
+- [x] The README's `initializeCommand` recipe, run on this machine against a
       throwaway `$HOME`: produces a file git can read back, including for a
-      `user.name` containing `#` and `"`, and exits 0 when no identity is set
-- [ ] `deno fmt --check` clean
+      `user.name` containing `#` and `"`, and exits 0 when no identity is set.
+      **Found and fixed a real bug while doing this**: the recipe as first
+      written piped `git config --get user.name` into `xargs -I{}`, and `xargs`
+      applies its own quote parsing by default — a name containing an apostrophe
+      (`O'Brien`) or a `"` silently lost everything from that character onward
+      (`xargs: unmatched single quote`), while `exit 0` masked the failure. Fixed
+      to `git config --null --get ... | xargs -r -0 -I{} ...`, which passes the
+      value through with no shell-style interpretation; re-verified against
+      `Jane "JD" O'Brien #1`, a bare `\`, and a `;`, each read back
+      byte-for-byte, plus the plain and no-identity cases, all exit 0.
+- [x] `deno fmt --check` clean
 
 ## Not in this plan
 
