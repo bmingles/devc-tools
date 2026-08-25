@@ -201,53 +201,58 @@ Must carry, beyond the usual:
 
 ## Checklist
 
-- [ ] `features/project-hook/devcontainer-feature.json` — id, `0.1.0`, name,
+- [x] `features/project-hook/devcontainer-feature.json` — id, `0.1.0`, name,
       description, doc/license URLs, `postCreateCommand`; no `options`
-- [ ] `features/project-hook/install.sh` — `SHARE_DIR`, place + `chmod 0755`,
+- [x] `features/project-hook/install.sh` — `SHARE_DIR`, place + `chmod 0755`,
       nothing else; no release pin
-- [ ] `features/project-hook/post-create.sh` — Feature header + the
+- [x] `features/project-hook/post-create.sh` — Feature header + the
       `devc:project-hook` fence copied byte-for-byte
-- [ ] `features/project-hook/README.md` — the project's side of the contract,
+- [x] `features/project-hook/README.md` — the project's side of the contract,
       the deliberate absence of a mount recipe, the ordering note, the double-run
       hazard
-- [ ] `features/project-hook/test/test.sh` — the bare `{}` scenario
-- [ ] `features/project-hook/test/scenarios.json` — `with_hook`,
+- [x] `features/project-hook/test/test.sh` — the bare `{}` scenario
+- [x] `features/project-hook/test/scenarios.json` — `with_hook`,
       `devcontainer_dir_hook`
-- [ ] `features/project-hook/test/with_hook.sh`,
+- [x] `features/project-hook/test/with_hook.sh`,
       `features/project-hook/test/devcontainer_dir_hook.sh`
-- [ ] `features/project-hook/test/run-features-test.sh` — copied unchanged from
+- [x] `features/project-hook/test/run-features-test.sh` — copied unchanged from
       another Feature (it derives the id from its own path)
-- [ ] `features/README.md` — Published Features row, and the double-run note
+- [x] `features/README.md` — Published Features row, and the double-run note
       alongside the existing `bash-config`/`shell-dirs` one
-- [ ] `devc/README.md` — add the Feature copy to the fence-harness list, matching
+- [x] `devc/README.md` — add the Feature copy to the fence-harness list, matching
       how `shell_dirs_test.sh`'s two copies are listed
 - [ ] `features/PUBLISH_ALLOWLIST.txt` — add `project-hook` (**last**, once the
       validation below is green; the allowlist is the gate, so adding it early is
-      the one way to publish a half-finished Feature)
-- [ ] `.plans/PLAN.md` — register
+      the one way to publish a half-finished Feature) — **deferred: the
+      container-dependent validation below could not run (no Docker in this
+      environment), so the plan's own precondition for this step is not met.
+      See the completion note in `.plans/PLAN.md`.**
+- [x] `.plans/PLAN.md` — register
 
 ## Validation
 
-- [ ] `bash devc/tests/project_hook_test.sh features/project-hook/post-create.sh`
+- [x] `bash devc/tests/project_hook_test.sh features/project-hook/post-create.sh`
       — **the drift guard, and the most important item here.** All 8 cases pass
       against the Feature's copy with the harness unmodified. If the harness needs
       any edit to pass, the copy has drifted and the fix is the copy, not the
       harness.
-- [ ] `bash devc/tests/project_hook_test.sh devc-core/default/scripts/project-hook.sh`
+- [x] `bash devc/tests/project_hook_test.sh devc-core/default/scripts/project-hook.sh`
       — still green, unchanged. Proves the copy did not require a harness change
       that would have broken devc's original.
-- [ ] `diff` of the two fenced regions is empty — extract with the same `awk`
+- [x] `diff` of the two fenced regions is empty — extract with the same `awk`
       the harness uses, and expect byte equality.
-- [ ] `bash tests/features_test.sh --feature project-hook` — id matches the
+- [x] `bash tests/features_test.sh --feature project-hook` — id matches the
       directory, version parses as semver, name and description non-empty.
-- [ ] `bash tests/features_test.sh` — whole collection still green.
-- [ ] (needs Docker) `bash features/project-hook/test/run-features-test.sh` —
+- [x] `bash tests/features_test.sh` — whole collection still green.
+- [ ] (needs Docker, NOT RUN — no Docker in this environment)
+      `bash features/project-hook/test/run-features-test.sh` —
       the bare `{}` default scenario: `post-create.sh` is installed at the
       manifest's path, is executable and root-owned; **create succeeded with no
       hook present at all**, which is the inert case; nothing was appended to
       `~/.bashrc`; and running the script by hand in a temp dir with
       `env -u PROJECT_PATH` is a silent no-op that exits 0.
-- [ ] (needs Docker) the `with_hook` scenario — its `onCreateCommand` writes an
+- [ ] (needs Docker, NOT RUN — no Docker in this environment) the `with_hook`
+      scenario — its `onCreateCommand` writes an
       executable `.devc/devc-post-create.sh` at
       `${containerWorkspaceFolder}` that touches a marker and records its cwd;
       `onCreateCommand` runs before **every** `postCreateCommand`, which is the
@@ -258,10 +263,11 @@ Must carry, beyond the usual:
       from the CLI source: if the hook did not run with cwd at the workspace
       folder, `${PROJECT_PATH:-$PWD}` resolved somewhere else and the marker is
       absent.
-- [ ] (needs Docker) the `devcontainer_dir_hook` scenario — the same, with the
+- [ ] (needs Docker, NOT RUN — no Docker in this environment) the
+      `devcontainer_dir_hook` scenario — the same, with the
       hook at `.devcontainer/devc-post-create.sh`, proving the second candidate is
       reachable in a real container.
-- [ ] `deno fmt --check` clean.
+- [x] `deno fmt --check` clean.
 
 The failure paths — non-executable, dangling symlink, hook exits non-zero, no
 fall-through — are **not** container scenarios and deliberately so:

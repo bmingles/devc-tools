@@ -16,6 +16,7 @@ publish matrix from the collection rather than naming its members, and so does
 | [devc-bridge](devc-bridge/README.md)                   | `ghcr.io/bmingles/devc-tools/devc-bridge`          | Installs the devc-bridge client so container code can invoke host commands.                                                                                        |
 | [git-container-config](git-container-config/README.md) | `ghcr.io/bmingles/devc-tools/git-container-config` | Re-applies the user-scope git settings a devcontainer needs and cannot keep — LFS filters, `worktree.useRelativePaths`, `safe.directory`, and an identity include. |
 | [node-nvmrc](node-nvmrc/README.md)                     | `ghcr.io/bmingles/devc-tools/node-nvmrc`           | Makes the Node version a workspace pins in `.nvmrc` the one every process in the container gets.                                                                   |
+| [project-hook](project-hook/README.md)                 | `ghcr.io/bmingles/devc-tools/project-hook`         | On every container create, runs the project's own `devc-post-create.sh` if it has one — `.devc/` first, then `.devcontainer/`, first hit wins.                     |
 | [shell-dirs](shell-dirs/README.md)                     | `ghcr.io/bmingles/devc-tools/shell-dirs`           | Sources every `*.sh` in a project (and optionally a personal) directory in every interactive shell.                                                                |
 
 The tag tracks **each Feature's own** version line: `:0` while that Feature is
@@ -30,10 +31,13 @@ until that release is tagged its publish job fails the pin guard by design.
 Nothing else is blocked by that — see [Versions](#versions) for why each Feature
 publishes on its own.
 
-`shell-dirs`, `bash-config`, `git-container-config` and `claude-config` are
-**not on the publish allowlist** — all four are still under active development
-and deliberately held back from ghcr.io. See
-[The publish allowlist](#the-publish-allowlist).
+`shell-dirs`, `bash-config`, `git-container-config`, `claude-config` and
+`project-hook` are **not on the publish allowlist** — all five are still under
+active development and deliberately held back from ghcr.io. `project-hook`'s
+offline drift-guard harness is green against both copies (see its own
+README), but every container-dependent validation item is unverified in an
+environment with no Docker, so it is held back the same way the other four
+are. See [The publish allowlist](#the-publish-allowlist).
 
 **`bash-config` supersedes `shell-dirs`**, and the two are not meant to be
 enabled together: they write different blocks, so a container with both sources
@@ -45,6 +49,17 @@ the Feature rewrite lines within it, while `bash-config` puts a static
 one-line block in `~/.bashrc` naming two fixed container directories, so
 nothing rewrites anything. See
 [bash-config/README.md](bash-config/README.md#relationship-to-shell-dirs).
+
+**Do not enable `project-hook` in a devc container until devc's own copy of
+the same script is retired.** devc's baseline still runs
+`devc-core/default/scripts/project-hook.sh` on every create; a devc container
+that also enables the `project-hook` Feature runs the project's own
+`devc-post-create.sh` **twice**. Unlike `bash-config`/`shell-dirs`, there is
+no guard available here — the sourcing-idempotence trick those two use
+(`_DEVC_SHELL_DIRS_DONE`) works because both copies run inside one shell,
+while these are two separate create-time processes, with the Feature's copy
+running first and unable to detect that devc's own copy has not run yet. See
+[project-hook/README.md](project-hook/README.md#the-double-run-hazard--read-this-before-enabling-in-a-devc-container).
 
 ## Layout
 

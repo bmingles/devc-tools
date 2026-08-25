@@ -647,6 +647,10 @@ bash tests/project_hook_test.sh ../devc-core/default/scripts/project-hook.sh   #
 # against each; if it needs changes for one of them, the two have drifted:
 bash tests/shell_dirs_test.sh ../features/shell-dirs/install.sh             # devc:shell-dirs
 
+# project_hook_test.sh takes the script path too, for the same reason — devc's copy above, and
+# the project-hook Feature's post-create.sh below. Must pass unmodified against both:
+bash tests/project_hook_test.sh ../features/project-hook/post-create.sh       # devc:project-hook
+
 # seed_link_test.sh takes the script path too, for the same reason — devc's copy above, and the
 # claude-config Feature's post-create.sh below. Must pass unmodified against both:
 bash tests/seed_link_test.sh ../features/claude-config/post-create.sh         # devc:seed-link
