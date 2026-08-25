@@ -1,0 +1,36 @@
+{
+  "id": "claude-config",
+  "version": "0.1.0",
+  "name": "Claude Code config",
+  "description": "Installs the Claude Code CLI (and optionally the GitHub Copilot CLI) at build time, and at create time wires ~/.claude and ~/.claude.json to whatever persistence and seed the consumer has mounted. A bare `{}` installs the Claude CLI and does nothing else — no seed linking, ~/.claude.json left alone. Declares no mounts: whether `${localWorkspaceFolderBasename}` substitutes inside a Feature's own `mounts` is unmeasured, so the two per-workspace volumes stay a two-line paste from the README rather than a Feature declaration that risks one shared volume across every project.",
+  "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/claude-config",
+  "licenseURL": "https://github.com/bmingles/devc-tools/blob/main/LICENSE",
+  "options": {
+    "installClaudeCli": {
+      "type": "boolean",
+      "default": true,
+      "description": "Install the Claude Code CLI at build time, as the remote user, into ~/.local/bin — not shadowed by the ~/.claude volume mounted at create time, and writable by that user afterwards (`claude update` etc.). Idempotent: a rebuild does not re-download when the binary is already there."
+    },
+    "installCopilotCli": {
+      "type": "boolean",
+      "default": false,
+      "description": "Install the GitHub Copilot CLI at build time, same shape as installClaudeCli. Defaults false: a Feature named claude-config should not silently install a second vendor's CLI for everyone else."
+    },
+    "claudeDir": {
+      "type": "string",
+      "default": "",
+      "description": "Container path for ~/.claude. Empty (the default) resolves to $_REMOTE_USER_HOME/.claude at build time. An option only because an image with a different home layout exists."
+    },
+    "seedDir": {
+      "type": "string",
+      "default": "",
+      "description": "Container path to a read-only host config seed (see README for the mount recipe). Every top-level *file* in it is symlinked into claudeDir on every create; directories are ignored. Empty (the default) skips seed linking entirely — the Feature never invents this path, since only the consumer's own devcontainer.json can mount one in."
+    },
+    "claudeJsonDir": {
+      "type": "string",
+      "default": "",
+      "description": "Container path to a directory backing ~/.claude.json. A volume can only mount at a directory, which is the whole reason for this option: non-empty replaces ~/.claude.json with a symlink to \"<claudeJsonDir>/claude.json\", seeded with {} on first use. Empty (the default) leaves ~/.claude.json alone entirely — the plain file Claude Code creates itself, for a consumer with no volume mounted here."
+    }
+  },
+  "postCreateCommand": "bash /usr/local/share/devc-features/claude-config/post-create.sh"
+}

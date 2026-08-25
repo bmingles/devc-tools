@@ -1,0 +1,20 @@
+{
+  "with_seed_and_json": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "onCreateCommand": "sudo mkdir -p /usr/local/share/claude-config-test/seed/skills /usr/local/share/claude-config-test/claude-json && sudo chmod -R 777 /usr/local/share/claude-config-test && printf '# md\\n' > /usr/local/share/claude-config-test/seed/CLAUDE.md && printf '{}\\n' > /usr/local/share/claude-config-test/seed/settings.json && echo 'a skill' > /usr/local/share/claude-config-test/seed/skills/inner.md",
+    "features": {
+      "claude-config": {
+        "seedDir": "/usr/local/share/claude-config-test/seed",
+        "claudeJsonDir": "/usr/local/share/claude-config-test/claude-json"
+      }
+    }
+  },
+  "with_copilot": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "claude-config": {
+        "installCopilotCli": true
+      }
+    }
+  }
+}

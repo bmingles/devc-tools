@@ -198,31 +198,40 @@ inherits that ownership. If yes, step 1 of the hook is belt-and-braces and
 
 ## Checklist
 
-- [ ] Measure both open questions; record answers in
-      `.plans/design/devc-feature-split.md`
-- [ ] `features/claude-config/devcontainer-feature.json` — id/version/name, five
+- [x] Measure both open questions; record answers in
+      `.plans/design/devc-feature-split.md` — unmeasured (no Docker); noted
+      there, safe no-mounts path taken
+- [x] `features/claude-config/devcontainer-feature.json` — id/version/name, five
       options, `postCreateCommand`, and volumes **only if** measurement says so
-- [ ] `features/claude-config/install.sh` — hook placement, option baking,
+      — no volumes declared, per the unmeasured-safe-default decision
+- [x] `features/claude-config/install.sh` — hook placement, option baking,
       CLI installs as `$_REMOTE_USER`, `claudeDir` pre-created and owned
-- [ ] `features/claude-config/post-create.sh` — ownership repair, verbatim
+- [x] `features/claude-config/post-create.sh` — ownership repair, verbatim
       `devc:seed-link` block, `~/.claude.json` symlink
-- [ ] `features/claude-config/README.md` — the four Claude paths, what a consumer
+- [x] `features/claude-config/README.md` — the four Claude paths, what a consumer
       must mount themselves (with the exact read-only seed mount + an
       `initializeCommand` `mkdir` recipe), `installCopilotCli` default, and the
       volume decision either way
-- [ ] `features/claude-config/test/test.sh` — scenario
-- [ ] `features/claude-config/test/run-features-test.sh` — wrapper
-- [ ] `features/README.md` — row
-- [ ] `devc/README.md` — Development section lists the new harness invocation
-- [ ] `.plans/PLAN.md` — register
+- [x] `features/claude-config/test/test.sh` — scenario
+- [x] `features/claude-config/test/run-features-test.sh` — wrapper
+- [x] `features/README.md` — row
+- [x] `devc/README.md` — Development section lists the new harness invocation
+- [x] `.plans/PLAN.md` — register
 
 ## Validation
 
-- [ ] `bash devc/tests/seed_link_test.sh features/claude-config/post-create.sh`
+- [x] `bash devc/tests/seed_link_test.sh features/claude-config/post-create.sh`
       passes **unmodified** — the existing harness against the Feature's copy. If
-      it needs edits, the copy drifted
-- [ ] `bash devc/tests/seed_link_test.sh devc/default/scripts/agents-setup.sh`
-      still passes (devc's copy untouched)
+      it needs edits, the copy drifted. (Path note: the plan cites
+      `devc/tests/seed_link_test.sh`, which is correct as-is — that harness
+      itself never moved. Its target script did: the plan cites
+      `devc/default/scripts/agents-setup.sh`, which is now
+      `devc-core/default/scripts/agents-setup.sh` — see the next item.)
+- [x] `bash devc/tests/seed_link_test.sh devc-core/default/scripts/agents-setup.sh`
+      still passes (devc's copy untouched; real current path — the plan's cited
+      `devc/default/scripts/agents-setup.sh` was renamed to `devc-core/default/`
+      before this plan was implemented, same rename `feature-git-config` already
+      recorded)
 - [ ] (needs Docker) `bash features/claude-config/test/run-features-test.sh` —
       `claude` on `PATH` and executable by the remote user; `~/.claude` owned by
       the remote user; with `seedDir` unset nothing is linked and create still
@@ -236,8 +245,11 @@ inherits that ownership. If yes, step 1 of the hook is belt-and-braces and
       default leaves it absent
 - [ ] (needs Docker, if volumes are declared) two containers from different
       workspace folders get **different** volumes — the failure mode that decides
-      the volume question
-- [ ] `deno fmt --check` clean
+      the volume question. Moot for this implementation: no volumes are
+      declared (the safe unmeasured-default path), so there is nothing here to
+      run yet — this stays open for whoever measures open question 2 and adds
+      the volumes.
+- [x] `deno fmt --check` clean
 
 ## Not in this plan
 

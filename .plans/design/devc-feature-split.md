@@ -201,3 +201,13 @@ all block calling it done.
    Feature's `~/.bashrc` block lands **after** devc's `bashrc-additions` block —
    including after the `DEVC_ATTACH` `PROMPT_COMMAND` snapshot that today runs
    last. Matters for `shell-dirs`; see that plan.
+
+**Questions 2 and 3 remain unmeasured as of `feature-claude-config`.** No Docker
+in the environment that plan was implemented in either — the same constraint
+every other plan here has hit, just fatal to these two specifically instead of
+merely postponing a container scenario. `claude-config` took the safe path the
+plan itself specifies for the unmeasured case: it declares **no** `mounts`, and
+its README carries the two-volume recipe as a consumer paste instead. Question
+3's `sudo chown` stays in `post-create.sh` regardless, per the plan (cheap,
+belt-and-braces either way). Both questions are still open for whoever next has
+a Docker daemon.
