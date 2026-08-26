@@ -505,3 +505,38 @@ harnesses in §0's baseline block; these are the items that need a real daemon.
       `agents` Feature's `install.sh` now, not the Dockerfile's own `RUN`
       step) is not orphaned — same install script, same target, but worth
       confirming against a real rebuild rather than assumed.
+
+## 10. `herdr-agent-sidecar` — Docker + Herdr host
+
+From `.plans/herdr-agent-sidecar.md`. Everything offline is covered by
+`deno task test` in §0's baseline block (`herdr_test.ts`) — these items all
+need a real Herdr pane driving a real `docker exec`.
+
+- [ ] **The main case.** From a Herdr pane, `devc attach` on a project whose
+      container has Claude: at the bash prompt `herdr agent list` shows **no
+      agent** for that pane; launch `claude` and within ~5s the pane shows
+      `agent=claude` with a real status; `herdr agent explain <pane>` names a
+      matched rule (not only `default_known_agent_idle_fallback`) once Claude
+      is working; exit Claude and the agent disappears again.
+- [ ] **Rotation.** In the same attach, run a second agent (or
+      `DEVC_HERDR_AGENT` unset plus any two table entries from `herdr.ts`)
+      and confirm the pane follows the switch without a reattach.
+- [ ] **Deference.** `HERDR_AGENT=claude devc attach` behaves exactly as it
+      does today and devc spawns **no** sidecar — check with
+      `pgrep -fa __herdr-sidecar`. The regression guard for the undefined
+      double-assertion case.
+- [ ] **Off switch.** `DEVC_HERDR_AGENT=off devc attach` spawns neither
+      watcher nor sidecar; `DEVC_HERDR_AGENT=codex devc attach` pins `codex`
+      regardless of what runs in the container, and no watcher `docker exec`
+      appears.
+- [ ] **No leak.** After the attach exits — including after `ctrl+c` and
+      after killing devc with `SIGKILL` — no `__herdr-sidecar` process
+      remains on the host and no watcher `sh` remains in the container
+      (`docker exec <c> ps -eo args= | grep DEVC_HERDR_WATCH`). Both halves
+      have their own mechanism (stdin EOF, `/proc` disappearance); test both.
+- [ ] **The pane stays clean.** Attach, run a full-screen agent, and confirm
+      no stray output from either child lands in the TUI, including when the
+      container is stopped underneath a live attach.
+- [ ] **`HERDR_ENV` unset** — `devc attach` spawns exactly one `docker exec`,
+      as it does today. The feature is invisible off-Herdr (no Herdr needed
+      for this one — it just needs confirming on a normal terminal).

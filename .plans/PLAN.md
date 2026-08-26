@@ -11,21 +11,7 @@
 
 ### Pending
 
-- [herdr-agent-sidecar](herdr-agent-sidecar.md) — makes a `devc attach` running
-  in a [Herdr](https://herdr.dev) pane show the agent that is actually running
-  _inside_ the container, and show none when the shell is at a prompt. devc
-  spawns two silent children beside the attach: a watcher (`docker exec` reading
-  `/proc/<shell>/stat`'s `tpgid` once a second) and a **sidecar** — a
-  `devc __herdr-sidecar` process carrying `HERDR_AGENT=<kind>`, killed and
-  respawned as the container's foreground command changes. Herdr honors the
-  variable on any substantial member of the pane's process group, so identity
-  can rotate without touching the attach; state keeps coming from Herdr's own
-  detection manifests, which devc deliberately does not take over. Replaces the
-  manual `HERDR_AGENT=claude devc attach` prefix, and defers to it when it is
-  set — two assertions in one process group is undefined behavior. Off entirely
-  unless `HERDR_ENV=1`. Registering `devc` itself as a Herdr agent kind was
-  measured and is impossible without a Herdr release; the plan records that and
-  the `pane.report-agent` dead end so neither is retried.
+Nothing pending right now.
 
 ### Standing rules for Feature work
 
@@ -69,6 +55,62 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
   take it too.
 
 ### Completed
+
+- [herdr-agent-sidecar](archived/herdr-agent-sidecar.md) — ✅ Done, code
+  complete and offline-tested; the six Docker+Herdr-needed items in the
+  plan's own Validation list are unrun (no Docker, no Herdr pane in this
+  environment), same standing as other entries below.
+
+  A `devc attach`/`devc claude` running in a [Herdr](https://herdr.dev) pane
+  now shows the agent actually running _inside_ the container, with Herdr's
+  own idle/working/blocked status, and shows none when the container shell
+  is at a bare prompt — gated entirely on environment (`HERDR_ENV=1`,
+  `HERDR_AGENT` unset, `DEVC_HERDR_AGENT` not `off`), no new CLI flag. New
+  `devc/herdr.ts` holds the gate (`herdrMode`), the command-line → Herdr-kind
+  mapping (`herdrAgentKindFor`, 18 kinds), `sidecarArgv` (mirrors
+  `devcontainerArgv`'s self-exec shape), the watcher script builder, and the
+  spawn/rotate/kill lifecycle (`startHerdrSidecar`). `main.ts` dispatches the
+  hidden `__herdr-sidecar` subcommand beside `__devcontainer`; `attach.ts`
+  emits the `DEVC_HERDR_WATCH` marker env var, starts the watcher + sidecar
+  seeded from `options.command`, and tears both down in its existing
+  `finally` alongside `resetColors()`.
+
+  **One deliberate deviation from the plan's literal watcher script**: the
+  plan's pseudocode reads the marker id via `id=$1` on a `sh -c '<script>'
+  <id>` invocation, but a single trailing operand to `sh -c` becomes `$0`,
+  not `$1` (verified empirically here — `sh -c 'echo $0 $1' foo` prints
+  `foo` with `$1` empty). `herdrWatcherScript` bakes the id directly into
+  the `grep` pattern at build time instead (it's a `crypto.randomUUID()`,
+  always shell-safe to splice in unquoted), sidestepping the off-by-one
+  entirely while keeping every other parsing detail — `tpgid` via
+  `cut -d')' -f2-`, reading `/proc/<tpgid>/cmdline` never `ps -g`, the two
+  `exit 0` self-termination arms — verbatim from the plan.
+
+  New `devc/tests/herdr_test.ts` (17 cases): the gate's three modes, every
+  `herdrAgentKindFor` case the plan's Validation section names (interpreter
+  re-take, `gh copilot`, a kind whose manifest id differs from its command
+  name, shell/empty/unlisted → `null`), `sidecarArgv`'s both branches with a
+  test that fails if `--allow-env` is dropped, the watcher script containing
+  the marker and both `exit 0` arms, and the sidecar body actually exiting 0
+  on stdin EOF (spawns the real `__herdr-sidecar` subcommand with closed
+  stdin — provable without Docker).
+
+  Verified here, offline: `cd devc && deno task check && deno task test`
+  (108 passed, up from 91 — **red → green**); `deno fmt --check` (169 files,
+  clean).
+
+  **Not verified here (no Docker, no Herdr):** all six Docker+Herdr-needed
+  items in the plan's own Validation list — the main case (agent appears/
+  disappears with a live Claude session), rotation between two agents, the
+  `HERDR_AGENT=claude` deference regression guard, the `DEVC_HERDR_AGENT=off`/
+  `=<kind>` switches, no leaked `__herdr-sidecar`/watcher process after
+  ctrl+c or `SIGKILL`, and the pane staying clean under a full-screen agent.
+  All added to `docs/manual-verification.md` §10 for the next Docker+Herdr
+  session.
+
+  `devc/README.md` gained a "Herdr integration" subsection under
+  `## How it works`, documenting the three env vars and that state still
+  comes from Herdr's own manifests.
 
 - [devc-swap-baseline-features](archived/devc-swap-baseline-features.md) —
   ✅ Done, code complete and offline-tested; six Docker-needed items in the
@@ -1639,4 +1681,4 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
 | `project-hook` Feature — runs the project's own `devc-post-create.sh` at create                             | [feature-project-hook](archived/feature-project-hook.md)                           | complete |
 | devc injects `devc-config` — the baseline reaches project-mode containers too (renamed from `project-hook`) | [devc-inject-project-hook](archived/devc-inject-project-hook.md)                   | complete |
 | `node-nvmrc` 0.2.0 — `containerEnv` PATH pin for every process; drop the `cd` hook                          | [feature-node-nvmrc-container-wide](archived/feature-node-nvmrc-container-wide.md) | complete |
-| devc surfaces the container's agent to Herdr — rotating `HERDR_AGENT` sidecar                               | [herdr-agent-sidecar](herdr-agent-sidecar.md)                                      |          |
+| devc surfaces the container's agent to Herdr — rotating `HERDR_AGENT` sidecar                               | [herdr-agent-sidecar](archived/herdr-agent-sidecar.md)                             | complete |

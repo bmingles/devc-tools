@@ -136,6 +136,37 @@ Notes:
 duration of the attach so a container shell reads as visually distinct from a
 local one.
 
+### Herdr integration
+
+A `devc attach`/`devc claude` running in a [Herdr](https://herdr.dev) pane
+shows the agent that is actually running **inside** the container — `claude`,
+`copilot`, `codex`, … — with Herdr's own idle/working/blocked status, and
+shows no agent at all when the container shell is sitting at a bare prompt.
+No flag, no per-project config: it is driven entirely by environment,
+gated on all of:
+
+- **`HERDR_ENV=1`** — set by Herdr itself; devc does nothing outside a Herdr
+  pane.
+- **`HERDR_AGENT` unset** in devc's own environment. If you already run
+  `HERDR_AGENT=claude devc attach` yourself, that keeps working unchanged and
+  devc adds nothing — asserting a second identity in the same pane is
+  undefined behavior in Herdr, so devc always defers to yours.
+- **`DEVC_HERDR_AGENT` is not `off`** — the explicit opt-out.
+
+When active, devc spawns two silent children beside the attach: a watcher
+(`docker exec` polling the attach shell's `/proc/<pid>/stat` once a second for
+its foreground process group) and a disposable **sidecar** process
+(`devc __herdr-sidecar`) carrying `HERDR_AGENT=<kind>`, killed and respawned
+as the container's foreground command changes. `DEVC_HERDR_AGENT=<kind>`
+pins that kind for the whole attach instead — the sidecar is spawned once and
+no watcher runs — the escape hatch for an agent devc's own mapping table
+(`herdrAgentKindFor` in `herdr.ts`) doesn't know.
+
+Herdr's own detection manifests keep deciding **state** (idle/working/blocked)
+from the pane's terminal output, exactly as they do for an agent run on the
+host — devc only ever asserts **identity**. Nothing here writes to Herdr's
+config.
+
 ### The library: `@devc-tools/core`
 
 Everything above except attaching an interactive shell — start/rebuild/stop/down,

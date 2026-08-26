@@ -277,48 +277,55 @@ hidden and there is no flag), `devc/container.ts`, and every file under
 
 ## Checklist
 
-- [ ] `devc/herdr.ts` — new module: the enablement gate, `herdrAgentKindFor`,
+- [x] `devc/herdr.ts` — new module: the enablement gate, `herdrAgentKindFor`,
       the mapping table, `sidecarArgv`, the watcher script builder, the
       spawn/rotate/kill lifecycle, and the `__herdr-sidecar` child body.
       Internal names are the implementer's; the exported contract is the env
       vars, `__herdr-sidecar`, `DEVC_HERDR_WATCH`, and the kind strings above.
-- [ ] `devc/main.ts` — dispatch `__herdr-sidecar` immediately after the
+      (The watcher script bakes the id directly into the `grep` pattern
+      rather than passing it as a `sh -c` positional argument — measured that
+      a single trailing operand becomes `$0`, not `$1`, so the plan's literal
+      `id=$1` line would have read empty. See the doc comment on
+      `herdrWatcherScript`.)
+- [x] `devc/main.ts` — dispatch `__herdr-sidecar` immediately after the
       `__devcontainer` arm and before `--version`/`--help`, with the same
       "never returns" comment.
-- [ ] `devc/attach.ts` — emit `-e DEVC_HERDR_WATCH=<id>` when enabled; start the
+- [x] `devc/attach.ts` — emit `-e DEVC_HERDR_WATCH=<id>` when enabled; start the
       watcher and seed the sidecar from `options.command`; tear both down in the
       existing `finally`.
-- [ ] `devc/deno.json` — add `herdr.ts` to the `check` task's file list.
-- [ ] `devc/tests/herdr_test.ts` — new unit tests (below).
-- [ ] `devc/README.md` — a subsection under `## How it works`: what appears in a
+- [x] `devc/deno.json` — add `herdr.ts` to the `check` task's file list.
+- [x] `devc/tests/herdr_test.ts` — new unit tests (below).
+- [x] `devc/README.md` — a subsection under `## How it works`: what appears in a
       Herdr pane, the three environment variables (`HERDR_ENV` gate,
       `HERDR_AGENT` deference, `DEVC_HERDR_AGENT=off|<kind>`), and the fact that
       state comes from Herdr's own manifests, not devc.
-- [ ] `docs/manual-verification.md` — a new section for the checks that need
+- [x] `docs/manual-verification.md` — a new section for the checks that need
       Docker _and_ a Herdr session.
-- [ ] `.plans/PLAN.md` — register in `### Pending` and add the
-      `## Development Phases` row.
+- [x] `.plans/PLAN.md` — register in `### Pending` and add the
+      `## Development Phases` row. (Already present from plan authoring —
+      confirmed, not re-added.)
 
 ## Validation
 
-- [ ] `cd devc && deno task check && deno task test` — green, with new cases:
+- [x] `cd devc && deno task check && deno task test` — green, with new cases:
       `herdrAgentKindFor` returns `claude` for `claude`, for
       `node /home/vscode/.local/bin/claude`, and for `claude --resume`;
       `copilot` for `gh copilot`; `cursor` for `cursor-agent`; `null` for
       `bash -l`, for `''`, for `sleep 40`, and for `python3 -c import time`.
-- [ ] `sidecarArgv` has both branches covered the way
+      (108 passed, up from 91.)
+- [x] `sidecarArgv` has both branches covered the way
       `devcontainer_selfexec_test.ts` covers `devcontainerArgv`: standalone
       yields exactly `['__herdr-sidecar']`; from source it yields
       `['run', '--allow-env', <mainModule>, '__herdr-sidecar']`. **Dropping
       `--allow-env` must fail a test** — it is the one flag whose absence turns
       the sidecar into an instant crash that nothing else would notice, since
       the child's output is discarded.
-- [ ] The watcher script builder interpolates the id and nothing else: given an
+- [x] The watcher script builder interpolates the id and nothing else: given an
       id, the emitted script contains `DEVC_HERDR_WATCH=<id>` and both `exit 0`
       self-termination arms.
-- [ ] `deno run --no-prompt --allow-env devc/main.ts __herdr-sidecar </dev/null`
+- [x] `deno run --no-prompt --allow-env devc/main.ts __herdr-sidecar </dev/null`
       exits 0 immediately — the EOF watchdog, provable without Docker.
-- [ ] `deno fmt --check` clean at the repo root.
+- [x] `deno fmt --check` clean at the repo root.
 - [ ] (needs Docker + Herdr) **The main case.** From a Herdr pane, `devc attach`
       on a project whose container has Claude: at the bash prompt
       `herdr agent list` shows **no agent** for that pane; launch `claude` and

@@ -15,6 +15,12 @@ import {
   DEVCONTAINER_SUBCOMMAND,
   runEmbeddedDevcontainerCli,
 } from './devcontainer_selfexec.ts';
+import {
+  HERDR_SIDECAR_SUBCOMMAND,
+  type HerdrAttachSpec,
+  herdrMode,
+  runHerdrSidecarBody,
+} from './herdr.ts';
 import { initProject } from '@devc-tools/core/init.ts';
 import {
   globalConfigExists,
@@ -37,6 +43,13 @@ const KNOWN_COMMANDS = new Set(COMMANDS.map((c) => c.name));
 // the process belongs to the CLI, and its argv is the CLI's, not devc's. Never returns.
 if (subcommand === DEVCONTAINER_SUBCOMMAND) {
   await runEmbeddedDevcontainerCli(Deno.args.slice(1));
+}
+
+// devc self-execs with this hidden subcommand for the Herdr sidecar's disposable child (see
+// `herdr.ts`). Dispatched immediately after `__devcontainer`, ahead of `--version`/`--help`: from
+// here on the process belongs to the sidecar body, not devc. Never returns.
+if (subcommand === HERDR_SIDECAR_SUBCOMMAND) {
+  await runHerdrSidecarBody();
 }
 
 /** Prints a `devc:`-prefixed error to stderr and exits 1 (never returns). */
@@ -73,11 +86,21 @@ async function attach(rawArgs: string[], command?: string): Promise<void> {
     : target;
   const sessionName = sessionNameForWorkspaceFolder(projectRoot);
 
+  // Decided from environment alone — see `herdrMode`'s doc comment. `attachToContainer` takes
+  // the resolved spec rather than reaching into the environment itself, so it stays testable.
+  const mode = herdrMode((k) => Deno.env.get(k));
+  const herdr: HerdrAttachSpec | undefined = mode.mode === 'off'
+    ? undefined
+    : mode.mode === 'pinned'
+    ? { mode: 'pinned', kind: mode.kind }
+    : { mode: 'watch', watchId: crypto.randomUUID() };
+
   try {
     const code = await attachToContainer(info, {
       noClear,
       sessionName,
       command,
+      herdr,
     });
     Deno.exit(code);
   } catch (e) {

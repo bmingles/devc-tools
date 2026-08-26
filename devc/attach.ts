@@ -5,6 +5,11 @@
 
 import type { ContainerInfo } from '@devc-tools/core/container.ts';
 import { basenamePosix } from '@devc-tools/core/posix.ts';
+import {
+  DEVC_HERDR_WATCH_ENV,
+  type HerdrAttachSpec,
+  startHerdrSidecar,
+} from './herdr.ts';
 
 /**
  * Derives an attach session name from the container's workspace folder, e.g.
@@ -109,6 +114,12 @@ export interface AttachOptions {
    * first-prompt clear a plain attach does) unless `noClear`.
    */
   command?: string;
+  /**
+   * Herdr sidecar integration (see `herdr.ts`) — absent when disabled. Computed by the caller
+   * from `HERDR_ENV`/`HERDR_AGENT`/`DEVC_HERDR_AGENT` (`herdrMode`), so this module never reads
+   * the environment itself and stays testable.
+   */
+  herdr?: HerdrAttachSpec;
 }
 
 /**
@@ -126,6 +137,7 @@ export async function attachToContainer(
     sessionName = sessionNameForWorkspaceFolder(info.remoteWorkspaceFolder),
     noClear = false,
     command,
+    herdr,
   } = options;
 
   // A genuine tmux client (not a child that merely inherited $TMUX, e.g. a VS
@@ -193,7 +205,25 @@ export async function attachToContainer(
   // output on screen (--no-clear), or when running a command (no interactive prompt
   // fires — the clear is baked into the command via loginShell()).
   const attachFlag = noClear || command ? [] : ['-e', 'DEVC_ATTACH=1'];
-  const envFlags = [...baseEnvFlags, ...tmuxEnvFlags, ...attachFlag];
+
+  // The marker the watcher greps `/proc/*/environ` for, so it can find *this* attach's shell
+  // among every process in the container. Only in `watch` mode — `pinned` needs no watcher.
+  const herdrWatchFlag = herdr?.mode === 'watch'
+    ? ['-e', `${DEVC_HERDR_WATCH_ENV}=${herdr.watchId}`]
+    : [];
+  const envFlags = [
+    ...baseEnvFlags,
+    ...tmuxEnvFlags,
+    ...attachFlag,
+    ...herdrWatchFlag,
+  ];
+
+  // Two silent children beside the attach — a watcher and a sidecar, or just a pinned sidecar.
+  // Seeded from `command` (`devc claude`) so the pane is correct immediately rather than a
+  // second later. See `herdr.ts`.
+  const herdrController = herdr
+    ? startHerdrSidecar(info, herdr, command)
+    : null;
 
   // Tint the terminal for the duration of the attach; reset on detach (including
   // on a non-zero exit or a thrown error via finally).
@@ -219,5 +249,6 @@ export async function attachToContainer(
     return code;
   } finally {
     await resetColors();
+    await herdrController?.stop();
   }
 }
