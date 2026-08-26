@@ -13,7 +13,13 @@
     // "ghcr.io/devcontainers/features/go:1": { "version": "latest" },
     "ghcr.io/devcontainers/features/node:1": {
       "nodeGypDependencies": true,
-      "version": "latest",
+      // "latest" floats onto whatever nodejs.org's index currently resolves as newest —
+      // including, on at least one build, an unreleased vNext alpha whose own `node --version`
+      // disagreed with the directory name nvm installed it under, which broke nvm's
+      // auto-use-on-source logic (node-nvmrc's postCreateCommand failing before it ever reaches
+      // .nvmrc-specific logic). "lts" is what upstream's own docs recommend over "latest" for
+      // exactly this reason.
+      "version": "lts",
       "pnpmVersion": "none",
       "nvmVersion": "latest"
     },
