@@ -11,7 +11,21 @@
 
 ### Pending
 
-None currently.
+- [herdr-agent-sidecar](herdr-agent-sidecar.md) — makes a `devc attach` running
+  in a [Herdr](https://herdr.dev) pane show the agent that is actually running
+  _inside_ the container, and show none when the shell is at a prompt. devc
+  spawns two silent children beside the attach: a watcher (`docker exec` reading
+  `/proc/<shell>/stat`'s `tpgid` once a second) and a **sidecar** — a
+  `devc __herdr-sidecar` process carrying `HERDR_AGENT=<kind>`, killed and
+  respawned as the container's foreground command changes. Herdr honors the
+  variable on any substantial member of the pane's process group, so identity
+  can rotate without touching the attach; state keeps coming from Herdr's own
+  detection manifests, which devc deliberately does not take over. Replaces the
+  manual `HERDR_AGENT=claude devc attach` prefix, and defers to it when it is
+  set — two assertions in one process group is undefined behavior. Off entirely
+  unless `HERDR_ENV=1`. Registering `devc` itself as a Herdr agent kind was
+  measured and is impossible without a Herdr release; the plan records that and
+  the `pane.report-agent` dead end so neither is retried.
 
 ### Standing rules for Feature work
 
@@ -1625,3 +1639,4 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
 | `project-hook` Feature — runs the project's own `devc-post-create.sh` at create                             | [feature-project-hook](archived/feature-project-hook.md)                           | complete |
 | devc injects `devc-config` — the baseline reaches project-mode containers too (renamed from `project-hook`) | [devc-inject-project-hook](archived/devc-inject-project-hook.md)                   | complete |
 | `node-nvmrc` 0.2.0 — `containerEnv` PATH pin for every process; drop the `cd` hook                          | [feature-node-nvmrc-container-wide](archived/feature-node-nvmrc-container-wide.md) | complete |
+| devc surfaces the container's agent to Herdr — rotating `HERDR_AGENT` sidecar                               | [herdr-agent-sidecar](herdr-agent-sidecar.md)                                      |          |
