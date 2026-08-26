@@ -3,14 +3,14 @@
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
     "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devc && printf '#!/bin/bash\\ntouch \"${containerWorkspaceFolder}/.devc/ran\"\\npwd > \"${containerWorkspaceFolder}/.devc/ran.pwd\"\\n' > ${containerWorkspaceFolder}/.devc/devc-post-create.sh && chmod +x ${containerWorkspaceFolder}/.devc/devc-post-create.sh",
     "features": {
-      "project-hook": {}
+      "devc-config": {}
     }
   },
   "devcontainer_dir_hook": {
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
     "onCreateCommand": "mkdir -p ${containerWorkspaceFolder}/.devcontainer && printf '#!/bin/bash\\ntouch \"${containerWorkspaceFolder}/.devcontainer/ran\"\\npwd > \"${containerWorkspaceFolder}/.devcontainer/ran.pwd\"\\n' > ${containerWorkspaceFolder}/.devcontainer/devc-post-create.sh && chmod +x ${containerWorkspaceFolder}/.devcontainer/devc-post-create.sh",
     "features": {
-      "project-hook": {}
+      "devc-config": {}
     }
   }
 }

@@ -12,6 +12,6 @@
 agents
 bash-config
 devc-bridge
+devc-config
 git-container-config
 node-nvmrc
-project-hook

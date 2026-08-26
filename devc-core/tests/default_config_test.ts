@@ -314,19 +314,23 @@ Deno.test('materialized (zero-config) devcontainer.json has no local Feature, ke
       Object.hasOwn(dc.features, 'ghcr.io/devcontainers/features/node:1'),
       true,
     );
-    // ...the pinned project-hook Feature is declared here too, so `devc init` output and any
-    // project that copies this file stays standalone (see overlay.ts's PROJECT_HOOK_FEATURE)...
+    // ...and the devc-config Feature is deliberately absent here too — devc contributes it
+    // dynamically, via withBaselineFeatures/--additional-features, never by declaring it in the
+    // bundled config itself. What this Feature does (running a devc-post-create.sh a project
+    // committed for devc's own convention) is devc-specific, so unlike the other bundled
+    // Features it is fine for a `devc init`-scaffolded project to lose it once `devc` itself is
+    // uninstalled — see overlay.ts's DEVC_CONFIG_FEATURE doc comment.
     assertEquals(
       Object.hasOwn(
         dc.features,
-        'ghcr.io/bmingles/devc-tools/project-hook:0.1.0',
+        'ghcr.io/bmingles/devc-tools/devc-config:0.1.0',
       ),
-      true,
+      false,
     );
     // ...and the baseline runtime runs via a top-level **onCreateCommand** — not
     // postCreateCommand, so it still precedes a Feature-declared postCreateCommand (the
-    // project-hook Feature's included) — rewritten from the in-project workspace path to the
-    // image-baked path (the cache dir is not mounted in).
+    // injected devc-config Feature's included) — rewritten from the in-project workspace path
+    // to the image-baked path (the cache dir is not mounted in).
     assertEquals(dc.postCreateCommand, undefined);
     assertEquals(
       dc.onCreateCommand,
@@ -923,31 +927,31 @@ Deno.test('declaresBridgeFeature: an alias for declaresFeatureNamed(_, "devc-bri
 
 Deno.test('declaresFeatureNamed matches by name, whatever the tag or registry', async (t) => {
   const yes = [
-    'ghcr.io/bmingles/devc-tools/project-hook',
-    'ghcr.io/bmingles/devc-tools/project-hook:0',
-    'ghcr.io/bmingles/devc-tools/project-hook:0.1.0',
-    'ghcr.io/someone-else/project-hook:1',
-    './features/project-hook',
+    'ghcr.io/bmingles/devc-tools/devc-config',
+    'ghcr.io/bmingles/devc-tools/devc-config:0',
+    'ghcr.io/bmingles/devc-tools/devc-config:0.1.0',
+    'ghcr.io/someone-else/devc-config:1',
+    './features/devc-config',
   ];
   const no = [
     'ghcr.io/devcontainers/features/node:1',
-    'ghcr.io/bmingles/devc-tools/project-hook-extra:0', // near-miss, different Feature
+    'ghcr.io/bmingles/devc-tools/devc-config-extra:0', // near-miss, different Feature
     './features/devc',
     '',
   ];
 
   for (const id of yes) {
     await t.step(`matches: ${id}`, () => {
-      assertEquals(declaresFeatureNamed({ [id]: {} }, 'project-hook'), true);
+      assertEquals(declaresFeatureNamed({ [id]: {} }, 'devc-config'), true);
     });
   }
   for (const id of no) {
     await t.step(`does not match: ${id || '(empty)'}`, () => {
-      assertEquals(declaresFeatureNamed({ [id]: {} }, 'project-hook'), false);
+      assertEquals(declaresFeatureNamed({ [id]: {} }, 'devc-config'), false);
     });
   }
 
-  assertEquals(declaresFeatureNamed({}, 'project-hook'), false);
+  assertEquals(declaresFeatureNamed({}, 'devc-config'), false);
 });
 
 // --- loadDeclaredFeatureIds ------------------------------------------------------------------
@@ -963,13 +967,13 @@ Deno.test("loadDeclaredFeatureIds returns the config's raw feature ids", async (
       JSON.stringify({
         features: {
           'ghcr.io/x/rust:1': { version: 'latest' },
-          'ghcr.io/bmingles/devc-tools/project-hook:0.1.0': {},
+          'ghcr.io/bmingles/devc-tools/devc-config:0.1.0': {},
         },
       }),
     );
     assertEquals(await loadDeclaredFeatureIds(path), [
       'ghcr.io/x/rust:1',
-      'ghcr.io/bmingles/devc-tools/project-hook:0.1.0',
+      'ghcr.io/bmingles/devc-tools/devc-config:0.1.0',
     ]);
   });
 });

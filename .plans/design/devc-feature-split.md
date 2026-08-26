@@ -138,7 +138,7 @@ reaches full parity by pasting two lines. Not by installing devc.
   `devc up` — the exact failure [devc-bridge-feature](../archived/devc-bridge-feature.md)
   had to reverse.
 - **Keep the fence marker names.** `devc:seed-link`, `devc:shell-dirs`,
-  `devc:project-hook` name _blocks_, not owners. A Feature's copy keeps the same
+  `devc:devc-config` name _blocks_, not owners. A Feature's copy keeps the same
   markers and the same parameter variable names, so `devc/tests/*_test.sh` — which
   already take the script path as `$1` — run against the copy unchanged. That is
   what stops the two copies drifting during the interim.

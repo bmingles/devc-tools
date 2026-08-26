@@ -22,7 +22,7 @@ bash tests/features_test.sh                                        # ALL PASS
 (cd devc && for t in seed_link:default/scripts/agents-setup.sh \
                      shell_dirs:default/scripts/bashrc-additions.sh; do
   bash "tests/${t%%:*}_test.sh" "${t#*:}"; done)
-bash devc/tests/project_hook_test.sh features/project-hook/post-create.sh    # ALL PASS
+bash devc/tests/devc_config_test.sh features/devc-config/post-create.sh    # ALL PASS
 bash features/devc-bridge/test/install_link_test.sh                # ALL PASS
 ```
 
@@ -407,33 +407,39 @@ real daemon.
 - [ ] **Ordering.** A hook that records `git config --get user.email` and
       whether `~/.claude` exists sees both already set up — proving devc's
       `onCreateCommand` (agents-setup, git-setup, bashrc-additions) really
-      precedes the project-hook Feature's `postCreateCommand`.
+      precedes the devc-config Feature's `postCreateCommand`.
 - [ ] **The double-install case.** A project declaring
-      `"ghcr.io/bmingles/devc-tools/project-hook:0.2.0": {}` in its own
+      `"ghcr.io/bmingles/devc-tools/devc-config:0.2.0": {}` in its own
       `features` while devc injects `:0.1.0`. The hook runs **once**, and
-      `devcontainer up`'s output installs exactly one `project-hook`. (This is
+      `devcontainer up`'s output installs exactly one `devc-config`. (This is
       the case that proves `withBaselineFeatures`' name-match skip is doing
       real work — the pinned CLI dedupes `--additional-features` against a
       config's `features` by exact id string, so two different tags would
       otherwise both install.)
 - [ ] **`baselineFeatures: false`.** Set in a `devc.json` overlay — the hook
       does not run, and `devcontainer up`'s verbose output shows no
-      `project-hook` install at all.
-- [ ] **`devc init` output runs without devc.** Scaffold a project with
+      `devc-config` install at all.
+- [ ] **`devc init` output does NOT run this without devc — confirm the
+      corrected design, not the original one.** Scaffold a project with
       `devc init`, then bring it up with a plain `devcontainer up` (no `devc`
-      on `PATH`) and confirm the hook still runs — the invariant the bundled
-      `devcontainer.json`'s own `features` entry exists to protect.
+      on `PATH`). The bundled `devcontainer.json` no longer declares
+      `devc-config` itself (a deliberate correction — see
+      `devc-core/overlay.ts`'s `DEVC_CONFIG_FEATURE` doc comment), so a
+      `.devc/devc-post-create.sh` in that scaffolded project should **not**
+      run. This is the one Feature-delivery invariant this repo's other
+      Features hold and this one deliberately does not; the test is here so a
+      future change that quietly re-adds the static entry gets caught.
 - [ ] **Does an existing container pick this up?** Bring up a project on the
       version of devc from before this change, then `devc up` again on this
       branch with no `--rebuild`. Note whether the container recreates on its
       own (a merged config gaining a Feature may or may not force it) — if not,
       that is a README line (`devc up --rebuild` needed once), not a bug.
 - [ ] **Rebuild churn on first upgrade.** Confirm the image gains the
-      `project-hook` Feature layer exactly once — a second `up` should not
+      `devc-config` Feature layer exactly once — a second `up` should not
       re-pull or re-build — and that `ensureDefaultConfig`'s content-addressed
       cache settles on one new key rather than thrashing.
 - [ ] **Offline builds.** A project-mode repo whose `devcontainer.json`
-      declares no Features today now pulls `project-hook` from ghcr.io at
+      declares no Features today now pulls `devc-config` from ghcr.io at
       build time. Confirm a cached image does not re-pull, and that
       `baselineFeatures: false` is a working escape hatch for an air-gapped
       build.

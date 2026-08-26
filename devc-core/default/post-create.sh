@@ -6,7 +6,7 @@
 # step it belongs to.
 #
 # The project's own .devc/devc-post-create.sh, if it has one, is no longer run from here —
-# it runs via the project-hook Feature's own postCreateCommand, which devc injects into
+# it runs via the devc-config Feature's own postCreateCommand, which devc injects into
 # every container it starts (see overlay.ts's withBaselineFeatures). A Feature's
 # postCreateCommand runs *after* this whole file, which is why this file's steps — git
 # identity and ~/.claude in particular — still precede the project's hook.

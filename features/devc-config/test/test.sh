@@ -1,6 +1,6 @@
 #!/bin/bash
 # `devcontainer features test` default scenario — runs INSIDE a container built from this
-# Feature with **no options** (`"project-hook": {}`) and no project hook fixture in the
+# Feature with **no options** (`"devc-config": {}`) and no project hook fixture in the
 # workspace at all.
 #
 # That combination is the bare-`{}` case every Feature in this collection has to survive (see
@@ -12,7 +12,7 @@ set -e
 
 source dev-container-features-test-lib
 
-SHARE=/usr/local/share/devc-features/project-hook
+SHARE=/usr/local/share/devc-features/devc-config
 
 check "create-time script is installed" test -f "$SHARE/post-create.sh"
 check "and is executable" test -x "$SHARE/post-create.sh"
@@ -23,14 +23,14 @@ check "and is owned by root" bash -c \
 # repo. This is what actually proves "create succeeded with no hook present": the
 # postCreateCommand already ran once (this image declares it) and did not fail the build.
 check "the fenced block is present, unmodified" \
-  grep -qF 'devc:project-hook (start)' "$SHARE/post-create.sh"
+  grep -qF 'devc:devc-config (start)' "$SHARE/post-create.sh"
 
 # --- nothing was appended to any startup file ------------------------------------------------
 #
 # This Feature is create-time only; it has no shell-integration half at all, unlike
 # node-nvmrc/bash-config/shell-dirs.
-check "no project-hook block in ~/.bashrc" bash -c \
-  "[ ! -e '$HOME/.bashrc' ] || ! grep -qF 'project-hook' '$HOME/.bashrc'"
+check "no devc-config block in ~/.bashrc" bash -c \
+  "[ ! -e '$HOME/.bashrc' ] || ! grep -qF 'devc-config' '$HOME/.bashrc'"
 
 # --- the inert case: run it again by hand, with no fixture and no PROJECT_PATH ----------------
 #

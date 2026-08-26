@@ -21,13 +21,13 @@
     "ghcr.io/devcontainers/features/python:1": {
       "installTools": true,
       "version": "3.12"
-    },
-    // Pinned at an exact version, not the floating `:0` every other Feature here uses — this
-    // one is also injected by devc into every container it starts (see overlay.ts's
-    // PROJECT_HOOK_FEATURE and withBaselineFeatures), so a bad publish must not reach every
-    // user with no devc release. Listing it here too is what keeps `devc init` output — and
-    // any project that copies this file — standalone: it must run without devc installed.
-    "ghcr.io/bmingles/devc-tools/project-hook:0.1.0": {}
+    }
+    // devc-config is deliberately NOT declared here. devc injects it dynamically into every
+    // container it starts (see overlay.ts's DEVC_CONFIG_FEATURE and withBaselineFeatures) —
+    // that includes the zero-config path this file materializes into. What it does not cover is
+    // `devc init` output run later with devc uninstalled: unlike every other Feature this file
+    // lists, devc-config is devc-specific (it runs a devc-post-create.sh a project committed
+    // for devc's own convention), so it is fine for that one case to lose it.
   },
   "remoteEnv": {
     "LANG": "en_US.utf8",
@@ -39,10 +39,10 @@
   },
   "initializeCommand": "bash \"${localWorkspaceFolder}/.devcontainer/initialize-command.sh\"",
   // `onCreateCommand`, not `postCreateCommand`: Features' own `postCreateCommand`s (the
-  // project-hook Feature's included) run *before* the config's, so this has to run in
+  // injected devc-config Feature's included) run *before* the config's, so this has to run in
   // `onCreate` — which precedes every `postCreate`, Features included — for devc's baseline
   // (agents-setup, git-setup, bashrc-additions) to still precede the project's hook. See
-  // .plans/devc-inject-project-hook.md's Ordering section.
+  // .plans/archived/devc-inject-project-hook.md's Ordering section.
   "onCreateCommand": "bash \"${containerWorkspaceFolder}/.devcontainer/post-create.sh\"",
   "mounts": [
     // ~/.claude folder

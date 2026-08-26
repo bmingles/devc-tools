@@ -14,9 +14,9 @@ copy from `post-create.sh`, so injecting the Feature without retiring the copy
 runs a project's hook **twice** — and a `devc-post-create.sh` is arbitrary and
 need not be idempotent.
 
-Depends on [feature-project-hook](archived/feature-project-hook.md) being **published**. A
+Depends on [feature-project-hook](feature-project-hook.md) being **published**. A
 baseline referencing an unpublished `ghcr.io` ref breaks every `devc up` — the
-failure [devc-bridge-feature](archived/devc-bridge-feature.md) already had to
+failure [devc-bridge-feature](devc-bridge-feature.md) already had to
 reverse once.
 
 ## Why this one is not a manual swap
@@ -319,7 +319,7 @@ not run there at all.
 - [x] `features/README.md` — note that devc contributes this one by default
 - [x] `docs/manual-verification.md` — a project-mode scenario
 - [x] `.plans/PLAN.md` — register, and move
-      [feature-project-hook](archived/feature-project-hook.md) to Completed if it is not
+      [feature-project-hook](feature-project-hook.md) to Completed if it is not
       already
 
 ## Validation
@@ -404,10 +404,50 @@ not run there at all.
   one of them, that is a shape change (`false | string[]`) made then, with a real
   case in hand.
 - **A `projectDir` option** on the Feature — see
-  [feature-project-hook](archived/feature-project-hook.md)'s reasoning; devc could not set
+  [feature-project-hook](feature-project-hook.md)'s reasoning; devc could not set
   it through `--additional-features` anyway.
 - **Splitting `post-create.sh` into two orchestrators.** Named above as the
   fallback if `bashrc-additions` preceding the project hook turns out to matter.
   It is not speculative work to do now.
 - **Retiring `devc-core/default/scripts/` entirely.** The other three steps stay
   exactly where they are.
+
+## Superseded — two decisions reversed on user review, before landing on `main`
+
+Read the Contracts section above and the `devc-core/default/` — the swap
+subsection as history on two points.
+
+**"The bundled `devcontainer.json` also declares the Feature directly" is
+reversed.** The plan's own contract said listing it there too was "not
+redundant with the injection" — the reasoning being that the bundled config is
+also what `devc init` copies into a project, and `overlay.ts`'s governing
+invariant is that whatever lands in `.devcontainer/` must run without `devc`
+installed at all. That argument treated this Feature the same as every other
+one this repo bundles — Node, Python, git-lfs, `bash-config` — each of which
+does something useful for _any_ devcontainer project, standalone. This
+Feature does not: what it runs is a `devc-post-create.sh` a project committed
+specifically for _devc's own_ convention, so it is fine — deliberately — for
+that one case to be devc-specific too. The bundled config now declares
+**nothing** for this Feature; `--additional-features` injection at `devc up`
+time is the only delivery route, and a `devc init`-scaffolded project run
+later with `devc` uninstalled no longer runs the hook. `withBaselineFeatures`
+and its "declared in config" skip rule are unaffected — that rule still
+matters for a project's _own_ hand-written `devcontainer.json`, which is a
+different config from the one this reversal is about.
+
+**The Feature is renamed `project-hook` → `devc-config`.** Same treatment
+this collection already gave `agents` twice (see
+[feature-claude-config](feature-claude-config.md)): directory, manifest
+`id`/`name`, the `SHARE_DIR` namespace
+(`/usr/local/share/devc-features/devc-config/`), the fence marker
+(`devc:project-hook` → `devc:devc-config`), the pin constant in `overlay.ts`
+(`PROJECT_HOOK_FEATURE` → `DEVC_CONFIG_FEATURE`), the shared test harness
+(`devc/tests/project_hook_test.sh` → `devc_config_test.sh`), and every doc
+reference moved together in the same commit. Unlike `agents`' renames, this
+one happened _after_ the old id had already been published to ghcr.io — those
+tags are orphaned rather than un-published, since nothing can retract an OCI
+tag, but nothing in this repo references them any more.
+
+Both corrections are folded into the same completed entry in `.plans/PLAN.md`
+rather than treated as a separate plan — nothing had shipped to a user under
+either the old design or the old name.

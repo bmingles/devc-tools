@@ -4,6 +4,7 @@ import {
   assertStringIncludes,
 } from 'jsr:@std/assert@^1';
 import {
+  DEVC_CONFIG_FEATURE,
   emptyOverlay,
   findProjectOverlayPath,
   findUserOverlayPath,
@@ -13,7 +14,6 @@ import {
   mergeOverlays,
   MOUNT_SPEC_RE,
   overlayArgs,
-  PROJECT_HOOK_FEATURE,
   resolveOverlayRemoteEnv,
   resolveProjectOverlayTarget,
   withBaselineFeatures,
@@ -418,7 +418,7 @@ Deno.test("withBaselineFeatures: adds the baseline Feature under the overlay's o
   };
   const effective = withBaselineFeatures(overlay, []);
   assertEquals(effective.additionalFeatures, {
-    [PROJECT_HOOK_FEATURE]: {},
+    [DEVC_CONFIG_FEATURE]: {},
     'ghcr.io/x/rust:1': { version: 'latest' },
   });
   // Never mutates its argument.
@@ -437,15 +437,15 @@ Deno.test('withBaselineFeatures: baselineFeatures:false skips injection entirely
   assertEquals(withBaselineFeatures(overlay, []), overlay);
 });
 
-// Rule 2: a user entry named project-hook at *any* tag suppresses devc's, and only one survives.
-Deno.test('withBaselineFeatures: an overlay entry named project-hook at any tag suppresses the injected one', () => {
+// Rule 2: a user entry named devc-config at *any* tag suppresses devc's, and only one survives.
+Deno.test('withBaselineFeatures: an overlay entry named devc-config at any tag suppresses the injected one', () => {
   for (
     const id of [
-      'ghcr.io/bmingles/devc-tools/project-hook',
-      'ghcr.io/bmingles/devc-tools/project-hook:0',
-      'ghcr.io/bmingles/devc-tools/project-hook:0.2.0',
-      'ghcr.io/someone-else/project-hook:1',
-      './features/project-hook',
+      'ghcr.io/bmingles/devc-tools/devc-config',
+      'ghcr.io/bmingles/devc-tools/devc-config:0',
+      'ghcr.io/bmingles/devc-tools/devc-config:0.2.0',
+      'ghcr.io/someone-else/devc-config:1',
+      './features/devc-config',
     ]
   ) {
     const overlay = {
@@ -462,7 +462,7 @@ Deno.test('withBaselineFeatures: an overlay entry named project-hook at any tag 
 
 // Rule 3: the in-play devcontainer.json's own `features` suppresses it too — this is what
 // covers the "devc init output runs without devc" invariant: the bundled config declares
-// project-hook itself, so injection must step aside for it.
+// devc-config itself, so injection must step aside for it.
 Deno.test('withBaselineFeatures: a Feature already declared in the in-play config suppresses injection', () => {
   const overlay = {
     mounts: [],
@@ -471,7 +471,7 @@ Deno.test('withBaselineFeatures: a Feature already declared in the in-play confi
     baselineFeatures: true,
   };
   const effective = withBaselineFeatures(overlay, [
-    'ghcr.io/bmingles/devc-tools/project-hook:0.1.0',
+    'ghcr.io/bmingles/devc-tools/devc-config:0.1.0',
   ]);
   assertEquals(effective, overlay);
 });
@@ -484,7 +484,7 @@ Deno.test('withBaselineFeatures: an unrelated declared Feature does not suppress
     baselineFeatures: true,
   };
   const effective = withBaselineFeatures(overlay, ['ghcr.io/x/rust:1']);
-  assertEquals(effective.additionalFeatures, { [PROJECT_HOOK_FEATURE]: {} });
+  assertEquals(effective.additionalFeatures, { [DEVC_CONFIG_FEATURE]: {} });
 });
 
 Deno.test('withBaselineFeatures: returns a new object, never mutates the argument', () => {

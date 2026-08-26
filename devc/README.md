@@ -109,7 +109,7 @@ Notes:
   writes the source/skills mounts it manages, so that flow never touches
   `.devcontainer/` either.
 - Before those flags are built, devc adds its own baseline Features (the
-  [`project-hook` hook](#project-post-create-hook-devc-post-createsh) today) to
+  [`devc-config` hook](#project-post-create-hook-devc-post-createsh) today) to
   `additionalFeatures`, skipping any it, your overlay, or the winning config
   already declares by name — so `:0` and a devc-pinned exact version never both
   install. Turn all of it off with the overlay's `"baselineFeatures": false`.
@@ -202,7 +202,7 @@ Four optional keys, in a file that is itself optional:
   },
   // → --remote-env, overriding the base config's `remoteEnv` per key
   "remoteEnv": { "MY_VAR": "value" },
-  // false disables every Feature devc contributes on its own (project-hook today — see
+  // false disables every Feature devc contributes on its own (devc-config today — see
   // "Project post-create hook" below). Default true. Unlike the other three keys, this one
   // is a *veto*: a user-level `false` wins even when a project sets it back to `true` — see
   // below.
@@ -327,7 +327,7 @@ same both-are-first-class rule as the overlay itself:
 ```
 
 It runs via the
-[`project-hook` Feature](https://github.com/bmingles/devc-tools/tree/main/features/project-hook),
+[`devc-config` Feature](https://github.com/bmingles/devc-tools/tree/main/features/devc-config),
 which devc contributes to **every** container it starts — `devc up` adds it to
 whatever `devcontainer.json` is in play via `--additional-features`, with no
 configuration from you. That reaches every project devc starts, including one
@@ -337,11 +337,19 @@ lifecycle commands, so devc's baseline (the `.claude` volume + seed links,
 `nvm install`, git identity — all in the top-level `onCreateCommand`) is already
 in place by the time the hook runs.
 
+**The injection is dynamic only — devc's own bundled `devcontainer.json` does
+not declare this Feature.** That means it reaches `devc up` and the
+zero-config cache it materializes, but not a `devc init`-scaffolded project
+run later with `devc` uninstalled: what this Feature does (running a script
+you wrote specifically for devc's own convention) is devc-specific, so it is
+fine — deliberately — for that one case to lose it. Declare
+`"devc-config": {}` yourself if you want it without devc.
+
 Turn it off with `"baselineFeatures": false` in a `devc.json` overlay — see
 [Optional overlay: `devc.json`](#optional-overlay-devcjson) — which also
 disables any other Feature devc contributes on its own. If your own
 `devcontainer.json` (or overlay `additionalFeatures`) already declares
-`project-hook` under any tag, devc's injection steps aside rather than
+`devc-config` under any tag, devc's injection steps aside rather than
 installing a second copy.
 
 ```bash
@@ -680,10 +688,10 @@ bash tests/shell_dirs_test.sh ../devc-core/default/scripts/bashrc-additions.sh #
 # against each; if it needs changes for one of them, the two have drifted:
 bash tests/shell_dirs_test.sh ../features/shell-dirs/install.sh             # devc:shell-dirs
 
-# devc no longer carries its own copy of the project-hook block — devc contributes the
-# project-hook Feature to every container it starts instead (see devc-core/overlay.ts's
-# PROJECT_HOOK_FEATURE and withBaselineFeatures), so this is the only copy left to test:
-bash tests/project_hook_test.sh ../features/project-hook/post-create.sh       # devc:project-hook
+# devc no longer carries its own copy of the devc-config block — devc contributes the
+# devc-config Feature to every container it starts instead (see devc-core/overlay.ts's
+# DEVC_CONFIG_FEATURE and withBaselineFeatures), so this is the only copy left to test:
+bash tests/devc_config_test.sh ../features/devc-config/post-create.sh       # devc:devc-config
 
 # seed_link_test.sh takes the script path too, for the same reason — devc's copy above, and the
 # agents Feature's post-create.sh below. Must pass unmodified against both:

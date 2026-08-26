@@ -127,8 +127,8 @@ echo "devc-bridge: client $BARE_VERSION ($TRIPLE) installed at $BRIDGE_CLIENT"
 # including across build-client.sh's atomic rename. A guard here would break that.
 #
 # There is deliberately no guard against an existing non-symlink at the link path: this runs
-# at build time, so anything a project installs there afterwards (a postCreateCommand,
-# devc's scripts/project-hook.sh) still wins.
+# at build time, so anything a project installs there afterwards (a postCreateCommand, or
+# the devc-config Feature's own) still wins.
 # devc:bridge-client-link (start)
 set -e
 BRIDGE_CLIENT="${BRIDGE_CLIENT:-/usr/local/share/devc-bridge/client/devc-bridge}"

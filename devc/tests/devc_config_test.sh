@@ -1,16 +1,16 @@
 #!/bin/bash
-# Exercises the project-hook discovery block from project-hook.sh against temp dirs, with
-# no container involved. Extracts the block from the real script so the test cannot drift
-# from the implementation.
+# Exercises the project-hook discovery block from the devc-config Feature's post-create.sh
+# against temp dirs, with no container involved. Extracts the block from the real script so the
+# test cannot drift from the implementation.
 set -uo pipefail
 
-SCRIPT="${1:?usage: project_hook_test.sh /path/to/project-hook.sh}"
+SCRIPT="${1:?usage: devc_config_test.sh /path/to/post-create.sh}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Pull the block out: everything strictly between the `devc:project-hook` fence markers.
+# Pull the block out: everything strictly between the `devc:devc-config` fence markers.
 BLOCK="$WORK/block.sh"
-awk '/# devc:project-hook \(start\)/{f=1;next} /# devc:project-hook \(end\)/{f=0} f' \
+awk '/# devc:devc-config \(start\)/{f=1;next} /# devc:devc-config \(end\)/{f=0} f' \
   "$SCRIPT" > "$BLOCK"
 grep -q 'devc-post-create.sh' "$BLOCK" || {
   echo "FAIL: could not extract hook block"

@@ -432,17 +432,22 @@ export async function loadMergedOverlay(
 }
 
 /**
- * The `project-hook` Feature devc contributes to every container it starts.
+ * The `devc-config` Feature devc contributes to every container it starts — dynamically, via
+ * {@link withBaselineFeatures} only. Deliberately **not** also declared in the bundled
+ * `devcontainer.json` (`devc-core/default/devcontainer.json`): what this Feature does (running a
+ * `devc-post-create.sh` a project committed for devc's own convention) is devc-specific, so
+ * unlike the other bundled Features it is fine for a `devc init`-scaffolded project to lose it
+ * once `devc` itself is uninstalled. See `features/devc-config/README.md`.
  *
  * **Exact version, not the floating `:0`** — a departure from the bundled `devcontainer.json`,
  * which uses `:0` for every Feature it lists. Those are opt-in; this one is forced on every
  * container devc starts, so a bad Feature publish would otherwise reach every user's next build
  * with no devc release and no opt-in anywhere. Bumping it is a devc release, deliberately.
- * Guarded by `tests/workflow_guards_test.sh` against `features/project-hook/devcontainer-feature.json`'s
+ * Guarded by `tests/workflow_guards_test.sh` against `features/devc-config/devcontainer-feature.json`'s
  * own `version` — a comment saying "keep these in step" is how pins drift.
  */
-export const PROJECT_HOOK_FEATURE =
-  'ghcr.io/bmingles/devc-tools/project-hook:0.1.0';
+export const DEVC_CONFIG_FEATURE =
+  'ghcr.io/bmingles/devc-tools/devc-config:0.1.0';
 
 /**
  * The Features devc contributes to every container it starts, id paired with the bare name
@@ -450,7 +455,7 @@ export const PROJECT_HOOK_FEATURE =
  * more (see `.plans/archived/devc-inject-project-hook.md`'s Not in this plan).
  */
 const BASELINE_FEATURES: readonly { id: string; name: string }[] = [
-  { id: PROJECT_HOOK_FEATURE, name: 'project-hook' },
+  { id: DEVC_CONFIG_FEATURE, name: 'devc-config' },
 ];
 
 /**
@@ -467,7 +472,7 @@ const BASELINE_FEATURES: readonly { id: string; name: string }[] = [
  *
  * Skipping on 2 and 3 — rather than letting the CLI's own merge sort it out — matters because
  * the pinned `@devcontainers/cli` dedupes `--additional-features` against a config's `features`
- * by **exact id string**, not by name: a consumer who pins `…/project-hook:0.2.0` while devc
+ * by **exact id string**, not by name: a consumer who pins `…/devc-config:0.2.0` while devc
  * injects `:0.1.0` would get **both installed and the hook run twice**, not one overriding the
  * other. Measured against `@devcontainers/cli` 0.88.0.
  *

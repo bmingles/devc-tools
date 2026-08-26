@@ -722,7 +722,7 @@ export async function startContainer(
       bridge: declaresBridgeFeature(overlay.additionalFeatures),
     });
 
-  // Devc's own baseline Features (project-hook today), added under whatever the overlay and
+  // Devc's own baseline Features (devc-config today), added under whatever the overlay and
   // the in-play config already declare. Read after the config exists — in the zero-config path
   // it was just materialized above — since a Feature the config declares itself must suppress
   // devc's injected one.

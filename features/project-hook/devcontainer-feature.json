@@ -1,9 +1,0 @@
-{
-  "id": "project-hook",
-  "version": "0.1.0",
-  "name": "Project create-time hook",
-  "description": "On every container create, runs the project's own devc-post-create.sh if it has one — first .devc/devc-post-create.sh, then .devcontainer/devc-post-create.sh, first hit wins. Existence selects and executability is enforced: a hook that exists either runs or fails the create, never silently skipped. No mount, no host state, no network, no options — \"project-hook\": {} is the complete install; the whole of what a consumer adds is a committed, executable script in their own repo.",
-  "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/project-hook",
-  "licenseURL": "https://github.com/bmingles/devc-tools/blob/main/LICENSE",
-  "postCreateCommand": "bash /usr/local/share/devc-features/project-hook/post-create.sh"
-}

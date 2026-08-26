@@ -28,12 +28,11 @@ const FAKE_RUNNER: DevcontainerRunner = {
     }),
 };
 
-// Project mode, not zero-config: the bundled default devcontainer.json declares project-hook
-// in its own `features` (see the Contract on devc-core/default/), so withBaselineFeatures skips
-// injecting it there (rule 3) and `effective` never diverges from `overlay` — the trap would go
-// undetected. A project config that says nothing about project-hook is the case where injection
-// actually adds something, which is what makes `overlay` (empty) and `effective`
-// (non-empty additionalFeatures) different enough for this test to tell them apart.
+// Project mode: a repo with its own devcontainer.json that devc did not write, and no devc.json
+// overlay anywhere. withBaselineFeatures injects devc-config here (the bundled default
+// devcontainer.json never declares it itself — see overlay.ts's DEVC_CONFIG_FEATURE), so
+// `effective` diverges from the empty `overlay`, which is what makes this the case that can
+// actually distinguish the two arguments to isEmptyOverlay.
 Deno.test('startContainer: project mode, no devc.json anywhere, never shells out for the container workspace folder', async () => {
   await withTemp(async (dir) => {
     const binDir = `${dir}/bin`;

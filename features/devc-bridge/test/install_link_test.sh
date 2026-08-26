@@ -87,7 +87,7 @@ check "runs the new client" test "$("$R/bin/devc-bridge")" = "fresh"
 
 echo "case 5: an existing regular file is replaced (no guard, by design)"
 # This runs at image build time, so anything a project installs at that path afterwards (a
-# postCreateCommand, devc's scripts/project-hook.sh) still wins — a guard here would only
+# postCreateCommand, or the devc-config Feature's own) still wins — a guard here would only
 # serve a hand re-run inside an already running container.
 R="$WORK/c5"
 mkdir -p "$R/bin" "$R/mount"

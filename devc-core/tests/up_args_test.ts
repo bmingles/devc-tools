@@ -1,9 +1,9 @@
 import { assertEquals } from 'jsr:@std/assert@^1';
 import { buildUpArgs } from '../container.ts';
 import {
+  DEVC_CONFIG_FEATURE,
   emptyOverlay,
   loadMergedOverlay,
-  PROJECT_HOOK_FEATURE,
   withBaselineFeatures,
 } from '../overlay.ts';
 import { withTemp } from './helpers.ts';
@@ -141,7 +141,7 @@ Deno.test('buildUpArgs substitutes mounts against the pre-up containerWorkspaceF
 
 // The end-to-end shape startContainer relies on: withBaselineFeatures runs first, and its
 // result is what buildUpArgs turns into --additional-features — the argv devcontainer up
-// actually sees for a project that declares nothing about project-hook itself.
+// actually sees for a project that declares nothing about devc-config itself.
 Deno.test("buildUpArgs emits the injected baseline Feature's --additional-features", () => {
   const effective = withBaselineFeatures(emptyOverlay(), []);
   assertEquals(
@@ -151,7 +151,7 @@ Deno.test("buildUpArgs emits the injected baseline Feature's --additional-featur
       '--workspace-folder',
       '/home/me/src/p',
       '--additional-features',
-      JSON.stringify({ [PROJECT_HOOK_FEATURE]: {} }),
+      JSON.stringify({ [DEVC_CONFIG_FEATURE]: {} }),
     ],
   );
 });
@@ -159,9 +159,9 @@ Deno.test("buildUpArgs emits the injected baseline Feature's --additional-featur
 // declaredInConfig (rule 3) suppresses the injection before buildUpArgs ever sees it, so the
 // argv carries no --additional-features at all — proving the skip happens upstream, not that
 // the CLI happens to dedupe it away.
-Deno.test('buildUpArgs emits nothing extra when the in-play config already declares project-hook', () => {
+Deno.test('buildUpArgs emits nothing extra when the in-play config already declares devc-config', () => {
   const effective = withBaselineFeatures(emptyOverlay(), [
-    'ghcr.io/bmingles/devc-tools/project-hook:0.2.0',
+    'ghcr.io/bmingles/devc-tools/devc-config:0.2.0',
   ]);
   assertEquals(buildUpArgs({ ...BASE, overlay: effective }), [
     'up',
