@@ -1,9 +1,10 @@
 # devc-config (devcontainer Feature)
 
 On every container create, runs **your own** create-time script if you have
-committed one. It installs nothing and configures nothing on its own —
-`"devc-config": {}` is the complete install; the whole of what you add is a
-committed, executable script in your own repo.
+committed one, and appends devc's own bash prompt/title customization to
+`~/.bashrc`. `"devc-config": {}` is the complete install — the project-hook
+half configures nothing on its own until you add a script; the bash-prompt
+half is unconditional (see [Bash prompt/title](#bash-prompttitle-devcbashrc-additions)).
 
 ```jsonc
 "features": {
@@ -56,22 +57,57 @@ hook that needs the project's own create-time setup to have already happened —
 the wrong place if it is written expecting to run first among equals; it runs
 first, full stop.
 
+**This Feature itself declares `installsAfter: ["…/agents",
+"…/git-container-config"]`** — devc's own choice, made here because devc is
+the one consumer of this Feature that also declares those two. It has an
+effect only when a consumer's config declares at least one of them alongside
+`devc-config`; declaring `devc-config` alone (the common case for a non-devc
+consumer) is unaffected. When it does apply, both run first — so a hook that
+expects `~/.claude` or git identity already set up (as devc's own does) can
+rely on it.
+
 ## What it does
 
 At **build time** (as root) it places one file and touches nothing else:
 `/usr/local/share/devc-features/devc-config/post-create.sh`. No options
 cross into it — there is nothing to bake, since this Feature has none.
 
-At **create time** (as the **remote user**) it looks for your hook, in order,
-and runs the first one it finds:
+At **create time** (as the **remote user**) that one file runs two fenced
+blocks in order, `devc:devc-config` then `devc:bashrc-additions`:
 
-1. `${PROJECT_PATH:-$PWD}/.devc/devc-post-create.sh`
-2. `${PROJECT_PATH:-$PWD}/.devcontainer/devc-post-create.sh`
+1. It looks for your hook, in order, and runs the first one it finds:
 
-`PROJECT_PATH` is devc's own `remoteEnv`; a non-devc consumer has none, and
-the `$PWD` fallback carries the weight — the devcontainer CLI runs every
-lifecycle hook, Feature-declared ones included, with cwd set to the remote
-workspace folder.
+   - `${PROJECT_PATH:-$PWD}/.devc/devc-post-create.sh`
+   - `${PROJECT_PATH:-$PWD}/.devcontainer/devc-post-create.sh`
+
+   `PROJECT_PATH` is devc's own `remoteEnv`; a non-devc consumer has none,
+   and the `$PWD` fallback carries the weight — the devcontainer CLI runs
+   every lifecycle hook, Feature-declared ones included, with cwd set to the
+   remote workspace folder.
+2. It appends devc's own bash prompt/title block to `~/.bashrc`, marker-
+   guarded so a second create does not double-append — see
+   [Bash prompt/title](#bash-prompttitle-devcbashrc-additions) below.
+
+## Bash prompt/title (`devc:bashrc-additions`)
+
+**Unconditional — no option, no fixture, no opt-out at the Feature level.**
+Every container this Feature installs into gets a `# >>> devc bashrc-additions >>>`
+block appended to the remote user's `~/.bashrc`, marker-guarded so re-running
+`post-create.sh` (or a container restart) does not double-append:
+
+- A custom `PS1` — folder name, git branch, exit-status coloring.
+- The terminal title set to the project name (`$PROJECT_PATH` or `$PWD`),
+  overriding the devcontainers base image's own command-title trap.
+- On `devc attach` (`DEVC_ATTACH=1` in the environment), a first-prompt clear
+  once shell-init output has flushed.
+
+This is devc's own shell customization, moved here from a script devc used to
+run itself (`devc-core/default/scripts/bashrc-additions.sh`, now retired) —
+see [Relationship to devc](#relationship-to-devc). It is not part of "your
+side of the contract" above and has no relationship to your
+`devc-post-create.sh`; the two run in the same `post-create.sh` invocation,
+hook first, purely because this Feature is where both pieces of
+devc-specific create-time behavior live.
 
 ## No `options`, deliberately
 
@@ -100,11 +136,22 @@ Feature needs an option for.
 
 **`devc up` contributes this Feature to every container it starts, with no
 configuration from you.** It adds
-`"ghcr.io/bmingles/devc-tools/devc-config:0.1.0": {}` to whatever
+`"ghcr.io/bmingles/devc-tools/devc-config:0.2.0": {}` to whatever
 `devcontainer.json` is in play via `--additional-features` — a project with
 its own hand-written `.devcontainer/devcontainer.json` that has never heard
 of devc included. See `devc/README.md`'s [Project post-create hook](https://github.com/bmingles/devc-tools/blob/main/devc/README.md#project-post-create-hook-devc-post-createsh)
 section.
+
+**This is a reach extension, not just for the hook.** Before this Feature
+carried the `devc:bashrc-additions` block, devc's prompt/title customization
+only ran for configs devc materializes or writes itself (the zero-config
+cache, `devc init` output). Because this Feature is injected into _every_
+container `devc up` starts — project mode included — a genuinely
+project-owned `.devcontainer/devcontainer.json` that devc has never touched
+now gets that shell behavior too, for the first time. The same applies in
+reverse: a **non-devc** consumer who declares `"devc-config": {}` in their
+own config gets devc's bash prompt/title in their container too, not just
+the project-hook runner — see [Bash prompt/title](#bash-prompttitle-devcbashrc-additions).
 
 **The injection is dynamic only — devc's bundled `devcontainer.json` does
 not declare this Feature itself.** Every other route into a container devc
@@ -135,14 +182,23 @@ set `"baselineFeatures": false` in a `devc.json` overlay.
 
 ## Relationship to devc
 
-**devc no longer carries its own copy of this script.** It used to run an
-identical copy from `devc-core/default/scripts/project-hook.sh`, retired when
-devc started injecting this Feature instead (see
+**devc no longer carries its own copy of either fence.** The `devc:devc-config`
+hook used to run from an identical `devc-core/default/scripts/project-hook.sh`,
+retired when devc started injecting this Feature instead (see
 `.plans/archived/devc-inject-project-hook.md`) — running both would have run
 your `devc-post-create.sh` twice. `devc/tests/devc_config_test.sh` still
 extracts the `devc:devc-config` fence from this Feature's `post-create.sh`
 and runs it directly, so the historical drift-guard shape of the test
 survives even though there is only one copy left to check it against.
+
+The `devc:bashrc-additions` block is the same story, one plan later: it used
+to be devc's own `devc-core/default/scripts/bashrc-additions.sh`, run from a
+top-level `onCreateCommand` that preceded every Feature's `postCreateCommand`.
+`devc-swap-baseline-features` retired that script by moving its body here —
+`devc/tests/bashrc_additions_test.sh` extracts and runs the new fence the
+same way, plus a whole-file case proving the two fences run in the intended
+order (hook first) in one process. See
+[`.plans/archived/devc-swap-baseline-features.md`](../../.plans/archived/devc-swap-baseline-features.md).
 
 **Originally published as `project-hook`.** The Feature was renamed before
 anything depended on the old id — `ghcr.io/bmingles/devc-tools/project-hook`
@@ -153,28 +209,38 @@ directory-plus-every-reference rename this collection already did for
 
 ## What this is not
 
-Not a way to configure **what** runs — it runs whatever you put at one of the
-two fixed paths, unconditionally. Not a monorepo dispatcher — see
+Not a way to configure **what** the hook runs — it runs whatever you put at
+one of the two fixed paths, unconditionally. Not a monorepo dispatcher — see
 [No `options`, deliberately](#no-options-deliberately) above. Not a
 `postStartCommand` — this is create time only, matching what devc's baseline
-does today; your hook does not re-run on every container start.
+does today; neither the hook nor the bashrc block re-runs on every container
+start. Not configurable shell customization, either — the
+`devc:bashrc-additions` content is devc's own, fixed, with no option to
+change or disable it short of not declaring this Feature at all.
 
 ## Tests
 
-No Docker needed — the drift guard, and the most important test for this
+No Docker needed — the drift guards, and the most important tests for this
 Feature:
 
 ```sh
 bash devc/tests/devc_config_test.sh features/devc-config/post-create.sh
+bash devc/tests/bashrc_additions_test.sh features/devc-config/post-create.sh
 ```
 
-Eight cases: a `.devc/` hook running, a `.devcontainer/` hook running when
-`.devc/` is absent, `.devc/` winning when both are present and executable (no
-fall-through), a non-executable `.devc/` failing the create without falling
-through to `.devcontainer/`, a dangling symlink being graded as a failure
-rather than an absence, neither path present being a silent no-op, a hook
-that exits non-zero failing the block, and the hook's cwd being the project
-root regardless of the caller's own cwd.
+`devc_config_test.sh`, eight cases: a `.devc/` hook running, a `.devcontainer/`
+hook running when `.devc/` is absent, `.devc/` winning when both are present
+and executable (no fall-through), a non-executable `.devc/` failing the
+create without falling through to `.devcontainer/`, a dangling symlink being
+graded as a failure rather than an absence, neither path present being a
+silent no-op, a hook that exits non-zero failing the block, and the hook's
+cwd being the project root regardless of the caller's own cwd.
+
+`bashrc_additions_test.sh`: the marker landing in a fresh `~/.bashrc`,
+existing content surviving the append, idempotence across a second run, the
+`DEVC_ATTACH` guard carrying over, and a whole-installed-`post-create.sh`
+case proving the two fences run in order (hook first) in one process — the
+one thing fence extraction alone cannot cover.
 
 Needs Docker and a network:
 
@@ -184,9 +250,11 @@ bash features/devc-config/test/run-features-test.sh
 
 The default scenario is the bare `{}` case with no hook fixture anywhere:
 `post-create.sh` installed at the manifest's path, executable and
-root-owned, create succeeding with the inert no-hook case, nothing appended
-to `~/.bashrc`, and a manual re-run with `env -u PROJECT_PATH` in a fresh
-temp dir being a silent no-op. `test/scenarios.json` adds `with_hook` and
+root-owned, create succeeding with the inert no-hook case, the
+`devc:bashrc-additions` block landing in `~/.bashrc` regardless (it is
+unconditional — see [Bash prompt/title](#bash-prompttitle-devcbashrc-additions)),
+and a manual re-run with `env -u PROJECT_PATH` in a fresh temp dir being a
+silent no-op. `test/scenarios.json` adds `with_hook` and
 `devcontainer_dir_hook` — each writes an executable
 `devc-post-create.sh` at one of the two candidate paths via the scenario's
 own `onCreateCommand` (the only way to have a fixture in place before this

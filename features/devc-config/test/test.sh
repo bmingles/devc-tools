@@ -25,12 +25,15 @@ check "and is owned by root" bash -c \
 check "the fenced block is present, unmodified" \
   grep -qF 'devc:devc-config (start)' "$SHARE/post-create.sh"
 
-# --- nothing was appended to any startup file ------------------------------------------------
+# --- the devc:bashrc-additions block, unconditional -------------------------------------------
 #
-# This Feature is create-time only; it has no shell-integration half at all, unlike
-# node-nvmrc/bash-config/shell-dirs.
-check "no devc-config block in ~/.bashrc" bash -c \
-  "[ ! -e '$HOME/.bashrc' ] || ! grep -qF 'devc-config' '$HOME/.bashrc'"
+# Unlike the hook above, this half has no fixture to be absent: it is devc's own
+# prompt/title/DEVC_ATTACH-clear block, appended to ~/.bashrc on every create with no option to
+# opt out (see the Feature README's "Bash prompt/title" section) — so even the bare `{}`
+# scenario, with no project hook anywhere, still gets it.
+check "the bashrc-additions marker landed in ~/.bashrc" \
+  grep -qF '# >>> devc bashrc-additions >>>' "$HOME/.bashrc"
+check "PS1 export present" grep -q 'export PS1=' "$HOME/.bashrc"
 
 # --- the inert case: run it again by hand, with no fixture and no PROJECT_PATH ----------------
 #

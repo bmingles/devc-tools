@@ -2,12 +2,12 @@
 # devc-config Feature install — place the create-time script. Nothing else.
 #
 # Runs as root at image *build* time. The workspace is not mounted yet, so there is nothing here
-# to read from it and nothing to resolve — the fenced devc:config block in post-create.sh does
-# all of that itself, at create time, from PROJECT_PATH or $PWD.
+# to read from it and nothing to resolve — the two fenced blocks in post-create.sh
+# (devc:devc-config, devc:bashrc-additions) do all of that themselves, at create time.
 #
-# There are no options: the two candidate paths are hardcoded inside the fenced block, and
-# rewriting either would mean baking a value into the fence — see post-create.sh's header for
-# why the fence is written the way it is.
+# There are no options: the two candidate hook paths and the bashrc marker are hardcoded inside
+# their fenced blocks, and rewriting any of them would mean baking a value into a fence — see
+# post-create.sh's header for why each fence is written the way it is.
 #
 # devc contributes this Feature to every container it starts, dynamically, via
 # `devcontainer up --additional-features` — see devc-core/overlay.ts's DEVC_CONFIG_FEATURE and
