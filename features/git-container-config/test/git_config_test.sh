@@ -11,6 +11,12 @@
 # The real install.sh installs the real post-create.sh into a temp SHARE_DIR with each case's
 # options baked in, and the real installed hook is run — this cannot drift from what a container
 # actually gets, the same shape node-nvmrc's and bash-config's offline harnesses use.
+#
+# The identity path is no longer an option: it is a fixed literal
+# (/usr/local/share/devc-features/.../identity/gitconfig) install.sh copies through unbaked.
+# setup() below rewrites that one line to point at this case's own temp SHARE/identity/gitconfig
+# instead — created empty by the same install.sh run — the same technique agents'
+# claude_json_test.sh uses to re-point SEED.
 set -uo pipefail
 
 FEATURE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -68,10 +74,16 @@ setup() {
   rm -rf "${WORK:?}/$name"
   mkdir -p "$H"
   : > "$GITLFSLOG"
-  env -u IDENTITYINCLUDEPATH -u LFSFILTERS -u LFSSKIPSMUDGE -u WORKTREERELATIVEPATHS \
+  env -u LFSFILTERS -u LFSSKIPSMUDGE -u WORKTREERELATIVEPATHS \
     -u SAFEDIRECTORY SHARE_DIR="$SHARE" "$@" \
     sh "$FEATURE_DIR/install.sh" > "$WORK/install.log" 2>&1
-  HOOK="$SHARE/post-create.sh"
+  # IDENTITY_INCLUDE_PATH is a fixed literal in the installed hook, not baked from an option —
+  # re-point it at this case's own SHARE/identity/gitconfig (install.sh already created the
+  # directory empty) so a case can place a file there without touching the real filesystem path.
+  HOOK="$WORK/$name/hook.sh"
+  IDENTITY="$SHARE/identity/gitconfig"
+  sed -e "s#^IDENTITY_INCLUDE_PATH=.*#IDENTITY_INCLUDE_PATH=$IDENTITY#" \
+    "$SHARE/post-create.sh" > "$HOOK"
   GC="$H/gitconfig"
 }
 
@@ -109,7 +121,7 @@ run_hook
 check "the hook exits 0" test "$status" -eq 0
 check "worktree.useRelativePaths is set" test "$(get worktree.useRelativePaths)" = true
 check "safe.directory is the wildcard default" test "$(get safe.directory)" = '*'
-check "no include.path — identityIncludePath was empty" test -z "$(get include.path)"
+check "no include.path — nothing was mounted at the fixed identity path" test -z "$(get include.path)"
 check "no LFS filter was set — nothing invoked git-lfs" test ! -s "$GITLFSLOG"
 check "it warns about the missing git identity, on stderr" \
   grep -q 'no git identity found' "$WORK/hook.err"
@@ -167,14 +179,13 @@ run_hook
 check "safe.directory is the scoped path, not the wildcard" \
   test "$(get safe.directory)" = /workspaces/myproj
 
-echo "case 8: an identity file that exists — included first, and no missing-identity warning"
-setup c8 IDENTITYINCLUDEPATH="$WORK/c8/identity"
-mkdir -p "$WORK/c8"
-git config --file "$WORK/c8/identity" user.name 'A. Committer'
-git config --file "$WORK/c8/identity" user.email 'a@example.com'
+echo "case 8: a file mounted at the fixed identity path — included first, no missing-identity warning"
+setup c8
+git config --file "$IDENTITY" user.name 'A. Committer'
+git config --file "$IDENTITY" user.email 'a@example.com'
 run_hook
 check "the hook exits 0" test "$status" -eq 0
-check "include.path names the identity file" test "$(get include.path)" = "$WORK/c8/identity"
+check "include.path names the identity file" test "$(get include.path)" = "$IDENTITY"
 check "user.name resolves through the include" test "$(get user.name)" = 'A. Committer'
 check "user.email resolves through the include too" test "$(get user.email)" = a@example.com
 check "no missing-identity warning — one is present" \
@@ -183,29 +194,15 @@ check "the container-mandated settings still applied after the include" \
   test "$(get worktree.useRelativePaths)" = true -a "$(get safe.directory)" = '*'
 
 echo "case 9: a name with '#' and '\"' survives the identity include, quoted the way git wrote it"
-setup c9 IDENTITYINCLUDEPATH="$WORK/c9/identity"
-mkdir -p "$WORK/c9"
-git config --file "$WORK/c9/identity" user.name 'Jane "JD" O'"'"'Brien #1'
+setup c9
+git config --file "$IDENTITY" user.name 'Jane "JD" O'"'"'Brien #1'
 run_hook
 check "the odd name reads back exactly, through the include" \
   test "$(get user.name)" = 'Jane "JD" O'"'"'Brien #1'
 
-echo "case 10: identityIncludePath set but the file does not exist — warns, still exits 0"
-setup c10 IDENTITYINCLUDEPATH="$WORK/c10/nope"
-run_hook
-check "the hook exits 0" test "$status" -eq 0
-check "no include.path was set" test -z "$(get include.path)"
-check "it names the missing path on stderr" \
-  grep -qF "$WORK/c10/nope" "$WORK/hook.err"
-check "it still warns about the missing identity" \
-  grep -q 'no git identity found' "$WORK/hook.err"
-check "the container-mandated settings still applied" \
-  test "$(get worktree.useRelativePaths)" = true -a "$(get safe.directory)" = '*'
-
-echo "case 11: a second run is idempotent — no duplicate include.path, no duplicate safe.directory"
-setup c11 IDENTITYINCLUDEPATH="$WORK/c11/identity"
-mkdir -p "$WORK/c11"
-git config --file "$WORK/c11/identity" user.email 'again@example.com'
+echo "case 10: a second run is idempotent — no duplicate include.path, no duplicate safe.directory"
+setup c10
+git config --file "$IDENTITY" user.email 'again@example.com'
 run_hook
 check "the first run exits 0" test "$status" -eq 0
 run_hook
@@ -214,7 +211,7 @@ check "exactly one include.path value" test "$(get_all_count include.path)" -eq 
 check "exactly one safe.directory value" test "$(get_all_count safe.directory)" -eq 1
 check "the include still resolves" test "$(get user.email)" = again@example.com
 
-echo "case 12: five runs are still exactly one of each"
+echo "case 11: five runs are still exactly one of each"
 run_hook
 run_hook
 run_hook

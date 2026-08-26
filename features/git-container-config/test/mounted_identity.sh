@@ -1,9 +1,13 @@
 #!/bin/bash
 # Scenario `mounted_identity` — an identity file already in place before this Feature's
-# postCreateCommand runs, standing in for what a real host mount would deliver (a bind mount is
-# the one thing a Feature cannot declare — see README.md's Identity section). Written directly
-# into a fixed container path by this scenario's own onCreateCommand, the same technique
-# shell-dirs' both_layers scenario uses.
+# postCreateCommand runs, standing in for what a real host bind mount would deliver (a bind mount
+# is the one thing a Feature cannot declare — see README.md's Identity section). Written directly
+# into the Feature's own fixed identity path by this scenario's own onCreateCommand, the same
+# technique agents' with_seed scenario uses.
+#
+# Note what this scenario does NOT pass: any options at all. The identity path is fixed, so
+# mounting something onto it is the whole configuration — that is the difference between this
+# scenario and the default one.
 #
 # Asserts both halves of the ordering contract: the include resolves (user.email/user.name come
 # through), AND a container-mandated key the identity file *also* sets (safe.directory) is won
@@ -12,7 +16,7 @@ set -e
 
 source dev-container-features-test-lib
 
-IDENTITY=/usr/local/share/git-container-config-test/gitid
+IDENTITY=/usr/local/share/devc-features/git-container-config/identity/gitconfig
 
 check "the identity file landed before create" test -f "$IDENTITY"
 check "this Feature's include.path names it" bash -c \

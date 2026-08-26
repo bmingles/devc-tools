@@ -206,36 +206,37 @@ Two edits, in the same commit that lands this:
 
 ## Checklist
 
-- [ ] `devcontainer-feature.json` — option removed, `version` → `0.2.0`,
+- [x] `devcontainer-feature.json` — option removed, `version` → `0.2.0`,
       description sharpened
-- [ ] `install.sh` — option plumbing and one `bake()` call removed; `identity/`
+- [x] `install.sh` — option plumbing and one `bake()` call removed; `identity/`
       created empty; `bake()` and `check_opt` retained for what still needs them
-- [ ] `post-create.sh` — step 1 collapsed onto the fixed path, assignment bare
+- [x] `post-create.sh` — step 1 collapsed onto the fixed path, assignment bare
       at line-start
-- [ ] `README.md` — options table row dropped; the mount recipe retargeted; the
+- [x] `README.md` — options table row dropped; the mount recipe retargeted; the
       "Relationship to devc" argument rewritten rather than patched
-- [ ] `test/git_config_test.sh` — identity cases re-keyed onto the fixed path
-- [ ] `test/test.sh` — baked-option assertion replaced by the two-file agreement
+- [x] `test/git_config_test.sh` — identity cases re-keyed onto the fixed path
+- [x] `test/test.sh` — baked-option assertion replaced by the two-file agreement
       pair
-- [ ] `test/scenarios.json` + `test/mounted_identity.sh` — scenario writes to the
+- [x] `test/scenarios.json` + `test/mounted_identity.sh` — scenario writes to the
       fixed path instead of passing an option
-- [ ] `.plans/devc-swap-baseline-features.md` — Contracts block and mounts
+- [x] `.plans/devc-swap-baseline-features.md` — Contracts block and mounts
       section amended (both edits above)
-- [ ] `.plans/PLAN.md` — register, and move this plan to `archived/` on
+- [x] `.plans/PLAN.md` — register, and move this plan to `archived/` on
       completion
 
 ## Validation
 
-- [ ] `bash features/git-container-config/test/git_config_test.sh` — green. It
+- [x] `bash features/git-container-config/test/git_config_test.sh` — green. It
       runs the real `install.sh` and the real installed hook, so it is the
       binding check that the fixed path is wired end to end.
-- [ ] `bash tests/features_test.sh` — green (manifest shape, allowlist).
-- [ ] `bash tests/workflow_guards_test.sh` — green.
-- [ ] `deno fmt --check` clean.
-- [ ] Both suites that this plan does **not** touch stay green:
+- [x] `bash tests/features_test.sh` — green (manifest shape, allowlist).
+- [x] `bash tests/workflow_guards_test.sh` — green.
+- [x] `deno fmt --check` clean.
+- [x] Both suites that this plan does **not** touch stay green:
       `cd devc && deno task test`. `devc-core`'s suite is red for unrelated
-      reasons — see `devc-swap-baseline-features.md`'s Validation note — and
-      this plan neither fixes nor worsens it.
+      reasons (missing `node-setup.sh` under a materialized cache dir — see
+      `devc-swap-baseline-features.md`'s Validation note) — and this plan
+      neither fixes nor worsens it.
 - [ ] (needs Docker) `devcontainer features test` — the default scenario (bare
       `{}`, empty `identity/`, no `include.path` written) and the retargeted
       `mounted_identity` scenario.

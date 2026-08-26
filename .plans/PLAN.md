@@ -11,23 +11,6 @@
 
 ### Pending
 
-- [feature-git-container-config-fixed-identity](feature-git-container-config-fixed-identity.md)
-  — **written, not yet implemented. Land this BEFORE the swap plan below.**
-  `git-container-config` `0.2.0` drops `identityIncludePath` for a fixed
-  `identity/gitconfig` mount point, the same change `agents` `0.2.0` made to
-  `seedDir`/`claudeJsonDir` and the `bash-config` `dirs/user` shape: mount onto
-  a known path rather than tell the Feature where you mounted. Its four
-  remaining options are all behavior switches, none naming a path.
-
-  Ordering is not a preference. devc consumes **neither** `agents` nor
-  `git-container-config` today — both are published, but `agents-setup.sh` and
-  `git-setup.sh` still do the work — so a breaking change to either is free
-  right now. Once the swap plan declares them at the floating `:0` tag in
-  devc's bundled config, and that config is baked into a released `devc`
-  binary, `:0` floats forward into every already-shipped binary on its users'
-  next container create. After that point a breaking Feature change needs a
-  coordinated release or a deprecation window, which is why this goes first.
-
 - [devc-swap-baseline-features](devc-swap-baseline-features.md) — **written,
   not yet implemented.** devc swaps its own `agents-setup.sh`/`git-setup.sh`
   onto the already-published `agents`/`git-container-config` Features
@@ -85,6 +68,33 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
   take it too.
 
 ### Completed
+
+- [feature-git-container-config-fixed-identity](archived/feature-git-container-config-fixed-identity.md)
+  — ✅ Done, code complete and offline-tested; the two Docker-needed items in
+  the plan's own Validation list are unrun (no Docker in this environment),
+  same standing as [devc-embedded-devcontainer-cli](archived/devc-embedded-devcontainer-cli.md)
+  below.
+
+  `git-container-config` `0.2.0` drops `identityIncludePath` for a fixed
+  `identity/gitconfig` mount point, the same change `agents` `0.2.0` made to
+  `seedDir`/`claudeJsonDir` and the `bash-config` `dirs/user` shape: mount onto
+  a known path rather than tell the Feature where you mounted. Its four
+  remaining options (`lfsFilters`, `lfsSkipSmudge`, `worktreeRelativePaths`,
+  `safeDirectory`) are all behavior switches, none naming a path. Landed
+  before [devc-swap-baseline-features](devc-swap-baseline-features.md), as
+  required — devc consumed neither Feature yet, so the breaking change was
+  free. That plan's Contracts and mounts section were amended in the same
+  pass to declare a bare `{}` and retarget the identity bind.
+
+  `install.sh` now creates `identity/` empty at build time instead of baking
+  the option; `post-create.sh`'s step 1 collapsed to a single `-f` test
+  against the fixed path, and the named-but-missing-file warning is gone (a
+  fixed mount point can't distinguish "nothing mounted" from "mounted empty").
+  `test/git_config_test.sh`'s identity cases re-key onto placing a file at
+  `$SHARE/identity/gitconfig` via a sed-rewritten hook copy, the same
+  technique `agents`' `claude_json_test.sh` uses for `SEED`; all 42 checks
+  pass. `test/test.sh` and `test/scenarios.json`/`mounted_identity.sh` (both
+  Docker-only) were updated to match but not run here.
 
 - [devc-embedded-devcontainer-cli](archived/devc-embedded-devcontainer-cli.md) —
   ✅ Done, code complete; two items in the plan's own Validation list need a

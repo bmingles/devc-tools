@@ -8,11 +8,9 @@
   },
   "mounted_identity": {
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-    "onCreateCommand": "sudo mkdir -p /usr/local/share/git-container-config-test && sudo chmod 777 /usr/local/share/git-container-config-test && printf '[user]\\n\\temail = scenario@example.com\\n\\tname = Scenario Tester\\n[safe]\\n\\tdirectory = /nonexistent\\n' > /usr/local/share/git-container-config-test/gitid",
+    "onCreateCommand": "sudo chmod 777 /usr/local/share/devc-features/git-container-config/identity && printf '[user]\\n\\temail = scenario@example.com\\n\\tname = Scenario Tester\\n[safe]\\n\\tdirectory = /nonexistent\\n' > /usr/local/share/devc-features/git-container-config/identity/gitconfig",
     "features": {
-      "git-container-config": {
-        "identityIncludePath": "/usr/local/share/git-container-config-test/gitid"
-      }
+      "git-container-config": {}
     }
   }
 }

@@ -1,16 +1,11 @@
 {
   "id": "git-container-config",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "name": "Git container config",
-  "description": "Re-applies, on every container create, the user-scope git settings a devcontainer needs and cannot keep: LFS filters for the remote user, worktree.useRelativePaths, safe.directory, and an include.path to an identity file if one has been mounted in. ~/.gitconfig is container-local and wiped on every rebuild, while the repo's working tree and .git are host bind mounts, so anything git needs at user scope has to be re-applied on every create. Installs neither git nor git-lfs — it configures a git that is already there.",
+  "description": "Re-applies, on every container create, the user-scope git settings a devcontainer needs and cannot keep: LFS filters for the remote user, worktree.useRelativePaths, safe.directory, and an include.path to an identity file — read from one fixed mount point, /usr/local/share/devc-features/git-container-config/identity/gitconfig, if a consumer has bind-mounted one there. No path option: that mount point is the one thing a consumer decides is what to bind onto. ~/.gitconfig is container-local and wiped on every rebuild, while the repo's working tree and .git are host bind mounts, so anything git needs at user scope has to be re-applied on every create. Installs neither git nor git-lfs — it configures a git that is already there.",
   "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/git-container-config",
   "licenseURL": "https://github.com/bmingles/devc-tools/blob/main/LICENSE",
   "options": {
-    "identityIncludePath": {
-      "type": "string",
-      "default": "",
-      "description": "Container path to a git-config-format file to include as your identity (user.name/user.email), first, so the container-mandated settings below win over anything it carries. The Feature never reads, parses or validates the file — it only names it. Empty (the default) skips silently; a non-devc consumer has no such file and that is not an error. See the README for the initializeCommand + mount recipe that produces one."
-    },
     "lfsFilters": {
       "type": "boolean",
       "default": true,

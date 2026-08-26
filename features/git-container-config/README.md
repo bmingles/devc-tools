@@ -10,9 +10,10 @@ needs and cannot keep. It installs neither git nor git-lfs — see
 }
 ```
 
-No mounts, no required options. A bare `{}` applies three of the four settings this
-Feature knows about — LFS filters, `worktree.useRelativePaths`, `safe.directory` — all
-of which are pure container scope. The fourth, your git **identity**, is a seam; see
+No required options. A bare `{}` applies all four behavior switches this Feature
+knows about — LFS filters (plus `--skip-smudge`), `worktree.useRelativePaths`,
+`safe.directory` — all of which are pure container scope, plus reads your git
+**identity** from a fixed mount point if you've bound one there; see
 [Identity](#identity-the-one-thing-a-container-cannot-invent).
 
 > The tag tracks **this Feature's own** version line, not the repo's — see
@@ -38,12 +39,13 @@ this Feature exists to fix — so `install.sh` runs none.
 At **create time** (as the **remote user**, which is the entire point — see below)
 `post-create.sh` runs five steps, in this order:
 
-1. **Identity include, first.** When `identityIncludePath` is non-empty and the file
-   exists: `git config --global --replace-all include.path "<path>"`. Included first so
-   every setting below overrides anything the identity file carries. When the option is
-   empty (the default), this step is a silent no-op — a non-devc consumer has no such
-   file, and that is not an error. When the option is set but the file does not exist
-   yet, it warns on stderr and continues.
+1. **Identity include, first.** When a file exists at the fixed mount point
+   `/usr/local/share/devc-features/git-container-config/identity/gitconfig`:
+   `git config --global --replace-all include.path "<path>"`. Included first so every
+   setting below overrides anything the identity file carries. Nothing mounted there is
+   a silent no-op, not an error — a non-devc consumer mounts nothing, and that path is a
+   genuinely absent file rather than a named-but-missing one, so there is nothing to
+   warn about.
 2. **Warn on the effective identity.** If `git config --get user.email` or `user.name`
    comes back empty, warn on stderr. Warn only — never fail create over it. (No
    `--global` scope flag on the `--get`: that flag does not follow `include.path`, so it
@@ -71,16 +73,19 @@ actually need to live for `git` invoked as that user to see them.
 
 | Option                  | Default | Meaning                                                                                                                                                                                 |
 | ----------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `identityIncludePath`   | `""`    | Container path to a git-config-format file to `include.path`, first. The Feature never reads or parses it. Empty skips silently.                                                        |
 | `lfsFilters`            | `true`  | Run `git lfs install --force --skip-repo` for the remote user when `git-lfs` is on `PATH`.                                                                                              |
 | `lfsSkipSmudge`         | `true`  | Add `--skip-smudge` to the LFS install above — see below.                                                                                                                               |
 | `worktreeRelativePaths` | `true`  | Set `worktree.useRelativePaths`, so a container-side `git worktree add` writes relative links, not absolute paths the host can't resolve.                                               |
 | `safeDirectory`         | `"*"`   | Passed to `git config --global --replace-all safe.directory`. Empty disables the setting entirely; any other value is used as-is (scope it to one path instead of `*` if you'd rather). |
 
-Options with a container path pasted into a shell assignment (`identityIncludePath`,
-`safeDirectory`) reject a value containing a double quote, backtick, dollar sign,
-backslash or newline — the build fails loudly naming the option, rather than silently
-producing a script that does something else.
+Your git identity is not an option — see
+[Identity](#identity-the-one-thing-a-container-cannot-invent) for the fixed mount point
+it reads from instead.
+
+`safeDirectory`, the one option pasted into a shell assignment, rejects a value
+containing a double quote, backtick, dollar sign, backslash or newline — the build
+fails loudly naming the option, rather than silently producing a script that does
+something else.
 
 ## The `--skip-smudge` consequence
 
@@ -105,8 +110,8 @@ affects what a checkout writes, not how `git` compares what is already on disk.
 (no `initializeCommand` — a Feature can declare none) and cannot mount them in itself
 (no Feature can declare a host bind mount — see
 [../README.md](../README.md#layout)). Only your own `devcontainer.json` can do both, and
-`identityIncludePath` is the seam: a plain path option this Feature never parses,
-pointed at whatever file your own `initializeCommand` + mount produced.
+the fixed mount point below is the seam: a directory this Feature only ever reads,
+which your own `initializeCommand` + mount produces a file inside of.
 
 ### The recipe (non-devc projects paste this)
 
@@ -114,12 +119,10 @@ pointed at whatever file your own `initializeCommand` + mount produced.
 // extract an allowlist of two keys, host-side, into a file the container may read
 "initializeCommand": "sh -c 'f=$HOME/.config/gitid; : > $f; git config --null --get user.name | xargs -r -0 -I{} git config --file $f user.name {}; git config --null --get user.email | xargs -r -0 -I{} git config --file $f user.email {}; exit 0'",
 "mounts": [
-  "type=bind,source=${localEnv:HOME}/.config/gitid,target=/usr/local/share/gitid,readonly"
+  "type=bind,source=${localEnv:HOME}/.config/gitid,target=/usr/local/share/devc-features/git-container-config/identity/gitconfig,readonly"
 ],
 "features": {
-  "ghcr.io/bmingles/devc-tools/git-container-config:0": {
-    "identityIncludePath": "/usr/local/share/gitid"
-  }
+  "ghcr.io/bmingles/devc-tools/git-container-config:0": {}
 }
 ```
 
@@ -145,29 +148,37 @@ having no git identity is a warning (from this Feature's step 2 above), not a fa
 
 ### devc's own copy, for reference (not to paste)
 
-devc runs the equivalent extraction for you, with its own paths — the same two-key
-allowlist and the same `git config --file` quoting, implemented with a shell variable
-instead of `xargs`, so it has no need of the `--null` fix above:
+devc runs the equivalent extraction for you, with its own host-side path — the same
+two-key allowlist and the same `git config --file` quoting, implemented with a shell
+variable instead of `xargs`, so it has no need of the `--null` fix above:
 [`devc-core/default/initialize-command.sh`](../../devc-core/default/initialize-command.sh)
-extracts into `~/.config/devc/gitconfig-identity`, and
-[`devc-core/default/devcontainer.json`](../../devc-core/default/devcontainer.json) binds
-it read-only to `/usr/local/share/devc/gitconfig-identity`. That path is devc's own —
-this Feature's `identityIncludePath` default stays empty precisely so no option here
-defaults to a devc-specific path (see [../README.md](../README.md) on the collection's
-rule that `"<feature>": {}` must install cleanly for anyone, not only for devc).
+extracts into `~/.config/devc/gitconfig-identity`. Today that host file binds into
+devc's own `/usr/local/share/devc/gitconfig-identity`, read by `git-setup.sh`; once devc
+swaps onto this Feature (see [Relationship to devc](#relationship-to-devc)) that same
+host source retargets onto this Feature's fixed mount point instead — the host
+extraction does not change, only where the bind lands.
 
 ## Relationship to devc
 
 **This Feature and `devc-core/default/scripts/git-setup.sh` are two files with the same
 behavior, not one.** `git-setup.sh` is devc's own copy — it keeps running exactly as it
-does today; swapping devc onto this published Feature is a separate, later change (see
-`.plans/PLAN.md`). If you are editing "the git setup script," check which one you mean:
-this Feature's `post-create.sh` is namespaced under
+does today, against devc's own `/usr/local/share/devc/gitconfig-identity` path.
+Swapping devc onto this published Feature is a separate, later change (see
+[`.plans/devc-swap-baseline-features.md`](../../.plans/devc-swap-baseline-features.md)),
+and that swap is now also what retargets devc's identity bind onto this Feature's fixed
+mount point. If you are editing "the git setup script," check which one you mean
+regardless: this Feature's `post-create.sh` is namespaced under
 `/usr/local/share/devc-features/git-container-config/`, devc's copy runs from
 `devc-core/default/scripts/` and writes nothing under that namespace.
 
+Why the identity target moved into this Feature's own namespace rather than staying an
+option: a path option whose value only ever has one sensible setting is configuration
+the consumer should not have to supply — the same reasoning `agents` applied to its
+`claude-seed` mount and `bash-config` applied to `dirs/user`. **Mount onto a known path**
+rather than **tell the Feature where you mounted**.
+
 Enabling this Feature in a devc container today is redundant with devc's own baseline —
-both would set the same four settings, harmlessly (git config assignments are
+both would set the same four behavior switches, harmlessly (git config assignments are
 idempotent) — but is not yet how devc itself is wired.
 
 ## What this is not
@@ -188,14 +199,15 @@ bash features/git-container-config/test/git_config_test.sh
 ```
 
 Runs the real, installed `post-create.sh` against a temp `HOME` with
-`GIT_CONFIG_GLOBAL` pointed into it — no container, no root. Covers: the identity
-include set when the file exists and skipped when the option is empty; a missing file
-under a non-empty option warning rather than failing; `worktree.useRelativePaths` and
-`safe.directory` present with the defaults; `safeDirectory: ""` omitting the setting
-entirely; a second run being idempotent (no duplicate `include.path`, no duplicate
-`safe.directory`); the missing-identity warning landing on **stderr** with the exit
-code still `0`; and `git-lfs` absent from `PATH` warning and exiting `0` while the
-other settings still apply.
+`GIT_CONFIG_GLOBAL` pointed into it, and a temp `SHARE_DIR` standing in for
+`/usr/local/share/devc-features/git-container-config/` — no container, no root.
+Covers: the identity include set when a file is placed at the fixed
+`identity/gitconfig` path and skipped silently when nothing is there;
+`worktree.useRelativePaths` and `safe.directory` present with the defaults;
+`safeDirectory: ""` omitting the setting entirely; a second run being idempotent (no
+duplicate `include.path`, no duplicate `safe.directory`); the missing-identity warning
+landing on **stderr** with the exit code still `0`; and `git-lfs` absent from `PATH`
+warning and exiting `0` while the other settings still apply.
 
 Needs Docker and a network:
 

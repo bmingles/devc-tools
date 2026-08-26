@@ -61,9 +61,10 @@ not (and cannot) extend to a project's own, unrelated Features.
 
 - `devc-core/default/devcontainer.json` — `features` gains `agents` and
   `git-container-config` entries; `onCreateCommand` and its comment are
-  deleted. `mounts` changes too: the `claude-json-*` volume is deleted and the
-  `claude-seed` bind is retargeted (see Contracts) — the one place this plan
-  removes infrastructure rather than repointing it.
+  deleted. `mounts` changes too: the `claude-json-*` volume is deleted, and
+  both the `claude-seed` bind and the identity bind are retargeted (see
+  Contracts) — the volume deletion is the one place this plan removes
+  infrastructure rather than repointing it.
 - `devc-core/default/Dockerfile` — the `COPY post-create.sh` / `COPY scripts/`
   / chmod block is deleted; the Claude CLI and Copilot CLI `RUN` steps are
   deleted (the `agents` Feature's `install.sh` does this now). What is left
@@ -223,18 +224,14 @@ not (and cannot) extend to a project's own, unrelated Features.
     // Feature's own default is false.
     "installCopilotCli": true
   },
-  // STOP — this entry depends on which version of git-container-config is
-  // published. As written it describes 0.1.0. If
-  // feature-git-container-config-fixed-identity.md has landed (it is meant to
-  // land FIRST), the option is gone and this becomes a bare `{}`, with the
-  // identity bind retargeted in `mounts` below. Check the published manifest
-  // before writing this entry — do not copy it on faith.
-  "ghcr.io/bmingles/devc-tools/git-container-config:0": {
-    "identityIncludePath": "/usr/local/share/devc/gitconfig-identity"
-    // lfsFilters, lfsSkipSmudge, worktreeRelativePaths, safeDirectory all left
-    // at their defaults — they already match git-setup.sh's behavior exactly
-    // (confirmed by reading both side by side). Do not restate defaults.
-  }
+  // Bare `{}`, like `bash-config`'s.
+  // feature-git-container-config-fixed-identity.md landed first, as required —
+  // there is no identityIncludePath left to pass. lfsFilters, lfsSkipSmudge,
+  // worktreeRelativePaths, safeDirectory all left at their defaults — they
+  // already match git-setup.sh's behavior exactly (confirmed by reading both
+  // side by side). Do not restate defaults. The identity bind is retargeted
+  // in `mounts` below.
+  "ghcr.io/bmingles/devc-tools/git-container-config:0": {}
 }
 ```
 
@@ -248,15 +245,12 @@ subject to. No new opt-out mechanism, no `baselineFeatures` involvement —
 that key governs only devc's _dynamic_ injection, which stays exactly
 `devc-config`, alone.
 
-### `devc-core/default/devcontainer.json` — the mounts `agents` 0.2.0 changes
+### `devc-core/default/devcontainer.json` — the mounts `agents` and `git-container-config` 0.2.0 change
 
-`git-container-config` needs no mount change **at `0.1.0`**: its
-`identityIncludePath` still names the `gitconfig-identity` bind devc already
-declares. At `0.2.0` it does need one — a retarget parallel to the
-`claude-seed` one below, spelled out in
-[feature-git-container-config-fixed-identity](feature-git-container-config-fixed-identity.md)'s
-Contracts. `agents` needs one either way, and it is the one place this plan
-**removes** infrastructure rather than repointing it:
+Both Features moved their one devc-coupled path off an option and onto a fixed
+mount point at `0.2.0`, so both binds below are retargets, not new
+infrastructure. `agents` is also where this plan **removes** infrastructure
+rather than repointing it (the second volume):
 
 ```jsonc
 "mounts": [
@@ -268,20 +262,25 @@ Contracts. `agents` needs one either way, and it is the one place this plan
   //   "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/usr/local/share/devc/claude-json",
 
   // RETARGETED onto the Feature's fixed seed path. The host source is unchanged.
-  "type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc-features/agents/claude-seed,consistency=cached,readonly"
+  "type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc-features/agents/claude-seed,consistency=cached,readonly",
+
+  // RETARGETED onto git-container-config's fixed identity path. The host
+  // source is unchanged; initialize-command.sh still writes it.
+  "type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc-features/git-container-config/identity/gitconfig,consistency=cached,readonly"
 ]
 ```
 
-Two consequences to state plainly rather than discover:
+Consequences to state plainly rather than discover:
 
 - **One re-login per workspace**, once. `~/.claude.json` moves from the
   `claude-json-*` volume into the `.claude` volume, and nothing migrates the
   contents across — accepted deliberately (the Feature's own repoint logic
   handles the symlink, not the data). The orphaned `claude-json-*` volumes are
   left on disk for the user to `docker volume prune`.
-- **`/usr/local/share/devc/claude-seed` and `/usr/local/share/devc/claude-json`
-  stop existing** once `agents-setup.sh` is deleted. Nothing else references
-  either path; `gitconfig-identity` stays where it is.
+- **`/usr/local/share/devc/claude-seed`, `/usr/local/share/devc/claude-json`
+  and `/usr/local/share/devc/gitconfig-identity` all stop existing** once
+  `agents-setup.sh` and `git-setup.sh` are deleted. Nothing else references any
+  of the three paths.
 
 ### `devc-core/default/` — post-create.sh, scripts/, and onCreateCommand removed
 
@@ -466,39 +465,32 @@ which are specific to it. Getting this wrong in either direction — copying a
 pattern that does not apply, or ignoring one that does — is the likeliest way
 this plan produces something inconsistent with the collection.
 
-**Carries: a path option whose value only ever has one sensible setting should
+**Carried: a path option whose value only ever has one sensible setting should
 be a fixed path the consumer mounts onto.** This is what `0.2.0` did to
 `seedDir`/`claudeJsonDir`, following `bash-config`'s `dirs/user`.
-`git-container-config`'s `identityIncludePath` is the same shape and the same
-smell: this plan's own Contracts hands it
-`/usr/local/share/devc/gitconfig-identity`, a devc-namespace path, which is
-precisely the "the consumer names the path _and_ mounts it" duplication
-`agents` removed. A fixed
-`/usr/local/share/devc-features/git-container-config/identity`, `touch`ed
-empty at build time, would drop the option, one `check_opt` call and one
-`bake()` call, and devc would retarget its existing identity bind exactly the
-way it retargets `claude-seed` here — the file bind already works, since
-Docker's file-bind restriction applies to _volumes_, not binds, and devc binds
-that file today.
+`git-container-config`'s `identityIncludePath` was the same shape and the same
+smell, and
+[feature-git-container-config-fixed-identity](archived/feature-git-container-config-fixed-identity.md)
+already applied it — landed before this plan, as required, so this plan's own
+Contracts declare a bare `{}` and retarget the identity mount rather than pass
+the now-removed option. A directory, not a bare `touch`ed file, per that
+plan's own Contracts (consistency with `claude-seed` and `dirs/user`). The
+file bind already worked either way, since Docker's file-bind restriction
+applies to _volumes_, not binds, and devc binds that file today.
 
-**Not folded into this plan**, for the same reason `agents` `0.2.0` landed on
-its own first: it is a breaking `0.2.0` for an already-published Feature and
-deserves its own version bump and its own review. But it interacts with this
-plan's Contracts (which mount, which option), so **whoever picks it up should
-land it before this plan, not after** — otherwise devc's identity mount gets
-retargeted twice. One honest cost to weigh when that plan is written: today,
-`identityIncludePath` set to a file that is not there produces a warning,
-because naming a path is an opt-in that can visibly fail. A fixed
-always-present empty file cannot distinguish "consumer mounted nothing" from
-"consumer mounted an empty identity", so that warning goes away — the same
-trade `agents` accepted for an empty seed.
+One cost that plan accepted, worth restating here since it changes this
+plan's own baseline behavior: `identityIncludePath` set to a file that was not
+there used to produce a warning, because naming a path was an opt-in that
+could visibly fail. A fixed always-present mount point cannot distinguish
+"consumer mounted nothing" from "consumer mounted an empty identity", so that
+warning is gone — the same trade `agents` accepted for an empty seed.
 
 **Does not carry: `bake()`.** `agents` deleting its baking machinery was a
 consequence of having no options left, not a verdict on the technique. A
 Feature's options reach `install.sh` as environment variables at **build**
 time only; the manifest's `postCreateCommand` takes no arguments and no
 substitutions, so a Feature with real create-time options has no other way to
-get them across. `git-container-config` has five and keeps them. Do not treat
+get them across. `git-container-config` has four and keeps them. Do not treat
 `agents`' deletion as a reason to strip baking from anything else.
 
 **Already carried, do not re-derive:** the `warn()` helper and the "must exit
@@ -506,7 +498,7 @@ get them across. `git-container-config` has five and keeps them. Do not treat
 follows both.
 
 **Carries, and is a gap here: the offline harness runs the _real installed
-artifact_.** `git-container-config/test/git_config_test.sh` (48 checks) runs
+artifact_.** `git-container-config/test/git_config_test.sh` (42 checks) runs
 the real `install.sh` into a temp `SHARE_DIR` and executes the hook it
 installed, so it cannot drift from what a container gets. That is a stronger
 shape than fence extraction, which tests a fragment. It matters for the new
@@ -676,8 +668,10 @@ harness this plan adds — see the fence Contracts below.
 - **Any change to what `agents`/`git-container-config` themselves do.** Both
   are consumed as published — `agents` at `0.2.0` (which dropped its three
   path options and folded `~/.claude.json` into `~/.claude`, landed separately
-  before this plan runs), `git-container-config` at `0.1.0`. If either needs a
-  behavior change, that is a separate plan versioning that Feature on its own.
+  before this plan runs), `git-container-config` at `0.2.0` (which dropped
+  `identityIncludePath` for a fixed mount point, landed separately before this
+  plan runs too — see below). If either needs a further behavior change, that
+  is a separate plan versioning that Feature on its own.
 
 - **Migrating the contents of the `claude-json-*` volumes.** Deliberately not
   done: one re-login per workspace is the accepted cost, and the orphaned
@@ -697,16 +691,18 @@ harness this plan adds — see the fence Contracts below.
   follow-up work; see
   [The Dockerfile stays](#the-dockerfile-stays--but-nothing-may-depend-on-it).
   `initialize-command.sh` keeps a real job independent of all of this
-  (host-side identity extraction and mount-source seeding), though it loses one
-  line of work if `git-container-config` later drops `identityIncludePath`.
+  (host-side identity extraction and mount-source seeding) — unaffected by
+  `git-container-config`'s `identityIncludePath` removal, which only moved
+  where the container-side bind targets, not what the host side writes.
 
 - **Anything about `ripgrep`.** Not a devc dependency and not a Feature's job —
   a base-image preference. Its `RUN` step stays exactly where it is. See
   [The Dockerfile stays](#the-dockerfile-stays--but-nothing-may-depend-on-it).
 
 - **Dropping `git-container-config`'s `identityIncludePath` for a fixed mount
-  point.** Written up separately as
-  [feature-git-container-config-fixed-identity](feature-git-container-config-fixed-identity.md),
-  which is meant to land **before** this plan — while devc still consumes
-  neither Feature and a breaking change is free. That plan owns the two
-  amendments to this one (the `features` entry and the identity mount).
+  point.** Done separately in
+  [feature-git-container-config-fixed-identity](archived/feature-git-container-config-fixed-identity.md),
+  which landed **before** this plan, as required — while devc still consumed
+  neither Feature and the breaking change was free. That plan's own commit
+  carried the two amendments to this one (the `features` entry and the
+  identity mount), both reflected above.

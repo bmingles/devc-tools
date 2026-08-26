@@ -26,21 +26,20 @@ die() {
 # and booleans arrive as the strings "true"/"false". The defaults are repeated here rather than
 # trusted from the manifest so the script also runs standalone.
 #
-# `${VAR-default}` rather than `${VAR:-default}` for the two string options: an explicitly empty
-# value means something different from "unset" for both — identityIncludePath disables the
-# include entirely, safeDirectory disables the setting entirely — and must not fall back to a
-# non-empty default. node-nvmrc and shell-dirs make the same distinction for the same reason.
-IDENTITY_INCLUDE_PATH_OPT="${IDENTITYINCLUDEPATH-}"
+# `${VAR-default}` rather than `${VAR:-default}` for the string option: an explicitly empty
+# value means something different from "unset" — safeDirectory disables the setting entirely —
+# and must not fall back to a non-empty default. node-nvmrc and shell-dirs make the same
+# distinction for the same reason.
 LFS_FILTERS_OPT="${LFSFILTERS:-true}"
 LFS_SKIP_SMUDGE_OPT="${LFSSKIPSMUDGE:-true}"
 WORKTREE_RELATIVE_PATHS_OPT="${WORKTREERELATIVEPATHS:-true}"
 SAFE_DIRECTORY_OPT="${SAFEDIRECTORY-*}"
 
-# Both string options are pasted into a double-quoted shell assignment in post-create.sh, so
+# The string option is pasted into a double-quoted shell assignment in post-create.sh, so
 # anything that could end that string, start an expansion or add a line is rejected outright
 # rather than silently producing a script that does something else. Same policy, wording and
-# character set as node-nvmrc/shell-dirs/bash-config. These are container paths and a git
-# safe.directory pattern; none of this is a real restriction.
+# character set as node-nvmrc/shell-dirs/bash-config. This is a git safe.directory pattern;
+# none of this is a real restriction.
 check_opt() { # check_opt <option name> <value>
   case "$2" in
     *'"'*) die "$1 may not contain a double quote: $2" ;;
@@ -52,7 +51,6 @@ check_opt() { # check_opt <option name> <value>
 '*) die "$1 may not contain a newline: $2" ;;
   esac
 }
-check_opt identityIncludePath "$IDENTITY_INCLUDE_PATH_OPT"
 check_opt safeDirectory "$SAFE_DIRECTORY_OPT"
 
 # /usr/local/share/devc-features/<id>/ is the Feature namespace. /usr/local/share/devc/ is
@@ -85,10 +83,16 @@ bake() { # bake <file> <var> <value>
 }
 
 mkdir -p "$SHARE_DIR"
+
+# identity/ stays root-owned and is never written to by this Feature: a consumer bind-mounts
+# their own identity file onto identity/gitconfig, read-only, and post-create.sh only ever
+# reads it. Left empty when nobody mounts anything, which is the bare `{}` case — same shape
+# as agents' claude-seed.
+mkdir -p "$SHARE_DIR/identity"
+
 # Plain cp rather than `install -o root`: this runs as root, so the copy is root-owned either
 # way, and no ownership flag means the script still runs unprivileged in the test harness.
 cp "$FEATURE_DIR/post-create.sh" "$SHARE_DIR/post-create.sh"
-bake "$SHARE_DIR/post-create.sh" IDENTITY_INCLUDE_PATH "$IDENTITY_INCLUDE_PATH_OPT"
 bake "$SHARE_DIR/post-create.sh" LFS_FILTERS "$LFS_FILTERS_OPT"
 bake "$SHARE_DIR/post-create.sh" LFS_SKIP_SMUDGE "$LFS_SKIP_SMUDGE_OPT"
 bake "$SHARE_DIR/post-create.sh" WORKTREE_RELATIVE_PATHS "$WORKTREE_RELATIVE_PATHS_OPT"
@@ -96,6 +100,5 @@ bake "$SHARE_DIR/post-create.sh" SAFE_DIRECTORY "$SAFE_DIRECTORY_OPT"
 chmod 0755 "$SHARE_DIR/post-create.sh"
 
 echo "git-container-config: create-time script installed at $SHARE_DIR/post-create.sh"
-echo "git-container-config: identityIncludePath='$IDENTITY_INCLUDE_PATH_OPT'" \
-  "lfsFilters=$LFS_FILTERS_OPT lfsSkipSmudge=$LFS_SKIP_SMUDGE_OPT" \
+echo "git-container-config: lfsFilters=$LFS_FILTERS_OPT lfsSkipSmudge=$LFS_SKIP_SMUDGE_OPT" \
   "worktreeRelativePaths=$WORKTREE_RELATIVE_PATHS_OPT safeDirectory='$SAFE_DIRECTORY_OPT'"

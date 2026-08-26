@@ -24,8 +24,13 @@ check "and is owned by root" bash -c \
 # The options cross into the create-time script at build time — the manifest's
 # postCreateCommand takes no arguments — so "did the bake happen" is a real property, not an
 # implementation detail. These are the defaults, since this scenario passes no options.
-check "identityIncludePath baked empty" \
-  grep -qx 'IDENTITY_INCLUDE_PATH=""' "$SHARE/post-create.sh"
+#
+# The identity path is no longer baked from an option; this pair replaces the guarantee
+# bake()'s own -qxF used to give it — nothing else catches a rename that silently un-wires it.
+check "the hook names the same identity path install.sh creates" \
+  grep -qxF 'IDENTITY_INCLUDE_PATH=/usr/local/share/devc-features/git-container-config/identity/gitconfig' \
+  "$SHARE/post-create.sh"
+check "the identity mount point was created, empty" test -d "$SHARE/identity"
 check "lfsFilters baked true" \
   grep -qx 'LFS_FILTERS="true"' "$SHARE/post-create.sh"
 check "lfsSkipSmudge baked true" \
@@ -45,7 +50,7 @@ check "worktree.useRelativePaths is set for the remote user" bash -c \
   "[ \"\$(git config --global --get worktree.useRelativePaths)\" = true ]"
 check "safe.directory is the wildcard default" bash -c \
   "[ \"\$(git config --global --get safe.directory)\" = '*' ]"
-check "no include.path is set — no identity file was named" bash -c \
+check "no include.path is set — nothing was mounted at the fixed identity path" bash -c \
   "[ -z \"\$(git config --global --get include.path || true)\" ]"
 
 # --- no git-lfs on PATH in this scenario: warns, does not fail create ----------------------

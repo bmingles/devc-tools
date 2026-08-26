@@ -3,11 +3,11 @@
 # needs and cannot keep.
 #
 # install.sh copies this file to /usr/local/share/devc-features/git-container-config/post-create.sh
-# at image build time and bakes the Feature's options into the five assignments below; the
-# manifest's `postCreateCommand` names that copy. The devcontainer CLI runs it **as the remote
-# user**, which is the entire point: `git config --global` writes $HOME/.gitconfig, and running
-# this as root (as a git-lfs Feature's own postCreateCommand does) would write /root/.gitconfig
-# instead, which the remote user never sees.
+# at image build time and bakes the Feature's four behavior-switch options into the assignments
+# below; the manifest's `postCreateCommand` names that copy. The devcontainer CLI runs it **as
+# the remote user**, which is the entire point: `git config --global` writes $HOME/.gitconfig,
+# and running this as root (as a git-lfs Feature's own postCreateCommand does) would write
+# /root/.gitconfig instead, which the remote user never sees.
 #
 # Why every create, not just the first: ~/.gitconfig is container-local and wiped on every
 # rebuild, while the repo's working tree and .git are host bind mounts — so anything git needs
@@ -19,9 +19,9 @@
 # be overridable by whatever happens to be in a mounted identity file.
 #
 # Copied from devc's baseline — devc-core/default/scripts/git-setup.sh, which keeps running
-# unchanged — with the devc-specific identity path replaced by an option, and nothing here
-# assuming a `vscode` user or that any mount exists at all. See README.md's "Relationship to
-# devc" for which file is which.
+# unchanged — with the devc-specific identity path replaced by this Feature's own fixed mount
+# point, and nothing here assuming a `vscode` user or that any mount exists at all. See
+# README.md's "Relationship to devc" for which file is which.
 #
 # The script must exit 0 in every path except a genuine `git config` failure: a
 # postCreateCommand that fails aborts container creation, and none of the warnings below is
@@ -34,14 +34,13 @@ warn() {
 
 # --- baked by install.sh from the Feature's options -------------------------------------
 # Kept in `${VAR:-default}` / `${VAR-default}` form here so this file is readable and runnable
-# straight out of the repo. install.sh rewrites each of these five lines to the configured
+# straight out of the repo. install.sh rewrites each of these four lines to the configured
 # literal and fails the build if a rewrite does not take, so a rename here cannot silently
 # un-wire an option.
 #
-# IDENTITY_INCLUDE_PATH and SAFE_DIRECTORY use `${VAR-default}`, not `${VAR:-default}`: an
-# explicitly empty value disables that setting entirely (no include, no safe.directory at all)
-# and must not fall back to a non-empty default.
-IDENTITY_INCLUDE_PATH="${IDENTITY_INCLUDE_PATH-}"
+# SAFE_DIRECTORY uses `${VAR-default}`, not `${VAR:-default}`: an explicitly empty value
+# disables that setting entirely (no safe.directory at all) and must not fall back to a
+# non-empty default.
 LFS_FILTERS="${LFS_FILTERS:-true}"
 LFS_SKIP_SMUDGE="${LFS_SKIP_SMUDGE:-true}"
 WORKTREE_RELATIVE_PATHS="${WORKTREE_RELATIVE_PATHS:-true}"
@@ -53,23 +52,19 @@ SAFE_DIRECTORY="${SAFE_DIRECTORY-*}"
 # Feature never reads, parses or validates this file's contents — it only names it; producing
 # it is entirely the consumer's job (see README.md for the initializeCommand + mount recipe).
 #
-# Empty is not an error: a non-devc consumer who never set the option has no such file, and
-# that is the whole point of the option defaulting empty rather than to a devc path.
-if [ -n "$IDENTITY_INCLUDE_PATH" ]; then
-  if [ -f "$IDENTITY_INCLUDE_PATH" ]; then
-    git config --global --replace-all include.path "$IDENTITY_INCLUDE_PATH"
-  else
-    # The option was set but nothing is there yet — a mount source that has not landed, or a
-    # host with nothing to extract. Worth a warning (the consumer asked for this file by name),
-    # but not worth failing create over.
-    warn "identityIncludePath '$IDENTITY_INCLUDE_PATH' does not exist; skipping"
-  fi
+# Fixed mount point, not an option: a consumer bind-mounts their own identity file onto it, and
+# "nothing mounted" is a genuinely absent file rather than an option pointing nowhere — so no
+# include.path is written at all, instead of one pointing at an empty file.
+IDENTITY_INCLUDE_PATH=/usr/local/share/devc-features/git-container-config/identity/gitconfig
+
+if [ -f "$IDENTITY_INCLUDE_PATH" ]; then
+  git config --global --replace-all include.path "$IDENTITY_INCLUDE_PATH"
 fi
 
-# Warn on the *effective* identity rather than on the mount, since the file (when the option
-# names one) may also exist but be empty — the host itself had no identity configured. No scope
-# flag: `git config --global --get` does not follow include.path, so it would report nothing
-# even on a correctly configured setup.
+# Warn on the *effective* identity rather than on the mount, since the mounted file may also
+# exist but be empty — the host itself had no identity configured. No scope flag: `git config
+# --global --get` does not follow include.path, so it would report nothing even on a correctly
+# configured setup.
 if [ -z "$(git config --get user.email || true)" ] ||
   [ -z "$(git config --get user.name || true)" ]; then
   warn "no git identity found; set user.name/user.email to commit"
