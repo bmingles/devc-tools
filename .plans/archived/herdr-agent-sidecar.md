@@ -305,6 +305,24 @@ hidden and there is no flag), `devc/container.ts`, and every file under
       `## Development Phases` row. (Already present from plan authoring —
       confirmed, not re-added.)
 
+**Follow-up fix, same day, user-reported**: "notable lag" in the agent
+identity showing/switching in a real Herdr pane. Root cause was a deviation
+from this plan's own "Rotation and teardown" section, which specifies kill
+the current child (SIGTERM, **await status**), _then_ spawn the new one —
+sequential. The first pass spawned the new sidecar immediately and killed
+the old one asynchronously in the background, so for a brief window **two**
+sidecars asserted different `HERDR_AGENT` values in the same process
+group — exactly the "two assertions in one group is undefined" case this
+plan's own measurement #3 documents (resolves to "the later-spawned" with no
+documented rule), which can flicker or stall depending on where Herdr's poll
+lands mid-transition. Fixed with `createSidecarRotator`: every kind change
+is chained onto a single pending promise so the previous child's kill is
+always fully awaited before the next spawn, never overlapping. 5 new
+regression tests in `herdr_test.ts` (22 total in that file, 113 overall)
+cover the ordering directly with fake spawn/kill functions and an
+artificially slow kill, plus the `stop()`-races-a-fresh-transition edge
+case. `deno task check && deno task test` and `deno fmt --check` green.
+
 ## Validation
 
 - [x] `cd devc && deno task check && deno task test` — green, with new cases:

@@ -1,6 +1,7 @@
 import { assert, assertEquals } from 'jsr:@std/assert@^1';
 import { fromFileUrl } from 'jsr:@std/path';
 import {
+  createSidecarRotator,
   DEVC_HERDR_WATCH_ENV,
   HERDR_SIDECAR_SUBCOMMAND,
   herdrAgentKindFor,
@@ -148,6 +149,126 @@ Deno.test('herdrWatcherScript: two different ids produce two different scripts',
   const b = herdrWatcherScript('bbbb');
   assert(a !== b);
   assert(a.includes('aaaa') && !a.includes('bbbb'));
+});
+
+// ---------------------------------------------------------------------------------------------
+// createSidecarRotator — kill-before-spawn, never overlapping
+// ---------------------------------------------------------------------------------------------
+
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// Regression test for the actual bug: an earlier version spawned the new sidecar immediately and
+// killed the old one in the background, so for a window both processes asserted a different
+// HERDR_AGENT in the same process group — the "undefined, resolves unpredictably" case the plan
+// measured. A slow `kill` here (deliberately, via the delay) would let a spawn slip in front of
+// it if the rotator raced them; it must not.
+Deno.test('createSidecarRotator: the previous child is fully killed before the next spawns', async () => {
+  const events: string[] = [];
+  const rotator = createSidecarRotator<string>(
+    (kind) => {
+      events.push(`spawn ${kind}`);
+      return kind;
+    },
+    async (child) => {
+      events.push(`kill:start ${child}`);
+      await delay(10);
+      events.push(`kill:done ${child}`);
+    },
+  );
+
+  rotator.setKind('claude');
+  rotator.setKind('copilot');
+  await delay(50);
+
+  assertEquals(events, [
+    'spawn claude',
+    'kill:start claude',
+    'kill:done claude',
+    'spawn copilot',
+  ]);
+});
+
+Deno.test('createSidecarRotator: null kills the current child and spawns nothing', async () => {
+  const events: string[] = [];
+  const rotator = createSidecarRotator<string>(
+    (kind) => {
+      events.push(`spawn ${kind}`);
+      return kind;
+    },
+    async (child) => {
+      events.push(`kill ${child}`);
+    },
+  );
+
+  rotator.setKind('claude');
+  rotator.setKind(null);
+  await delay(20);
+
+  assertEquals(events, ['spawn claude', 'kill claude']);
+  assertEquals(rotator.current(), null);
+});
+
+Deno.test('createSidecarRotator: repeating the current kind is a no-op', async () => {
+  const events: string[] = [];
+  const rotator = createSidecarRotator<string>(
+    (kind) => {
+      events.push(`spawn ${kind}`);
+      return kind;
+    },
+    async () => {
+      events.push('kill');
+    },
+  );
+
+  rotator.setKind('claude');
+  rotator.setKind('claude');
+  await delay(20);
+
+  assertEquals(events, ['spawn claude']);
+});
+
+Deno.test('createSidecarRotator: stop() kills the current live child', async () => {
+  const events: string[] = [];
+  const rotator = createSidecarRotator<string>(
+    (kind) => {
+      events.push(`spawn ${kind}`);
+      return kind;
+    },
+    async (child) => {
+      events.push(`kill ${child}`);
+    },
+  );
+
+  rotator.setKind('claude');
+  await delay(10); // let the spawn actually happen before tearing down
+  await rotator.stop();
+
+  assertEquals(events, ['spawn claude', 'kill claude']);
+  assertEquals(rotator.current(), null);
+});
+
+// stop() sets its internal `stopped` flag before awaiting any in-flight transition, so a spawn
+// still queued behind a kill at that exact moment is suppressed rather than raced — no pointless
+// spawn-immediately-followed-by-kill right at teardown, and nothing left running either.
+Deno.test('createSidecarRotator: stop() called immediately after setKind suppresses the spawn, not just races it', async () => {
+  const events: string[] = [];
+  const rotator = createSidecarRotator<string>(
+    (kind) => {
+      events.push(`spawn ${kind}`);
+      return kind;
+    },
+    async (child) => {
+      events.push(`kill ${child}`);
+    },
+  );
+
+  rotator.setKind('claude');
+  await rotator.stop(); // no delay — stop() races the very first transition
+
+  assertEquals(events, []);
+  assertEquals(rotator.current(), null);
 });
 
 // ---------------------------------------------------------------------------------------------

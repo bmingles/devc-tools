@@ -270,6 +270,55 @@ async function killChild(child: Deno.ChildProcess): Promise<void> {
 }
 
 /**
+ * Serializes sidecar identity transitions: the previous child is always fully dead — `SIGTERM`
+ * sent *and its exit awaited* — before the next one is spawned. Never the two overlapping, even
+ * briefly: Herdr resolves two simultaneous `HERDR_AGENT` assertions in the same process group as
+ * undefined behavior (measured — see the plan's "Two assertions in one group" finding), so
+ * spawning the new child before the old one is confirmed gone isn't a shortcut, it's a bug — it
+ * can leave a stale kind briefly winning, or flicker, depending on which one Herdr's poll lands
+ * on mid-transition. Generic over the child type so it's testable without a real process.
+ */
+export function createSidecarRotator<T>(
+  spawn: (kind: string) => T,
+  kill: (child: T) => Promise<void>,
+): {
+  setKind(kind: string | null): void;
+  current(): T | null;
+  stop(): Promise<void>;
+} {
+  let currentKind: string | null = null;
+  let currentChild: T | null = null;
+  let stopped = false;
+  // Every transition is chained onto this, so a burst of `setKind` calls (a rapid seed-then-first-
+  // watcher-line, say) still resolves in order — never a mid-flight kill and a later spawn racing.
+  let pending: Promise<void> = Promise.resolve();
+
+  function setKind(kind: string | null): void {
+    if (stopped || kind === currentKind) return;
+    currentKind = kind;
+    pending = pending.then(async () => {
+      const prev = currentChild;
+      currentChild = null;
+      if (prev) await kill(prev);
+      if (!stopped && kind !== null) currentChild = spawn(kind);
+    });
+  }
+
+  return {
+    setKind,
+    current: () => currentChild,
+    async stop() {
+      if (stopped) return;
+      stopped = true;
+      await pending.catch(() => {});
+      const c = currentChild;
+      currentChild = null;
+      if (c) await kill(c);
+    },
+  };
+}
+
+/**
  * The child half of `__herdr-sidecar`: read stdin to EOF, then exit 0. That is the whole
  * program — devc holds the write end as a watchdog, so if devc dies for any reason (including
  * `SIGKILL`, which no `finally` here could ever catch) the pipe closes, this reads EOF, and the
@@ -328,8 +377,10 @@ export interface HerdrController {
  * `spec.mode === 'watch'`: seeds the sidecar from `seedCommand` (so `devc claude` shows the
  * right agent immediately, before the watcher's first tick) via the same
  * {@link herdrAgentKindFor} the watcher's own lines go through, then starts the long-lived
- * watcher `docker exec` and rotates the sidecar — kill the current child, spawn the new one, or
- * kill-and-spawn-nothing on `null` — on each *distinct* kind it reports.
+ * watcher `docker exec` and rotates the sidecar on each *distinct* kind it reports — via
+ * {@link createSidecarRotator}, which kills the current child and *awaits its exit* before
+ * spawning the new one (or spawns nothing, on `null`). Never the two overlapping — see that
+ * function's doc comment for why.
  *
  * `info` is the subset of `ContainerInfo` the watcher's `docker exec -u <remoteUser>
  * <containerId>` needs — `-u` is required, not cosmetic: reading `/proc/<pid>/environ` needs the
@@ -341,25 +392,19 @@ export function startHerdrSidecar(
   seedCommand: string | undefined,
   runtime: SelfExecRuntime = currentSelfExecRuntime(),
 ): HerdrController {
-  let currentKind: string | null = null;
-  let currentChild: Deno.ChildProcess | null = null;
   let watcherChild: Deno.ChildProcess | null = null;
   let stopped = false;
-  const staleKills: Promise<void>[] = [];
 
-  function setSidecar(kind: string | null): void {
-    if (stopped || kind === currentKind) return;
-    const prev = currentChild;
-    currentKind = kind;
-    currentChild = kind === null ? null : spawnSidecar(kind, runtime);
-    if (prev) staleKills.push(killChild(prev));
-  }
+  const rotator = createSidecarRotator<Deno.ChildProcess>(
+    (kind) => spawnSidecar(kind, runtime),
+    killChild,
+  );
 
   if (spec.mode === 'pinned') {
-    setSidecar(spec.kind);
+    rotator.setKind(spec.kind);
   } else {
     if (seedCommand !== undefined) {
-      setSidecar(herdrAgentKindFor(seedCommand));
+      rotator.setKind(herdrAgentKindFor(seedCommand));
     }
     // No `-i`, no `-t` — this must never touch the pane's terminal.
     watcherChild = new Deno.Command('docker', {
@@ -370,7 +415,7 @@ export function startHerdrSidecar(
     }).spawn();
     readLines(
       watcherChild.stdout,
-      (line) => setSidecar(herdrAgentKindFor(line)),
+      (line) => rotator.setKind(herdrAgentKindFor(line)),
     )
       .catch(() => {});
   }
@@ -380,9 +425,7 @@ export function startHerdrSidecar(
       if (stopped) return;
       stopped = true;
       if (watcherChild) await killChild(watcherChild);
-      if (currentChild) staleKills.push(killChild(currentChild));
-      currentChild = null;
-      await Promise.all(staleKills);
+      await rotator.stop();
     },
   };
 }

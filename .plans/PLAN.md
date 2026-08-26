@@ -86,17 +86,34 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
   `cut -d')' -f2-`, reading `/proc/<tpgid>/cmdline` never `ps -g`, the two
   `exit 0` self-termination arms — verbatim from the plan.
 
-  New `devc/tests/herdr_test.ts` (17 cases): the gate's three modes, every
+  New `devc/tests/herdr_test.ts` (22 cases): the gate's three modes, every
   `herdrAgentKindFor` case the plan's Validation section names (interpreter
   re-take, `gh copilot`, a kind whose manifest id differs from its command
   name, shell/empty/unlisted → `null`), `sidecarArgv`'s both branches with a
   test that fails if `--allow-env` is dropped, the watcher script containing
-  the marker and both `exit 0` arms, and the sidecar body actually exiting 0
-  on stdin EOF (spawns the real `__herdr-sidecar` subcommand with closed
-  stdin — provable without Docker).
+  the marker and both `exit 0` arms, the rotator's kill-before-spawn
+  ordering (below), and the sidecar body actually exiting 0 on stdin EOF
+  (spawns the real `__herdr-sidecar` subcommand with closed stdin — provable
+  without Docker).
+
+  **Same-day follow-up, user-reported**: "notable lag" in a real Herdr pane
+  when an agent showed up or switched. Root cause was a deviation from the
+  plan's own "Rotation and teardown" section — kill the current child and
+  _await its status_ before spawning the new one, sequential — that the
+  first pass got backwards: it spawned the new sidecar immediately and
+  killed the old one asynchronously in the background, so for a brief
+  window two sidecars asserted different `HERDR_AGENT` values in the same
+  process group, exactly the "undefined, resolves unpredictably" double-
+  assertion case the plan's own measurement #3 warns about. Fixed with
+  `createSidecarRotator`, which chains every kind change onto one pending
+  promise so a kill is always fully awaited before the next spawn. 5 of the
+  22 test cases above are regression tests for this ordering (fake
+  spawn/kill functions, an artificially slow kill, and the `stop()`-races-a-
+  fresh-transition edge case). See the plan doc's own follow-up note for the
+  full account.
 
   Verified here, offline: `cd devc && deno task check && deno task test`
-  (108 passed, up from 91 — **red → green**); `deno fmt --check` (169 files,
+  (113 passed, up from 91 — **red → green**); `deno fmt --check` (169 files,
   clean).
 
   **Not verified here (no Docker, no Herdr):** all six Docker+Herdr-needed
