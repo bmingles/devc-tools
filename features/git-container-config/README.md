@@ -152,34 +152,24 @@ devc runs the equivalent extraction for you, with its own host-side path — the
 two-key allowlist and the same `git config --file` quoting, implemented with a shell
 variable instead of `xargs`, so it has no need of the `--null` fix above:
 [`devc-core/default/initialize-command.sh`](../../devc-core/default/initialize-command.sh)
-extracts into `~/.config/devc/gitconfig-identity`. Today that host file binds into
-devc's own `/usr/local/share/devc/gitconfig-identity`, read by `git-setup.sh`; once devc
-swaps onto this Feature (see [Relationship to devc](#relationship-to-devc)) that same
-host source retargets onto this Feature's fixed mount point instead — the host
-extraction does not change, only where the bind lands.
+extracts into `~/.config/devc/gitconfig-identity`. That host file binds onto this
+Feature's fixed mount point — the host extraction is unchanged from before devc
+consumed this Feature; only where the bind lands moved.
 
 ## Relationship to devc
 
-**This Feature and `devc-core/default/scripts/git-setup.sh` are two files with the same
-behavior, not one.** `git-setup.sh` is devc's own copy — it keeps running exactly as it
-does today, against devc's own `/usr/local/share/devc/gitconfig-identity` path.
-Swapping devc onto this published Feature is a separate, later change (see
-[`.plans/devc-swap-baseline-features.md`](../../.plans/devc-swap-baseline-features.md)),
-and that swap is now also what retargets devc's identity bind onto this Feature's fixed
-mount point. If you are editing "the git setup script," check which one you mean
-regardless: this Feature's `post-create.sh` is namespaced under
-`/usr/local/share/devc-features/git-container-config/`, devc's copy runs from
-`devc-core/default/scripts/` and writes nothing under that namespace.
+**devc no longer carries its own copy of this script.** It used to run an equivalent
+`devc-core/default/scripts/git-setup.sh` against its own
+`/usr/local/share/devc/gitconfig-identity` path; that script is retired, and devc now
+declares this Feature directly in its bundled `devcontainer.json` (see
+[`.plans/archived/devc-swap-baseline-features.md`](../../.plans/archived/devc-swap-baseline-features.md)),
+with its identity bind retargeted onto this Feature's fixed mount point instead.
 
 Why the identity target moved into this Feature's own namespace rather than staying an
 option: a path option whose value only ever has one sensible setting is configuration
 the consumer should not have to supply — the same reasoning `agents` applied to its
 `claude-seed` mount and `bash-config` applied to `dirs/user`. **Mount onto a known path**
 rather than **tell the Feature where you mounted**.
-
-Enabling this Feature in a devc container today is redundant with devc's own baseline —
-both would set the same four behavior switches, harmlessly (git config assignments are
-idempotent) — but is not yet how devc itself is wired.
 
 ## What this is not
 

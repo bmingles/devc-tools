@@ -19,11 +19,15 @@ deno fmt --check                                            # repo root
 bash tests/install_test.sh install.sh                              # ALL PASS
 bash tests/workflow_guards_test.sh                                 # ALL PASS
 bash tests/features_test.sh                                        # ALL PASS
-(cd devc && for t in seed_link:default/scripts/agents-setup.sh \
-                     shell_dirs:default/scripts/bashrc-additions.sh; do
-  bash "tests/${t%%:*}_test.sh" "${t#*:}"; done)
-bash devc/tests/devc_config_test.sh features/devc-config/post-create.sh    # ALL PASS
+bash devc/tests/seed_link_test.sh features/agents/post-create.sh           # ALL PASS
+bash devc/tests/devc_config_test.sh features/devc-config/post-create.sh    # all cases ok
+bash devc/tests/bashrc_additions_test.sh features/devc-config/post-create.sh # all cases ok
 bash features/devc-bridge/test/install_link_test.sh                # ALL PASS
+# devc/tests/shell_dirs_test.sh has no copy left to run against — the shell-dirs Feature it
+# used to test was superseded by bash-config (see .plans/plan.md's Completed table) and devc's
+# own devc-core/default/scripts/bashrc-additions.sh is gone too (this plan). Pre-existing gap,
+# not this plan's regression: devc/README.md's own fence-harness list already pointed at the
+# same removed Feature before this plan touched it.
 ```
 
 ---
@@ -406,8 +410,13 @@ real daemon.
       rather than `>` touch a marker file, so a double-run would be visible.
 - [ ] **Ordering.** A hook that records `git config --get user.email` and
       whether `~/.claude` exists sees both already set up — proving devc's
-      `onCreateCommand` (agents-setup, git-setup, bashrc-additions) really
-      precedes the devc-config Feature's `postCreateCommand`.
+      baseline precedes the devc-config Feature's `postCreateCommand`.
+      **Superseded mechanism, same property:** at the time this item was
+      written the baseline ran via a top-level `onCreateCommand`
+      (agents-setup, git-setup, bashrc-additions); `devc-swap-baseline-features`
+      (§9 below) replaced that with `agents`/`git-container-config` Features
+      ordered ahead of `devc-config` via `installsAfter`. This item still
+      measures the same guarantee, just not the mechanism named here.
 - [ ] **The double-install case.** A project declaring
       `"ghcr.io/bmingles/devc-tools/devc-config:0.2.0": {}` in its own
       `features` while devc injects `:0.1.0`. The hook runs **once**, and
@@ -443,3 +452,56 @@ real daemon.
       build time. Confirm a cached image does not re-pull, and that
       `baselineFeatures: false` is a working escape hatch for an air-gapped
       build.
+
+## 9. `devc-swap-baseline-features` — Docker host
+
+From `.plans/archived/devc-swap-baseline-features.md`. `agents-setup.sh`, `git-setup.sh`
+and `bashrc-additions.sh` are gone from `devc-core/default/`; the baseline is
+now delivered by the `agents`/`git-container-config` Features (declared
+statically in the bundled `devcontainer.json`) plus `devc-config`'s second
+fence (injected dynamically, same as before). Everything before
+`devcontainer up` actually runs is exercised by `deno task test` and the shell
+harnesses in §0's baseline block; these are the items that need a real daemon.
+
+- [ ] **`agents` derives `~/.claude` as `/home/vscode/.claude`** for
+      `mcr.microsoft.com/devcontainers/base:noble` + the `vscode` remote user
+      at `postCreateCommand` time — the path devc's `claude-code-config-*`
+      volume already mounts at. `0.2.0` derives this from `$HOME` at create
+      time rather than baking it, so a mismatch is now visible in the
+      container (an unlinked `~/.claude.json`, or files landing outside the
+      volume) rather than silent.
+- [ ] **Zero-config end-to-end.** `devc up` on a project with no config of its
+      own. `~/.claude` seeded and owned correctly, `~/.claude.json`
+      symlinked, git identity/LFS/`safe.directory` all set — same observable
+      outcome as before this plan, now delivered by two Features instead of
+      two scripts.
+- [ ] **The `installsAfter` ordering claim, for real.** A hook (via
+      `devc-config`, reached through the project's own `devc-post-create.sh`)
+      that checks `git config --get user.email` and whether `~/.claude` is
+      populated sees both already set up. Direct successor to §8's "Ordering"
+      item, same property, different mechanism (`installsAfter` rather than a
+      top-level `onCreateCommand`).
+- [ ] **`devc init` output still works standalone.** Scaffold a project, bring
+      it up with a plain `devcontainer up` (no `devc` on `PATH`) —
+      `agents`/`git-container-config` still provision correctly, since they
+      are declared in the scaffolded config itself, not injected. (Unlike
+      `devc-config`, which still requires `devc` — see §8.)
+- [ ] **The bashrc-additions reach extension.** A genuinely project-owned
+      `.devcontainer/devcontainer.json` (devc never wrote it), no `devc.json`
+      overlay. `devc up` → the container's interactive shell carries the
+      custom `PS1` and title behavior, confirming devc's prompt/title
+      customization now reaches project mode for the first time (previously
+      only zero-config and `devc init` output got it).
+- [ ] **One-time re-login per workspace.** An existing workspace container
+      from before this change, re-created on this branch: Claude Code prompts
+      to log in again once (the `claude-json-*` volume's contents do not
+      migrate into the `.claude` volume), and stays logged in on subsequent
+      creates. `docker volume ls` still shows the orphaned `claude-json-*`
+      volume — `docker volume prune` removes it, not this plan's automation.
+- [ ] **Rebuild churn**, same shape as §8's: confirm this is a one-time
+      image-layer change per project, not a recurring cost.
+- [ ] **Copilot CLI lands in the same place.** For an existing image built
+      before this change, confirm `~/.local/bin/copilot` (installed by the
+      `agents` Feature's `install.sh` now, not the Dockerfile's own `RUN`
+      step) is not orphaned — same install script, same target, but worth
+      confirming against a real rebuild rather than assumed.

@@ -63,14 +63,12 @@ const TEMPLATE_OVERLAY_FILENAMES: readonly string[] = [
 
 /**
  * Host directory holding the user's `~/.claude` config for containers. Bind-mounted read-only
- * at `CLAUDE_SEED_TARGET`; `post-create.sh` symlinks every top-level *file* from it into the
- * `~/.claude` volume (directories are ignored — the `devc:skills` fence owns
- * `~/.claude/skills/`).
+ * onto the `agents` Feature's fixed seed path
+ * (`/usr/local/share/devc-features/agents/claude-seed`); that Feature's own `post-create.sh`
+ * symlinks every top-level *file* from it into the `~/.claude` volume (directories are ignored
+ * — the `devc:skills` fence owns `~/.claude/skills/`).
  */
 export const CLAUDE_SEED_HOST_DIR = `${CONFIG_DIR}/.claude`;
-
-/** Container path the seed directory is bind-mounted at (mirrors the bundled default). */
-export const CLAUDE_SEED_TARGET = '/usr/local/share/devc/claude-seed';
 
 /** Outcome of `ensureClaudeSeedDir`. */
 export interface ClaudeSeedResult {
@@ -228,37 +226,36 @@ async function overlayDirFrom(
  * {@link TEMPLATES_DIR} files on top of it per file, and returns the path to the copied
  * `devcontainer.json` — suitable for `devcontainer up --config <path>`.
  *
- * The three steps are ordered, and the order is load-bearing:
+ * The steps are ordered, and the order is load-bearing:
  *
  * 1. Remove the prior copy, so a file dropped between versions does not linger forever.
  * 2. Copy the embedded tree.
  * 3. Overlay `templatesDir`, per file — so deleting a template restores the bundled version.
- * 4. Apply the two path rewrites below, *after* the overlay, so a user-supplied
- *    `templates/devcontainer.json` gets them too. They are `replaceAll` of exact tokens, so a
- *    template that rewrote those lines itself simply no-ops.
+ * 4. Apply the `initializeCommand` path rewrite below, *after* the overlay, so a
+ *    user-supplied `templates/devcontainer.json` gets it too. It is a `replaceAll` of an
+ *    exact token, so a template that rewrote that line itself simply no-ops.
  *
  * The copy is near-verbatim: the bundled default carries no local Feature, so
- * zero-config and `devc config` projects share the same `.devcontainer/` shape. The
- * baseline is delivered by the bundled `Dockerfile` (build-time) plus the top-level
- * `postCreateCommand` running `post-create.sh` → `scripts/*` (create-time), both of which
- * the source config already spells out. `@devcontainers/cli` accepts JSONC, so the copied
- * config keeps its comments.
+ * zero-config and `devc config` projects share the same `.devcontainer/` shape. The baseline
+ * is delivered by Features declared in the config itself (`agents`, `git-container-config`)
+ * plus the bundled `Dockerfile` for its base image, both of which the source config already
+ * spells out. `@devcontainers/cli` accepts JSONC, so the copied config keeps its comments.
  *
- * Two path rewrites are applied, because both entry scripts are referenced relative to a
+ * One path rewrite is applied, because `initializeCommand` is referenced relative to a
  * project `.devcontainer/` that does not exist in the zero-config path (the workspace is the
- * user's project, and this cache dir is not mounted into the container):
+ * user's project, and this cache dir is not mounted into the container): it runs on the
+ * *host* → resolved to `initialize-command.sh` in the directory this tree will finally live
+ * in (`opts.finalDir`, defaulting to `cacheDir`). `postCreateCommand` needs no equivalent
+ * rewrite — it is delivered by Features now, which resolve their own paths at create time,
+ * not by a script referenced relative to a project `.devcontainer/`.
  *
- * - `initializeCommand` runs on the *host* → resolved to `initialize-command.sh` in the
- *   directory this tree will finally live in (`opts.finalDir`, defaulting to `cacheDir`).
- * - `postCreateCommand` runs in the *container* → resolved to the image-baked
- *   `post-create.sh` (which the Dockerfile `COPY`s in for exactly this case).
+ * The plain string replace preserves the config's comments; the token matches the source
+ * verbatim. It is why the project-mode config can reference a clean in-project
+ * `initialize-command.sh` (so edits apply on recreate) while the hidden zero-config copy
+ * still resolves.
  *
- * Plain string replaces preserve the config's comments; the tokens match the source verbatim.
- * These rewrites are why the project-mode config can reference clean in-project paths (so edits
- * apply on recreate) while the hidden zero-config copy still resolves.
- *
- * With `opts.bridge`, a fifth step injects the devc-bridge token mount — see
- * {@link injectBridgeMount}. It runs after the overlay for the same reason the rewrites do.
+ * With `opts.bridge`, a further step injects the devc-bridge token mount — see
+ * {@link injectBridgeMount}. It runs after the overlay for the same reason the rewrite does.
  *
  * Writes **unconditionally**, to exactly the directory it is handed. That is the whole of its
  * contract, and it is what makes it directly testable. Production code does not call it: the
@@ -299,15 +296,10 @@ export async function materializeDefaultConfig(
 
   const configPath = `${cacheDir}/devcontainer.json`;
   const raw = await readFile(configPath, 'utf8');
-  const rewritten = raw
-    .replaceAll(
-      '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
-      `${finalDir}/initialize-command.sh`,
-    )
-    .replaceAll(
-      '${containerWorkspaceFolder}/.devcontainer/post-create.sh',
-      '/usr/local/share/devc/post-create.sh',
-    );
+  const rewritten = raw.replaceAll(
+    '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
+    `${finalDir}/initialize-command.sh`,
+  );
   const final = opts.bridge
     ? injectBridgeMount(rewritten, configPath)
     : rewritten;
@@ -604,9 +596,8 @@ function injectBridgeMount(text: string, configPath: string): string {
 
 /**
  * Copy the whole embedded `default/` tree into `destDir` (a project's `.devcontainer/`) — the
- * `devcontainer.json`, the `Dockerfile`, the `post-create.sh` and `initialize-command.sh`
- * lifecycle entry scripts, and the `scripts/` sub-dependency subtree — then overlay
- * `templatesDir` on top, per file, so a user's own `Dockerfile`, `scripts/*.sh` or
+ * `devcontainer.json`, the `Dockerfile`, and the `initialize-command.sh` lifecycle entry
+ * script — then overlay `templatesDir` on top, per file, so a user's own `Dockerfile` or
  * `devcontainer.json` reaches project mode too.
  *
  * Every bundled file goes through the same two steps, `devcontainer.json` included. It used to be
@@ -625,15 +616,13 @@ export async function copyBundledAssets(
 
 /**
  * Copy the bundled assets into `destDir` (a project's `.devcontainer/`) via
- * {@link copyBundledAssets}, then restore the exec bit on the two lifecycle entry scripts and
- * their `scripts/*.sh` delegates. Returns the top-level paths written, in a stable order
- * (`devcontainer.json` first), for callers that report them.
+ * {@link copyBundledAssets}, then restore the exec bit on the one lifecycle entry script left.
+ * Returns the top-level paths written, in a stable order (`devcontainer.json` first), for
+ * callers that report them.
  *
- * `copyBundledAssets` writes files 0644, so the chmod is what lets a dev run the scripts by hand
- * (`post-create.sh` invokes its steps via `bash`, so this is cleanliness rather than
- * correctness). The list is deliberately fixed rather than derived: a new top-level `*.sh` that a
- * user template adds does not get the exec bit, which is cosmetic since both lifecycle hooks are
- * invoked as `bash "<path>"`.
+ * `copyBundledAssets` writes files 0644, so the chmod is what lets a dev run the script by
+ * hand (invoked as `bash "<path>"` by `initializeCommand`, so this is cleanliness rather than
+ * correctness).
  */
 export async function installBundledAssets(
   destDir: string,
@@ -641,25 +630,12 @@ export async function installBundledAssets(
 ): Promise<string[]> {
   await copyBundledAssets(destDir, templatesDir);
 
-  const scriptsDir = `${destDir}/scripts`;
-  const executable = [
-    `${destDir}/post-create.sh`,
-    `${destDir}/initialize-command.sh`,
-  ];
-  const entries = await readdir(scriptsDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith('.sh')) {
-      executable.push(`${scriptsDir}/${entry.name}`);
-    }
-  }
-  for (const path of executable) await chmod(path, 0o755);
+  await chmod(`${destDir}/initialize-command.sh`, 0o755);
 
   return [
     `${destDir}/devcontainer.json`,
     `${destDir}/Dockerfile`,
-    `${destDir}/post-create.sh`,
     `${destDir}/initialize-command.sh`,
-    scriptsDir,
   ];
 }
 

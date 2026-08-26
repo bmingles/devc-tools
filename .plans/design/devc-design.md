@@ -175,124 +175,85 @@ Both project locations are first-class and behave identically.
 ignore, beside the config it overlays — and `.devc/` suits a repo that prefers
 `devc`'s files grouped in one place.
 
-### Bundled default: baseline via Dockerfile + a top-level `postCreateCommand`
+### Bundled default: baseline via devcontainer Features
 
-`devc`'s baseline container behavior is split by _when_ it can run:
+`devc`'s create-time baseline is delivered entirely by devcontainer Features
+now, not by a devc-owned orchestrator script. Two are declared statically in
+the bundled `devcontainer.json`, the same way `bash-config`/`node-nvmrc`
+already are:
 
-- **Build-time**, baked into cached image layers by the bundled
-  **`Dockerfile`**: installing the Claude CLI and appending the shell additions
-  (prompt, terminal title, `nvm` auto-use, first-prompt clear) from
-  `scripts/bashrc-additions.sh`.
-- **Create-time**, run by a **top-level `postCreateCommand`** pointing at
-  `post-create.sh`: the volume-dependent steps that cannot run at build time
-  because volumes are not mounted until the container is created — ownership of
-  the isolated `~/.claude` volume, the per-workspace `~/.claude.json` symlink,
-  the `~/.claude` seed symlinks (see below), and `nvm install` from the
-  project's `.nvmrc`.
+- **[`agents`](../../features/agents/README.md)** — installs the Claude Code
+  (and optionally Copilot) CLI at build time, then at create time links the
+  `~/.claude` seed and folds `~/.claude.json` into the same volume.
+- **[`git-container-config`](../../features/git-container-config/README.md)**
+  — re-applies user-scope git settings (identity include, LFS filters,
+  `worktree.useRelativePaths`, `safe.directory`) on every create.
 
-The `.devcontainer/` layout follows one rule: the **lifecycle entry scripts live
-at the root** (`post-create.sh`, `initialize-command.sh` — each the target of a
-hook named in `devcontainer.json`), and **`scripts/` holds the setup steps and
-sub-dependencies**. `post-create.sh` itself contains no logic — it only resolves
-`scripts/` relative to itself (`dirname "$0"`) and calls each step in order
-(`agents-setup.sh` for Claude/agent config, `node-setup.sh` for nvm);
-`scripts/bashrc-additions.sh` is a build-time piece the Dockerfile `cat`s into
-`~/.bashrc`. A developer extends the baseline by editing a step or dropping a
-new script in `scripts/` and adding a line to `post-create.sh` — the pattern is
-self-evident from reading the two files, so there is **no** special "user hook"
-file.
+A third, **[`devc-config`](../../features/devc-config/README.md)**, is
+injected _dynamically_ into every container `devc` starts via
+`--additional-features` (see `overlay.ts`'s `withBaselineFeatures`, and
+[devc/README.md's Project post-create hook section](../../devc/README.md#project-post-create-hook-devc-post-createsh))
+rather than declared in the bundled config — it runs the project's own
+`devc-post-create.sh`, and also carries devc's own prompt/title/`DEVC_ATTACH`
+`~/.bashrc` block (the `devc:bashrc-additions` fence), which used to live in a
+devc-owned `scripts/bashrc-additions.sh`.
 
-**Shell customization is a third tier — shell-start time.** The last thing
-`bashrc-additions.sh` does before the attach first-prompt block (the
-`devc:shell-dirs` fence) is source every `*.sh` from two optional directories:
-`/usr/local/share/devc/shell` (the host's `~/.config/devc/shell`, bind-mounted
-read-only — user preferences, every project) then
-`$PROJECT_PATH/.devcontainer/shell` (this project's settings). User-then-project
-so a project's committed settings win, matching git's `system → global → local`.
+`devc-config`'s manifest orders itself after the other two via
+`installsAfter: ["…/agents", "…/git-container-config"]`, so `.claude` + seed
+links and git identity are already in place by the time its hook (and the
+bashrc block) run — the phase-level `onCreateCommand`-before-`postCreateCommand`
+trick a prior design used no longer applies once every step is a Feature
+competing in the same phase; `installsAfter` is the lever that does.
 
-Sourcing rather than appending is what makes it the cheapest tier: edits land on
-the next new shell (no rebuild, no recreate), deletion is honored by the
-`-d`/`-f` guards alone, and **nothing in `devc` creates or writes either
-directory** — so neither is at risk from `copyBundledAssets`, which writes every
-other bundled asset unconditionally and would clobber user content. Directories
-rather than single files for two reasons: a single-file bind mount is a hard
-error when the source is absent, which would defeat "optional" for the user
-layer; and a directory lets both layers compose from several files (`10-`, `20-`
-prefixes) instead of forcing one blob. The user layer's mount source is created
-by `initialize-command.sh`, the one host-side hook, so a clone comes up cleanly
-on a machine without `devc` installed.
+The `.devcontainer/` layout that is left follows from what remains: the
+bundled `Dockerfile` (base image + `ripgrep` only — a preference, not a
+dependency, kept only until it is removed by hand) and the one host-side
+lifecycle entry script, `initialize-command.sh`, which `initializeCommand`
+still runs on the **host**, before the container exists, to seed the
+`~/.claude` mount source and extract git identity into
+`~/.config/devc/gitconfig-identity`. There is no create-time orchestrator on
+the container side any more — no `post-create.sh`, no `scripts/`, no
+`onCreateCommand` — so a developer who wants a devc-owned create-time step
+back adds `onCreateCommand` + a script, which is cheap to redo but not worth
+keeping inert in the meantime.
 
-Placement is load-bearing. The block sits _after_ everything devc sets, so a
-layer can override `PS1`, `cd()`, or `precmd`, and _before_ the `DEVC_ATTACH`
-block, which snapshots `PROMPT_COMMAND` and would be clobbered by a file that
-assigns to it. The project layer resolves through the workspace mount, so it
-works in the zero-config path with no `devcontainer.json` present; the user
-layer is at a fixed container path and needs no `PROJECT_PATH` at all. There is
-no `$PWD` fallback for `PROJECT_PATH`: a shell opened outside `devc` should not
-source whichever repo it happens to start in.
+**Shell customization is still a distinct tier — shell-start time — but it
+runs through `bash-config`'s own `containerEnv`-declared sourcing now, not
+through a devc-owned append.** `bash-config` sources every `*.sh` from
+`/usr/local/share/devc-features/bash-config/dirs/user` (the host's
+`~/.config/devc/shell`, bind-mounted read-only) and the project's own
+`.devcontainer/shell/`, entirely independent of `devc-config`'s
+`devc:bashrc-additions` fence — the two are unrelated Features, and neither
+depends on the other's presence or ordering.
 
-**Edits apply on recreate, not rebuild.** `post-create.sh` and its `scripts/`
-are referenced by the copies _in the project's own `.devcontainer/`_
-(`postCreateCommand: bash "${containerWorkspaceFolder}/.devcontainer/post-create.sh"`),
-so editing them takes effect on the next container **create** with no image
-rebuild. Only genuinely build-time bits (the Claude CLI install, the `~/.bashrc`
-additions) need a rebuild. This is the payoff of `post-create.sh` finding its
-steps relative to itself: the same file works whether it is the in-project copy
-or the image-baked one.
-
-There is **no** devcontainer Feature. An earlier design packaged the create-time
-baseline as a local Feature so it would compose additively with a project's own
-`postCreateCommand`; that was dropped because a local Feature cannot resolve
-when `devc up` loads the bundled config out-of-tree via `--config`
-(`@devcontainers/cli` validates a local Feature against the workspace root, not
-the config's own directory), which forced a divergence between the zero-config
-and project paths. Removing the Feature collapses both onto **one
-`.devcontainer/` shape** — the same `devcontainer.json`, `Dockerfile`,
-`post-create.sh`, `initialize-command.sh`, and `scripts/` in both. Additive
-composition with a developer's own setup is preserved simply by their editing
-`post-create.sh` (the project copy is theirs; `devc config` never writes
-`.devcontainer/` at all, so it cannot touch the scripts).
-
-`installsAfter: [node]` ordering is not lost either: a **top-level**
-`postCreateCommand` runs _after all features finish installing_, so
-`nvm install` still sees the node feature's `nvm` — the ordering guarantee is at
-least as strong as a feature hook's.
-
-The **zero-config path** is where the mechanism hides its seams. There,
-`devc up` loads the config out-of-tree and the workspace is the user's project
-(no `.devcontainer/`), so the two in-project script references cannot resolve.
-`materializeDefaultConfig` rewrites exactly two paths in the cached copy:
-`postCreateCommand` → the image-baked `/usr/local/share/devc/post-create.sh`
-(the Dockerfile `COPY`s the scripts in for this case; in project mode
-those baked copies simply go unused), and `initializeCommand` → the host-side
-`initialize-command.sh` in the cache dir. That second rewrite resolves against
-the directory the tree will _finally_ live in, not the one it is written to: the
-caching layer above stages into a temp directory and renames it into place, and
-the baked path is absolute. These are the only transforms, and
-they exist so the _project_ config can stay clean and edit-friendly while the
-hidden cache copy still runs. Docker cannot conditionally skip a `COPY`, and the
-Dockerfile needs `scripts/bashrc-additions.sh` at build time in both modes, so
-the scripts are always baked — a build flag to skip baking in project mode would
-add machinery without removing the bytes from a layer, and the baked copies are
-invisible and inert there anyway.
+**Edits to the baseline now mean editing a Feature, not a project-local
+script.** There is no in-project copy of the baseline to hand-edit the way
+`post-create.sh`/`scripts/` used to be — `agents`, `git-container-config` and
+`devc-config` are consumed as published, at the floating `:0` tag (`:0.2.0`
+exact-pinned for `devc-config`, since devc forces it on every container it
+starts with no opt-in). A user who wants different behavior overrides
+`~/.config/devc/templates/devcontainer.json` to change which Features (or
+options) the bundled config declares — the same sparse-overlay mechanism that
+already applies to every other bundled file.
 
 Consequences for the generated config:
 
-- The bundled default `devcontainer.json` carries the top-level
-  `postCreateCommand` directly (referencing the in-project script); the ghcr
-  feature list (deno/go/node/python) is unchanged.
-- The bundled `Dockerfile` holds the build-time baseline and `COPY`s
-  `post-create.sh` + `scripts/` into the image; it remains a clean, inspectable
-  extension point rather than a place where `devc` behavior hides behind
-  indirection.
+- The bundled default `devcontainer.json` carries `agents` and
+  `git-container-config` directly in `features`; the ghcr feature list
+  (deno/go/node/python) is unchanged. Neither `onCreateCommand` nor
+  `postCreateCommand` appears at the top level.
+- The bundled `Dockerfile` holds only the base image and `ripgrep` — nothing
+  in it is a dependency any Feature or devc itself relies on, deliberately, so
+  removing it later (a manual step, not scheduled) changes only which base
+  image is used.
 
 ### Host `~/.claude` config: the seed directory
 
 The user's Claude config reaches the container through **one read-only directory
-bind mount** of `~/.config/devc/.claude` at `/usr/local/share/devc/claude-seed`,
-not through per-file bind mounts of `~/.claude/*`. `scripts/agents-setup.sh`
-(run by `post-create.sh`) then symlinks every top-level _file_ from the seed
-into the `~/.claude` volume, pruning links whose seed file has gone away.
+bind mount** of `~/.config/devc/.claude` onto the `agents` Feature's fixed
+seed path, not through per-file bind mounts of `~/.claude/*`. That Feature's
+own `post-create.sh` then symlinks every top-level _file_ from the seed into
+the `~/.claude` volume, pruning links whose seed file has gone away.
 
 Why a directory plus symlinks rather than per-file binds or a copy:
 
@@ -319,8 +280,9 @@ The part of the baseline that has to run **before** mounts are established is
 source on machines without `devc` (`--mount type=bind` errors on a missing
 source). It is the only host-side lifecycle hook — the container-side hooks all
 run after mounts are established, structurally too late — so it sits top-level
-in the bundled default and, like `postCreateCommand`, is single-valued; a
-project overriding it keeps the call or drops the seed mount with it. Because it
+in the bundled default and is single-valued (a `devcontainer.json` key, not a
+Feature); a project overriding it keeps the call or drops the seed mount with
+it. Because it
 runs on the _host_, the config references the script via
 `${localWorkspaceFolder}/.devcontainer/initialize-command.sh` — correct for a
 project whose own `.devcontainer/` holds it; in the zero-config path, where the

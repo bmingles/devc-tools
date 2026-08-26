@@ -11,20 +11,7 @@
 
 ### Pending
 
-- [devc-swap-baseline-features](devc-swap-baseline-features.md) — **written,
-  not yet implemented.** devc swaps its own `agents-setup.sh`/`git-setup.sh`
-  onto the already-published `agents`/`git-container-config` Features
-  (declared statically in the bundled `devcontainer.json`, same treatment as
-  `bash-config`/`node-nvmrc`); `bashrc-additions.sh` moves _into_
-  `devc-config`'s `post-create.sh` as a second fence instead, since
-  `devc-config` is the one Feature devc dynamically injects into every
-  container — a deliberate reach extension, not a filing convenience. With
-  all three scripts gone, `devc-core/default/scripts/`, `post-create.sh` and
-  `onCreateCommand` are removed outright. Reopens (and resolves, via
-  `installsAfter` rather than the phase-level `onCreateCommand` trick) the
-  ordering question the previous plan's own "Not in this plan" section
-  named as a fallback and declined to implement pre-emptively — see this
-  plan's Why section.
+None currently.
 
 ### Standing rules for Feature work
 
@@ -47,9 +34,9 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
   leaves it running exactly as it does today. A baseline referencing an
   unpublished `ghcr.io` ref breaks every `devc up` — the failure
   [devc-bridge-feature](archived/devc-bridge-feature.md) already had to reverse
-  once. The swap onto the published Features is now written up as
-  [devc-swap-baseline-features](devc-swap-baseline-features.md) above; until it
-  lands, the rule still holds for everything it has not yet swapped.
+  once. The swap onto the published Features has now landed — see
+  [devc-swap-baseline-features](archived/devc-swap-baseline-features.md) in
+  Completed below — but the rule still holds for anything not yet swapped.
 - **A new Feature starts at its own `0.1.0`**, not the repo's version —
   [feature-independent-versions](archived/feature-independent-versions.md)
   unpinned Features from the `v*` tag. Bump a Feature's `version` in the commit
@@ -69,6 +56,117 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
 
 ### Completed
 
+- [devc-swap-baseline-features](archived/devc-swap-baseline-features.md) —
+  ✅ Done, code complete and offline-tested; six Docker-needed items in the
+  plan's own Validation list are unrun (no Docker in this environment), same
+  standing as the other entries below.
+
+  Three of `devc-core/default/scripts/`'s four remaining baseline steps are
+  gone as devc's own scripts. `agents-setup.sh` and `git-setup.sh` are
+  retired onto the already-published `agents`/`git-container-config`
+  Features, declared statically in the bundled `devcontainer.json`
+  (`agents:0` with `installCopilotCli: true`; `git-container-config:0` bare
+  `{}`) — the same treatment `bash-config`/`node-nvmrc` already get.
+  `bashrc-additions.sh` does **not** retire the same way: its content (the
+  custom `PS1`, terminal-title trap, `DEVC_ATTACH` first-prompt clear) moved
+  _into_ `devc-config`'s `post-create.sh` as a second fence
+  (`devc:bashrc-additions`, project-hook fence first), since `devc-config` is
+  the one Feature devc dynamically injects into every container it starts —
+  this is what makes devc's prompt/title behavior reach a project-mode repo
+  for the first time. `devc-config` bumped to `0.2.0` (`installsAfter`
+  gained, plus the new fence), with `overlay.ts`'s `DEVC_CONFIG_FEATURE`
+  moved in step. With all three scripts gone, `devc-core/default/scripts/`,
+  `post-create.sh` and the bundled config's `onCreateCommand` are removed
+  outright, along with the Dockerfile's Claude/Copilot CLI install steps
+  (the `agents` Feature's `install.sh` does that now) — the Dockerfile
+  itself survives, holding only the base image and the `ripgrep` install,
+  per the plan's own explicit instruction not to remove it here.
+
+  This reopens the ordering question `devc-inject-project-hook` deferred:
+  with all three baseline steps now Features running in the same phase as
+  the injected `devc-config`, the phase-level `onCreateCommand`-before-
+  `postCreateCommand` trick no longer has anything to apply to.
+  `devc-config`'s manifest instead gains
+  `"installsAfter": ["…/agents", "…/git-container-config"]`, restoring the
+  same guarantee via Feature-to-Feature ordering. The `claude-json-*` volume
+  is dropped outright (not retargeted) — `agents` `0.2.0`'s fold of
+  `~/.claude.json` into `~/.claude` left nothing for it to back — at the
+  cost of one re-login per workspace, accepted deliberately; the orphaned
+  volumes are left for `docker volume prune`. The `claude-seed` and identity
+  binds retarget onto the two Features' fixed mount points.
+
+  **"Move the content" was not "paste the file."** The `devc:bashrc-additions`
+  fence differs from `bashrc-additions.sh`'s body in the four ways the plan's
+  Contracts demanded: no `#!/bin/bash` shebang, the `grep -qF … && exit 0`
+  short-circuit converted to an `if … ; then … fi` guard (an `exit 0` inside
+  a fence that is no longer a script's own would have silently ended
+  `devc-config`'s whole `post-create.sh`), `BASHRC="$HOME/.bashrc"` kept as a
+  bare start-of-line assignment (the harness re-points it exactly like
+  `seed_link_test.sh` re-points `SEED=`/`CLAUDE_DIR=`), and no second
+  `set -e` in the new fence — `set -e` now sits once at the top of the file
+  plus once more inside the pre-existing `devc:devc-config` fence (kept
+  there so the fence-extraction test, which runs the block as its own
+  process with nothing else providing it, keeps working unmodified — proven
+  by running `devc_config_test.sh` unchanged against the edited file, still
+  8/8).
+
+  New offline harness `devc/tests/bashrc_additions_test.sh` (5 cases):
+  fresh-`$HOME` append, existing-content preservation, second-run
+  idempotence, the `DEVC_ATTACH` guard surviving the move, and — the one
+  case fence extraction alone cannot cover — running the **whole installed**
+  `post-create.sh` (via a real `install.sh` run into a temp `SHARE_DIR`,
+  same shape `git_config_test.sh` uses) against a temp `$HOME` with a
+  project hook that asserts the bashrc marker is _not yet_ present when it
+  runs, proving the project-hook-first, bashrc-additions-last order in one
+  process rather than two independently-passing fragments. **Deliberately
+  broken to confirm it has teeth**: swapping the two fences' order in
+  `post-create.sh` fails exactly that case (`exit 0`/`project hook ran`),
+  restored to green.
+
+  Verified here, offline: `cd devc-core && deno task check && deno task test`
+  (245 passed, 19 steps — **red → green**, the pre-existing 3 `node-setup.sh`
+  failures the plan's own Validation section named as not-this-plan's-fault
+  are fixed for free by the same file-list edits this plan needed anyway);
+  `cd devc && deno task check && deno task test` (91 passed, unaffected);
+  `bash devc/tests/seed_link_test.sh features/agents/post-create.sh` (6
+  cases, now the only copy — devc's own `agents-setup.sh` is deleted);
+  `bash devc/tests/devc_config_test.sh features/devc-config/post-create.sh`
+  (8 cases, unmoved fence, still green); `bash
+  devc/tests/bashrc_additions_test.sh features/devc-config/post-create.sh`
+  (new, 5 cases, all green, deliberate-break proof above);
+  `bash tests/workflow_guards_test.sh` (the existing `devc_config_pin_agrees`
+  guard confirms `overlay.ts` and the manifest agree at `0.2.0`, ALL PASS);
+  `bash tests/features_test.sh` (6 Features in scope, ALL PASS); `deno fmt
+  --check` (166 files, clean).
+
+  **Not verified here (no Docker):** all six Docker-needed items in the
+  plan's own Validation list — whether `agents` derives `~/.claude` as
+  `/home/vscode/.claude` for this base image/remote user, the zero-config
+  end-to-end round trip, the `installsAfter` ordering claim against a real
+  daemon, `devc init` output still provisioning standalone with no `devc` on
+  `PATH`, the bashrc-additions reach extension actually showing up in a
+  project-mode container's interactive shell, and rebuild churn being
+  one-time rather than recurring. All added to `docs/manual-verification.md`
+  §9 for the next Docker-host session, alongside a correction to that doc's
+  own pre-existing baseline block (it pointed `seed_link_test.sh` and
+  `shell_dirs_test.sh` at paths under `devc/default/scripts/` that never
+  existed in this repo's current layout — not this plan's regression, fixed
+  for the two commands this plan's own changes made current; `shell_dirs_test.sh`
+  has no working copy left to run against at all, since the `shell-dirs`
+  Feature it tested was superseded by `bash-config` in an earlier plan, so
+  that line is dropped with a note rather than pointed at a fiction).
+
+  Docs updated alongside the code: `devc/README.md` (Claude config / Git
+  setup prose repointed at the two Features, the `~/.claude.json` fold and
+  its one-re-login cost documented, the fence-harness list updated),
+  `features/agents/README.md` and `features/git-container-config/README.md`
+  (their "Relationship to devc" sections rewritten from "not yet swapped" to
+  past tense, since this plan is what they were waiting on), and
+  `.plans/design/devc-design.md` (the "Bundled default" section rewritten
+  for the Feature-based baseline — this repo's own master index names it an
+  authoritative current-behavior doc, so it could not be left describing a
+  `post-create.sh`/`scripts/` orchestrator that no longer exists).
+
 - [feature-git-container-config-fixed-identity](archived/feature-git-container-config-fixed-identity.md)
   — ✅ Done, code complete and offline-tested; the two Docker-needed items in
   the plan's own Validation list are unrun (no Docker in this environment),
@@ -81,7 +179,7 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
   a known path rather than tell the Feature where you mounted. Its four
   remaining options (`lfsFilters`, `lfsSkipSmudge`, `worktreeRelativePaths`,
   `safeDirectory`) are all behavior switches, none naming a path. Landed
-  before [devc-swap-baseline-features](devc-swap-baseline-features.md), as
+  before [devc-swap-baseline-features](archived/devc-swap-baseline-features.md), as
   required — devc consumed neither Feature yet, so the breaking change was
   free. That plan's Contracts and mounts section were amended in the same
   pass to declare a bare `{}` and retarget the identity bind.
@@ -420,7 +518,7 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
   still runs against its own `/usr/local/share/devc/` paths, per the
   copy-don't-move rule. Retargeting devc's seed bind and deleting its
   `claude-json-*` volume belongs to
-  [devc-swap-baseline-features](devc-swap-baseline-features.md), whose
+  [devc-swap-baseline-features](archived/devc-swap-baseline-features.md), whose
   Contracts and open questions were amended in the same commit.
 
 - [feature-claude-config](archived/feature-claude-config.md) — ✅ Done, safe

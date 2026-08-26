@@ -60,8 +60,6 @@ Deno.test('ensureDefaultConfig returns a default-<key> path under the cache root
         'Dockerfile',
         'devcontainer.json',
         'initialize-command.sh',
-        'post-create.sh',
-        'scripts',
       ],
     );
   });
@@ -314,8 +312,6 @@ Deno.test('concurrent ensureDefaultConfig calls agree on one complete directory'
         'Dockerfile',
         'devcontainer.json',
         'initialize-command.sh',
-        'post-create.sh',
-        'scripts',
       ],
     );
     assert(

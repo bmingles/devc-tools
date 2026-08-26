@@ -188,10 +188,10 @@ export async function attachToContainer(
   const hostTmux = Deno.env.get('TMUX');
   const tmuxEnvFlags = hostTmux ? ['-e', `TMUX=${hostTmux}`] : [];
 
-  // DEVC_ATTACH=1 arms the first-prompt clear in bashrc-additions.sh. Skip it
-  // when the caller asked to keep output on screen (--no-clear), or when running
-  // a command (no interactive prompt fires — the clear is baked into the command
-  // via loginShell()).
+  // DEVC_ATTACH=1 arms the first-prompt clear in the devc:bashrc-additions fence
+  // (features/devc-config/post-create.sh). Skip it when the caller asked to keep
+  // output on screen (--no-clear), or when running a command (no interactive prompt
+  // fires — the clear is baked into the command via loginShell()).
   const attachFlag = noClear || command ? [] : ['-e', 'DEVC_ATTACH=1'];
   const envFlags = [...baseEnvFlags, ...tmuxEnvFlags, ...attachFlag];
 

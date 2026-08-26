@@ -29,17 +29,9 @@ Deno.test('initProject writes the whole bundled .devcontainer/', async () => {
     assertEquals(written, [
       `${tmp}/.devcontainer/devcontainer.json`,
       `${tmp}/.devcontainer/Dockerfile`,
-      `${tmp}/.devcontainer/post-create.sh`,
       `${tmp}/.devcontainer/initialize-command.sh`,
-      `${tmp}/.devcontainer/scripts`,
     ]);
     for (const path of written) await Deno.stat(path); // every reported path exists
-    // The scripts/ subtree came along, not just the directory.
-    assertEquals(
-      (await Deno.stat(`${tmp}/.devcontainer/scripts/bashrc-additions.sh`))
-        .isFile,
-      true,
-    );
   });
 });
 
@@ -71,17 +63,11 @@ Deno.test('initProject writes no mount fences', async () => {
   });
 });
 
-Deno.test('initProject makes the lifecycle scripts and scripts/*.sh executable', async () => {
+Deno.test('initProject makes initialize-command.sh executable', async () => {
   await withTempDir(async (tmp) => {
     await initProject(tmp);
     const dir = `${tmp}/.devcontainer`;
-    assertEquals(await mode(`${dir}/post-create.sh`), 0o755);
     assertEquals(await mode(`${dir}/initialize-command.sh`), 0o755);
-    for await (const entry of Deno.readDir(`${dir}/scripts`)) {
-      if (entry.isFile && entry.name.endsWith('.sh')) {
-        assertEquals(await mode(`${dir}/scripts/${entry.name}`), 0o755);
-      }
-    }
     // Not everything is chmodded — the Dockerfile is not a script.
     assertEquals(await mode(`${dir}/Dockerfile`), 0o644);
   });
@@ -223,7 +209,7 @@ Deno.test("initProject writes the template's Dockerfile instead of the bundled o
     );
     // Sparse overlay: everything else still came from the bundle.
     assertEquals(
-      (await Deno.stat(`${project}/.devcontainer/scripts/node-setup.sh`))
+      (await Deno.stat(`${project}/.devcontainer/initialize-command.sh`))
         .isFile,
       true,
     );

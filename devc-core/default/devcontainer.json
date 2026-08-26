@@ -17,7 +17,19 @@
       "pnpmVersion": "none",
       "nvmVersion": "latest"
     },
-    "ghcr.io/bmingles/devc-tools/node-nvmrc:0": {}
+    "ghcr.io/bmingles/devc-tools/node-nvmrc:0": {},
+    // The only option this Feature still takes that devc needs. There are no path options
+    // as of agents 0.2.0 — ~/.claude is derived from the remote user's home, and the seed
+    // path is fixed. Preserves current behavior: devc's own Dockerfile used to install
+    // Copilot unconditionally, and the Feature's own default is false.
+    "ghcr.io/bmingles/devc-tools/agents:0": {
+      "installCopilotCli": true
+    },
+    // Bare {}, like bash-config's. There is no identityIncludePath left to pass —
+    // lfsFilters, lfsSkipSmudge, worktreeRelativePaths, safeDirectory all left at their
+    // defaults, which already match git-setup.sh's old behavior exactly. The identity bind
+    // is retargeted in `mounts` below.
+    "ghcr.io/bmingles/devc-tools/git-container-config:0": {}
     // "ghcr.io/devcontainers/features/python:1": {
     //   "installTools": true,
     //   "version": "3.12"
@@ -28,31 +40,25 @@
     "PROJECT_PATH": "${containerWorkspaceFolder}",
     "TZ": "America/Chicago",
     // Stop the Claude CLI from overwriting the terminal title with the current
-    // task, so the project-name title set in bashrc-additions.sh persists.
+    // task, so the project-name title set by the devc-config Feature's
+    // devc:bashrc-additions fence persists.
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
   },
   "initializeCommand": "bash \"${localWorkspaceFolder}/.devcontainer/initialize-command.sh\"",
-  // `onCreateCommand`, not `postCreateCommand`: Features' own `postCreateCommand`s (the
-  // injected devc-config Feature's included) run *before* the config's, so this has to run in
-  // `onCreate` — which precedes every `postCreate`, Features included — for devc's baseline
-  // (agents-setup, git-setup, bashrc-additions) to still precede the project's hook. See
-  // .plans/archived/devc-inject-project-hook.md's Ordering section.
-  "onCreateCommand": "bash \"${containerWorkspaceFolder}/.devcontainer/post-create.sh\"",
   "mounts": [
     // ~/.claude folder
     "type=volume,source=claude-code-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
 
-    // ~/.claude.json (auth) persisted per-workspace via volume, mounted in devc's namespace
-    // (alongside claude-seed, out of ~); agents-setup.sh symlinks ~/.claude.json to it
-    "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/usr/local/share/devc/claude-json",
+    // Host ~/.claude config seed, onto the agents Feature's fixed seed path. The Feature's
+    // own post-create.sh symlinks every top-level *file* from here into ~/.claude — and, as
+    // of agents 0.2.0, folds ~/.claude.json into the same volume, so there is no second
+    // volume to mount for it.
+    "type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc-features/agents/claude-seed,consistency=cached,readonly",
 
-    // Host ~/.claude config seed: agents-setup.sh symlinks every top-level *file* from here
-    // into ~/.claude. Directories are ignored — the devc:skills fence owns ~/.claude/skills/.
-    "type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
-
-    // Git identity extracted from the host by initialize-command.sh. Read-only, and
-    // deliberately not the host's ~/.gitconfig — see that script for why.
-    "type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc/gitconfig-identity,consistency=cached,readonly",
+    // Git identity extracted from the host by initialize-command.sh, onto the
+    // git-container-config Feature's fixed identity path. Read-only, and deliberately not the
+    // host's ~/.gitconfig — see that script for why.
+    "type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc-features/git-container-config/identity/gitconfig,consistency=cached,readonly",
 
     // bash-config feature user config
     "type=bind,source=${localEnv:HOME}/.config/devc/shell,target=/usr/local/share/devc-features/bash-config/dirs/user,readonly",

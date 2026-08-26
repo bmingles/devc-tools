@@ -49,19 +49,18 @@ Notes:
 
 - `init` writes the bundled default into the project's `.devcontainer/` —
   `devcontainer.json` verbatim (comments kept, no mount fences) plus
-  `Dockerfile`, `post-create.sh`, `initialize-command.sh` and `scripts/`, with
-  the shell scripts executable. It is the same scaffolding `config` does on
-  first creation, without the TUI: use it when you want the baseline on disk to
-  hand-edit. Non-interactive — it never prompts, never builds, and never
-  triggers the first-run roots wizard. It writes only into a **missing or
-  completely empty** `.devcontainer/`: any existing content — a file, a
-  subdirectory, a dotfile — makes it write nothing and exit 1, naming what it
-  found. So does an existing config in either location
-  (`.devcontainer/devcontainer.json` or a root `.devcontainer.json`), with a
-  message pointing at `devc config`. The strict rule means what `init` leaves
-  behind is exactly the bundle: it cannot silently overwrite a hand-written
-  `Dockerfile` or `scripts/*.sh`, and cannot strand unrelated files that the
-  bundle does not replace.
+  `Dockerfile` and `initialize-command.sh`, with the shell script executable.
+  It is the same scaffolding `config` does on first creation, without the TUI:
+  use it when you want the baseline on disk to hand-edit. Non-interactive — it
+  never prompts, never builds, and never triggers the first-run roots wizard.
+  It writes only into a **missing or completely empty** `.devcontainer/`: any
+  existing content — a file, a subdirectory, a dotfile — makes it write
+  nothing and exit 1, naming what it found. So does an existing config in
+  either location (`.devcontainer/devcontainer.json` or a root
+  `.devcontainer.json`), with a message pointing at `devc config`. The strict
+  rule means what `init` leaves behind is exactly the bundle: it cannot
+  silently overwrite a hand-written `Dockerfile`, and cannot strand unrelated
+  files that the bundle does not replace.
 - `up` prints `<containerId> running — workspace <remoteWorkspaceFolder>`, or
   the `ContainerInfo` JSON with `--json`.
 - `build` recreates the container (`up --remove-existing-container`) without
@@ -332,10 +331,16 @@ which devc contributes to **every** container it starts — `devc up` adds it to
 whatever `devcontainer.json` is in play via `--additional-features`, with no
 configuration from you. That reaches every project devc starts, including one
 with its own hand-written `.devcontainer/devcontainer.json` that devc has never
-touched. A Feature's `postCreateCommand` runs after the base config's own
-lifecycle commands, so devc's baseline (the `.claude` volume + seed links,
-`nvm install`, git identity — all in the top-level `onCreateCommand`) is already
-in place by the time the hook runs.
+touched. devc's own baseline (the `agents` and `git-container-config`
+Features) is ordered ahead of it via `installsAfter` in `devc-config`'s own
+manifest, so `.claude` + seed links and git identity are already in place by
+the time the hook runs — the same guarantee a prior version of this Feature
+got from a top-level `onCreateCommand`, now expressed as Feature-to-Feature
+ordering instead, since all three are Features competing in the same phase.
+The same fence also carries devc's own prompt/title/`devc attach` first-prompt
+clear `~/.bashrc` block, appended right after the hook — so a genuinely
+project-owned `.devcontainer/devcontainer.json` gets that shell behavior too,
+not just a zero-config or `devc init` one.
 
 **The injection is dynamic only — devc's own bundled `devcontainer.json` does
 not declare this Feature.** That means it reaches `devc up` and the
@@ -387,7 +392,6 @@ replaces the same-named bundled one — everywhere the bundle is used:
 ```text
 ~/.config/devc/templates/Dockerfile           your build, for zero-config projects and
 ~/.config/devc/templates/devcontainer.json    what `devc init` scaffolds
-~/.config/devc/templates/scripts/node-setup.sh
 ```
 
 - **Never created by `devc`.** It stays absent until you make it, and holds only
@@ -399,12 +403,11 @@ replaces the same-named bundled one — everywhere the bundle is used:
   so a `Dockerfile` customization reaches a project's own `.devcontainer/` and
   not just the zero-config path. (`devc config` scaffolds nothing — it only
   writes the overlay — so nothing it does can disturb a template.)
-- A template `devcontainer.json` still gets the two zero-config path rewrites
-  (`initializeCommand` → the cache dir, `postCreateCommand` → the image-baked
-  script), so keeping the standard in-project references in it is fine.
-- The two lifecycle entry scripts and `scripts/*.sh` get their exec bit restored
-  on scaffold; a _new_ top-level `*.sh` a template adds does not, which is
-  cosmetic since both hooks are invoked as `bash "<path>"`.
+- A template `devcontainer.json` still gets the zero-config path rewrite
+  (`initializeCommand` → the cache dir), so keeping the standard in-project
+  reference in it is fine.
+- The one lifecycle entry script left (`initialize-command.sh`) gets its exec
+  bit restored on scaffold.
 - **`devc.json` does not belong here** — it is skipped, with a warning on
   stderr. The two are adjacent paths meaning opposite things: `templates/` holds
   files _copied into_ a project's `.devcontainer/`, which run without `devc`
@@ -419,9 +422,10 @@ replaces the same-named bundled one — everywhere the bundle is used:
 
 Anything you want the in-container agent to see goes in
 `~/.config/devc/.claude` — **you put it there, and nothing else gets in.** The
-directory is bind-mounted read-only at `/usr/local/share/devc/claude-seed`, and
-on every container create `scripts/agents-setup.sh` (run by `post-create.sh`)
-symlinks each entry into the container's `~/.claude`:
+directory is bind-mounted read-only onto the
+[`agents`](https://github.com/bmingles/devc-tools/tree/main/features/agents)
+Feature's fixed seed path, and on every container create that Feature's own
+`post-create.sh` symlinks each entry into the container's `~/.claude`:
 
 ```text
 ~/.config/devc/.claude/CLAUDE.md      →  /home/vscode/.claude/CLAUDE.md
@@ -451,7 +455,15 @@ symlinks each entry into the container's `~/.claude`:
   (`ln -s`), and the two stay identical — the seed mount is live, so either way
   edits land without a rebuild.
 - The container's own `~/.claude` stays a per-workspace volume, so `projects/`,
-  `todos/`, and credentials persist per project and are never touched by this.
+  `todos/`, and credentials persist per project and are never touched by this —
+  and, as of `agents` `0.2.0`, that is now the whole story: `~/.claude.json`
+  (auth) is symlinked into the same volume rather than living in a second one,
+  so one volume captures all of Claude Code's state. **One cost from that
+  fold, once:** an existing workspace's `~/.claude.json` was in its own
+  `claude-json-*` volume before this change, and nothing migrates its
+  contents across, so you re-login to Claude Code once per workspace on the
+  first container create after upgrading. The orphaned `claude-json-*`
+  volumes are left on disk — `docker volume prune` to reclaim them.
 
 Migrating from an older `devc`: nothing is migrated automatically. Copy in
 whichever of `~/.claude/CLAUDE.md`, `~/.claude/settings.devc.json` (→
@@ -465,14 +477,14 @@ never re-asserts them, so replace them by hand with:
 ```jsonc
 "initializeCommand": "mkdir -p \"$HOME/.config/devc/.claude\"",
 // …and in "mounts", replacing the three ~/.claude/* bind lines:
-"type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc/claude-seed,consistency=cached,readonly",
+"type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc-features/agents/claude-seed,consistency=cached,readonly",
 ```
 
 The `initializeCommand` is what creates the mount source on a machine without
 `devc` installed (a bind mount with a missing source is a hard error, not an
 auto-created directory). It has to be top-level — it is the only host-side
 lifecycle hook — so a project that needs its own `initializeCommand` should
-either keep the `mkdir -p` in it or drop the `claude-seed` mount alongside it.
+either keep the `mkdir -p` in it or drop the seed mount alongside it.
 
 ## Shell setup: `shell/` folders
 
@@ -534,8 +546,9 @@ so add it by hand to pick up the user layer:
 ## Git setup
 
 `~/.gitconfig` is container-local and wiped on every rebuild, while the working
-tree and `.git` are host bind mounts. `scripts/git-setup.sh` (run by
-`post-create.sh`) re-applies the user-scope settings git needs each create:
+tree and `.git` are host bind mounts. The
+[`git-container-config`](https://github.com/bmingles/devc-tools/tree/main/features/git-container-config)
+Feature re-applies the user-scope settings git needs each create:
 
 - **Your identity.** `initialize-command.sh` extracts `user.name` / `user.email`
   from the host into `~/.config/devc/gitconfig-identity`, which binds in
@@ -560,7 +573,7 @@ and never re-asserts them — so add it by hand to get your identity in the
 container:
 
 ```jsonc
-"type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc/gitconfig-identity,consistency=cached,readonly",
+"type=bind,source=${localEnv:HOME}/.config/devc/gitconfig-identity,target=/usr/local/share/devc-features/git-container-config/identity/gitconfig,consistency=cached,readonly",
 ```
 
 ## devc-bridge: the opt-in Feature
@@ -676,16 +689,15 @@ DEVC_TARGET=aarch64-apple-darwin deno task build:release
 # .plans/archived/devc-core-npm-library.md), checked and tested the same way:
 cd ../devc-core && deno task check && deno task test
 
-# Parts of the baseline are bash (in devc-core/default/scripts/, or in the host-side entry
-# script), so they are covered by shell harnesses rather than `deno task test`. Each extracts a
-# fenced block from the real script and runs it against temp dirs, so the tests cannot drift
-# from the implementation:
-bash tests/seed_link_test.sh ../devc-core/default/scripts/agents-setup.sh      # devc:seed-link
-bash tests/shell_dirs_test.sh ../devc-core/default/scripts/bashrc-additions.sh # devc:shell-dirs
+# The devc-core baseline no longer has any bash scripts of its own — agents-setup.sh,
+# git-setup.sh and bashrc-additions.sh all retired onto Features (agents,
+# git-container-config, devc-config). What is left is covered by shell harnesses rather than
+# `deno task test`. Each extracts a fenced block from the real script and runs it against temp
+# dirs, so the tests cannot drift from the implementation:
 
-# shell_dirs_test.sh takes the script path so it can run against *both* copies of the
-# devc:shell-dirs block — devc's above, and the shell-dirs Feature's. It must pass unmodified
-# against each; if it needs changes for one of them, the two have drifted:
+# shell_dirs_test.sh takes the script path so it can run against the shell-dirs Feature's
+# devc:shell-dirs block (devc's own copy is gone, per copy-don't-move having nothing left to
+# copy from):
 bash tests/shell_dirs_test.sh ../features/shell-dirs/install.sh             # devc:shell-dirs
 
 # devc no longer carries its own copy of the devc-config block — devc contributes the
@@ -693,8 +705,12 @@ bash tests/shell_dirs_test.sh ../features/shell-dirs/install.sh             # de
 # DEVC_CONFIG_FEATURE and withBaselineFeatures), so this is the only copy left to test:
 bash tests/devc_config_test.sh ../features/devc-config/post-create.sh       # devc:devc-config
 
-# seed_link_test.sh takes the script path too, for the same reason — devc's copy above, and the
-# agents Feature's post-create.sh below. Must pass unmodified against both:
+# devc's own scripts/bashrc-additions.sh is gone too — its content moved into devc-config's
+# post-create.sh as a second fence, run right after the one above:
+bash tests/bashrc_additions_test.sh ../features/devc-config/post-create.sh  # devc:bashrc-additions
+
+# seed_link_test.sh takes the script path too — devc's own agents-setup.sh is gone, so the
+# agents Feature's post-create.sh is the only copy left to test:
 bash tests/seed_link_test.sh ../features/agents/post-create.sh         # devc:seed-link
 
 # The bridge's PATH symlink is no longer devc's — it lives in the devc-bridge Feature:

@@ -545,45 +545,45 @@ harness this plan adds — see the fence Contracts below.
 
 ## Checklist
 
-- [ ] `devc-core/default/devcontainer.json` — `agents`/`git-container-config`
+- [x] `devc-core/default/devcontainer.json` — `agents`/`git-container-config`
       entries; `onCreateCommand` removed; `claude-json-*` volume deleted and
       the `claude-seed` bind retargeted onto the Feature's fixed path
-- [ ] `devc-core/default/Dockerfile` — `post-create.sh`/`scripts/` COPY+chmod
+- [x] `devc-core/default/Dockerfile` — `post-create.sh`/`scripts/` COPY+chmod
       removed; Claude/Copilot `RUN` steps removed
-- [ ] `devc-core/default/post-create.sh` — deleted
-- [ ] `devc-core/default/scripts/` — deleted (all three files)
-- [ ] `devc-core/default_config.ts` — `installBundledAssets`' executable list,
+- [x] `devc-core/default/post-create.sh` — deleted
+- [x] `devc-core/default/scripts/` — deleted (all three files)
+- [x] `devc-core/default_config.ts` — `installBundledAssets`' executable list,
       `scripts/*.sh` loop **and returned path array** trimmed; the
       `onCreateCommand` `replaceAll` rewrite removed; `CLAUDE_SEED_TARGET`
       deleted and `CLAUDE_SEED_HOST_DIR`'s doc comment repointed at the
       `agents` Feature
-- [ ] `devc-core/default/initialize-command.sh` — the two stale
+- [x] `devc-core/default/initialize-command.sh` — the two stale
       `scripts/*.sh` comment references fixed
-- [ ] `features/devc-config/post-create.sh` — `devc:bashrc-additions` fence
+- [x] `features/devc-config/post-create.sh` — `devc:bashrc-additions` fence
       added, project-hook fence first; shebang dropped, `exit 0` converted to
       an `if`, `BASHRC=` bare at line-start, no second `set -e` (see Contracts
       — pasting the file verbatim is a defect, not a shortcut)
-- [ ] `features/devc-config/devcontainer-feature.json` — `installsAfter`;
+- [x] `features/devc-config/devcontainer-feature.json` — `installsAfter`;
       `version` → `0.2.0`
-- [ ] `features/devc-config/install.sh` — header comment updated
-- [ ] `features/devc-config/README.md` — the new fence, the ordering
+- [x] `features/devc-config/install.sh` — header comment updated
+- [x] `features/devc-config/README.md` — the new fence, the ordering
       guarantee and its limit, the reach extension
-- [ ] `devc-core/overlay.ts` — `DEVC_CONFIG_FEATURE` → `0.2.0`
-- [ ] `devc-core/tests/default_config_test.ts` — all six sites in Existing
+- [x] `devc-core/overlay.ts` — `DEVC_CONFIG_FEATURE` → `0.2.0`
+- [x] `devc-core/tests/default_config_test.ts` — all six sites in Existing
       touchpoints, `withRewrites` and the retargeted subdirectory-overlay test
       included
-- [ ] `devc-core/tests/init_test.ts` — all three tests in Existing touchpoints
+- [x] `devc-core/tests/init_test.ts` — all three tests in Existing touchpoints
       (`written` array, the `scripts/` readDir, the `node-setup.sh` assertion)
-- [ ] `devc/tests/bashrc_additions_test.sh` — new, offline; includes the
+- [x] `devc/tests/bashrc_additions_test.sh` — new, offline; includes the
       whole-file case that fence extraction cannot cover (fence ordering, and
       the `exit 0` class of bug)
-- [ ] `devc/README.md` — Claude config / Git setup prose repointed at the
+- [x] `devc/README.md` — Claude config / Git setup prose repointed at the
       Features; the three remaining `/usr/local/share/devc/claude-seed`
       statements retargeted; the `~/.claude.json` fold and the one-re-login
       cost documented; fence-harness list updated (drop two stale devc-copy
       lines, add the new harness)
-- [ ] `docs/manual-verification.md` — new Docker scenarios (see Validation)
-- [ ] `.plans/PLAN.md` — register, and move this plan to `archived/` on
+- [x] `docs/manual-verification.md` — new Docker scenarios (see Validation)
+- [x] `.plans/PLAN.md` — register, and move this plan to `archived/` on
       completion
 
 ## Validation
@@ -599,20 +599,20 @@ harness this plan adds — see the fence Contracts below.
 > `tests/features_test.sh` and `tests/workflow_guards_test.sh` are all green
 > today and must stay that way.
 
-- [ ] `cd devc-core && deno task check && deno task test` — green, with the
+- [x] `cd devc-core && deno task check && deno task test` — green, with the
       updated `materializeDefaultConfig`/`init` assertions. This suite goes
       **red → green**; see the note above.
-- [ ] `cd devc && deno task check && deno task test` — green.
-- [ ] `bash devc/tests/seed_link_test.sh ../features/agents/post-create.sh`
+- [x] `cd devc && deno task check && deno task test` — green.
+- [x] `bash devc/tests/seed_link_test.sh ../features/agents/post-create.sh`
       — still green, now the only copy.
-- [ ] `bash devc/tests/devc_config_test.sh features/devc-config/post-create.sh`
+- [x] `bash devc/tests/devc_config_test.sh features/devc-config/post-create.sh`
       — still green (the project-hook fence is unmoved, unmodified).
-- [ ] `bash devc/tests/bashrc_additions_test.sh features/devc-config/post-create.sh`
+- [x] `bash devc/tests/bashrc_additions_test.sh features/devc-config/post-create.sh`
       — new, green.
-- [ ] `bash tests/workflow_guards_test.sh` — the existing pin guard fails if
+- [x] `bash tests/workflow_guards_test.sh` — the existing pin guard fails if
       `overlay.ts` and the manifest disagree on `0.2.0`.
-- [ ] `bash tests/features_test.sh` — green.
-- [ ] `deno fmt --check` clean.
+- [x] `bash tests/features_test.sh` — green.
+- [x] `deno fmt --check` clean.
 - [ ] (needs Docker) **`agents` derives `~/.claude` as `/home/vscode/.claude`**
       for this base image/remote user — the path devc's `claude-code-config-*`
       volume already mounts at. `0.2.0` derives this from `$HOME` at create

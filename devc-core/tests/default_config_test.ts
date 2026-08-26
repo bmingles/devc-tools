@@ -277,19 +277,14 @@ Deno.test('materializeDefaultConfig copies the embedded tree flat to cacheDir an
   await withTempDir(async (cacheDir) => {
     const path = await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
     // Flat layout: zero-config uses no project `.devcontainer/`, so the cache holds the
-    // config, Dockerfile, the two lifecycle entry scripts, and `scripts/` directly.
+    // config, Dockerfile and the one lifecycle entry script directly.
     assertEquals(path, `${cacheDir}/devcontainer.json`);
 
     for (
       const file of [
         'devcontainer.json',
         'Dockerfile',
-        'post-create.sh',
         'initialize-command.sh',
-        'scripts/agents-setup.sh',
-        'scripts/node-setup.sh',
-        'scripts/git-setup.sh',
-        'scripts/bashrc-additions.sh',
       ]
     ) {
       assertEquals((await Deno.stat(`${cacheDir}/${file}`)).isFile, true);
@@ -297,7 +292,7 @@ Deno.test('materializeDefaultConfig copies the embedded tree flat to cacheDir an
   });
 });
 
-Deno.test('materialized (zero-config) devcontainer.json has no local Feature, keeps the ghcr ones, and the baseline runs via a top-level onCreateCommand', async () => {
+Deno.test('materialized (zero-config) devcontainer.json has no local Feature, keeps the ghcr ones, and the baseline runs via agents/git-container-config Features', async () => {
   await withTempDir(async (cacheDir) => {
     await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
 
@@ -314,6 +309,15 @@ Deno.test('materialized (zero-config) devcontainer.json has no local Feature, ke
       Object.hasOwn(dc.features, 'ghcr.io/devcontainers/features/node:1'),
       true,
     );
+    // ...the agents/git-container-config Features declared statically, with the options
+    // Contracts specify (agents' installCopilotCli; a bare {} for git-container-config)...
+    assertEquals(dc.features['ghcr.io/bmingles/devc-tools/agents:0'], {
+      installCopilotCli: true,
+    });
+    assertEquals(
+      dc.features['ghcr.io/bmingles/devc-tools/git-container-config:0'],
+      {},
+    );
     // ...and the devc-config Feature is deliberately absent here too — devc contributes it
     // dynamically, via withBaselineFeatures/--additional-features, never by declaring it in the
     // bundled config itself. What this Feature does (running a devc-post-create.sh a project
@@ -323,39 +327,33 @@ Deno.test('materialized (zero-config) devcontainer.json has no local Feature, ke
     assertEquals(
       Object.hasOwn(
         dc.features,
-        'ghcr.io/bmingles/devc-tools/devc-config:0.1.0',
+        'ghcr.io/bmingles/devc-tools/devc-config:0.2.0',
       ),
       false,
     );
-    // ...and the baseline runtime runs via a top-level **onCreateCommand** — not
-    // postCreateCommand, so it still precedes a Feature-declared postCreateCommand (the
-    // injected devc-config Feature's included) — rewritten from the in-project workspace path
-    // to the image-baked path (the cache dir is not mounted in).
+    // ...and there is no devc-owned create-time orchestrator left at all — both lifecycle
+    // command keys are now absent; the baseline runs via the two Features' own
+    // postCreateCommands instead, ordered by installsAfter (see overlay.ts).
     assertEquals(dc.postCreateCommand, undefined);
-    assertEquals(
-      dc.onCreateCommand,
-      'bash "/usr/local/share/devc/post-create.sh"',
-    );
+    assertEquals(dc.onCreateCommand, undefined);
   });
 });
 
-Deno.test('canonical default devcontainer.json has no local Feature and a project-relative onCreateCommand', async () => {
-  // The embedded source is what `devc config` writes into a project: it references the copies
-  // in the project's own .devcontainer/, so edits apply on recreate. (The zero-config cache
-  // rewrites this to the baked path — see the materialize test above.)
+Deno.test('canonical default devcontainer.json has no local Feature and no devc-owned lifecycle command', async () => {
+  // The embedded source is what `devc config` writes into a project, and what the zero-config
+  // cache copies verbatim (see the materialize test above) — there is nothing left for
+  // materializeDefaultConfig to rewrite here.
   const text = await Deno.readTextFile(
     new URL('../default/devcontainer.json', import.meta.url),
   );
   const dc = JSON.parse(stripLineComments(text));
   assertEquals(Object.hasOwn(dc.features, './features/devc'), false);
-  // `postCreateCommand` was renamed to `onCreateCommand` (see the Ordering section of
-  // .plans/archived/devc-inject-project-hook.md); the rewrite in materializeDefaultConfig matches on the
-  // *value*, not the key, so it still finds and rewrites this regardless of the rename.
+  // Neither onCreateCommand nor postCreateCommand: with agents-setup.sh, git-setup.sh and
+  // bashrc-additions.sh all gone, devc-core/default/ has no create-time orchestrator of its
+  // own left — the baseline is delivered entirely by the agents/git-container-config
+  // Features' own postCreateCommands now. See .plans/archived/devc-swap-baseline-features.md.
   assertEquals(dc.postCreateCommand, undefined);
-  assertEquals(
-    dc.onCreateCommand,
-    'bash "${containerWorkspaceFolder}/.devcontainer/post-create.sh"',
-  );
+  assertEquals(dc.onCreateCommand, undefined);
 });
 
 Deno.test('canonical default devcontainer.json does not install devc-bridge', async () => {
@@ -459,12 +457,7 @@ Deno.test('materializeDefaultConfig writes the embedded tree to real disk (defau
   for (
     const sibling of [
       'Dockerfile',
-      'post-create.sh',
       'initialize-command.sh',
-      'scripts/agents-setup.sh',
-      'scripts/node-setup.sh',
-      'scripts/git-setup.sh',
-      'scripts/bashrc-additions.sh',
     ]
   ) {
     const siblingStat = await Deno.stat(`${dir}/${sibling}`);
@@ -510,17 +503,12 @@ async function fileTree(dir: string, prefix = ''): Promise<string[]> {
 /** The embedded `default/` tree as a real path, for byte-comparison against a cache dir. */
 const BUNDLED_DIR = fromFileUrl(new URL('../default', import.meta.url));
 
-/** The two path rewrites `materializeDefaultConfig` applies, for a given cache dir. */
+/** The path rewrite `materializeDefaultConfig` applies, for a given cache dir. */
 function withRewrites(configText: string, cacheDir: string): string {
-  return configText
-    .replaceAll(
-      '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
-      `${cacheDir}/initialize-command.sh`,
-    )
-    .replaceAll(
-      '${containerWorkspaceFolder}/.devcontainer/post-create.sh',
-      '/usr/local/share/devc/post-create.sh',
-    );
+  return configText.replaceAll(
+    '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
+    `${cacheDir}/initialize-command.sh`,
+  );
 }
 
 /**
@@ -571,7 +559,13 @@ Deno.test('a templates dir holding only a Dockerfile overrides that file and not
   });
 });
 
-Deno.test('a templates subdirectory file overrides the bundled one in place', async () => {
+// `default/` has no `scripts/` subdirectory of its own any more (agents-setup.sh, git-setup.sh
+// and bashrc-additions.sh all retired onto Features), so a templates subdirectory the bundle has
+// no counterpart for is the case left to cover — the overlay still has to copy it through rather
+// than skip it for lack of a bundled sibling. Can't use assertBundledExcept here: that helper
+// asserts tree *equality* against the bundle, and this deliberately produces an extra file the
+// bundle does not have.
+Deno.test('a templates subdirectory file the bundle has no counterpart for is still copied through', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await mkdir(`${templates}/scripts`);
@@ -584,18 +578,21 @@ Deno.test('a templates subdirectory file overrides the bundled one in place', as
       await Deno.readTextFile(`${cacheDir}/scripts/node-setup.sh`),
       '# mine\n',
     );
-    // Its siblings in the same subdirectory came from the bundle.
+    // The bundled top-level files are untouched by the unrelated overlay addition.
+    const bundledDockerfile = await Deno.readTextFile(
+      new URL('../default/Dockerfile', import.meta.url),
+    );
     assertEquals(
-      (await Deno.stat(`${cacheDir}/scripts/agents-setup.sh`)).isFile,
-      true,
+      await Deno.readTextFile(`${cacheDir}/Dockerfile`),
+      bundledDockerfile,
     );
   });
 });
 
-// The two path rewrites have to run *after* the overlay, or a user template that keeps the
-// standard in-project references would resolve to a `.devcontainer/` that does not exist in the
+// The rewrite has to run *after* the overlay, or a user template that keeps the standard
+// in-project reference would resolve to a `.devcontainer/` that does not exist in the
 // zero-config path.
-Deno.test('a templates devcontainer.json still receives the initializeCommand/postCreateCommand rewrites', async () => {
+Deno.test('a templates devcontainer.json still receives the initializeCommand rewrite', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;
     await mkdir(templates);
@@ -605,8 +602,6 @@ Deno.test('a templates devcontainer.json still receives the initializeCommand/po
         name: 'mine',
         initializeCommand:
           'bash "${localWorkspaceFolder}/.devcontainer/initialize-command.sh"',
-        postCreateCommand:
-          'bash "${containerWorkspaceFolder}/.devcontainer/post-create.sh"',
       }),
     );
 
@@ -618,10 +613,6 @@ Deno.test('a templates devcontainer.json still receives the initializeCommand/po
     assertEquals(
       config.initializeCommand,
       `bash "${cacheDir}/initialize-command.sh"`,
-    );
-    assertEquals(
-      config.postCreateCommand,
-      'bash "/usr/local/share/devc/post-create.sh"',
     );
   });
 });
@@ -702,9 +693,9 @@ Deno.test('installBundledAssets overlays templates, devcontainer.json included',
       await Deno.readTextFile(`${dest}/devcontainer.json`),
       '{"name":"mine"}',
     );
-    // The two lifecycle entry scripts still get the exec bit.
+    // The one lifecycle entry script left still gets the exec bit.
     assertEquals(
-      (await Deno.stat(`${dest}/post-create.sh`)).mode! & 0o111,
+      (await Deno.stat(`${dest}/initialize-command.sh`)).mode! & 0o111,
       0o111,
     );
   });

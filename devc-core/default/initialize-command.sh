@@ -12,8 +12,8 @@ set -e
 mkdir -p "$HOME/.config/devc/.claude"
 
 # User-level shell customization: every *.sh here is sourced by every interactive container
-# shell (see the USER_SHELL_DIR layer in scripts/bashrc-additions.sh). Created empty so the
-# mount source exists; devc never writes into it.
+# shell (see the bash-config Feature's dirs/user layer). Created empty so the mount source
+# exists; devc never writes into it.
 mkdir -p "$HOME/.config/devc/shell"
 
 # Git identity for the container. ~/.gitconfig is container-local and wiped on every
@@ -39,6 +39,6 @@ email="$(git config --get user.email || true)"
 
 # Explicit, because the git-identity tests above are the last thing that can set $?: an unset
 # name or email leaves the final `[ -n ... ]` failing, and a non-zero initializeCommand aborts
-# container creation. A host with no git identity is a warning (from scripts/git-setup.sh),
-# not a failure.
+# container creation. A host with no git identity is a warning (from the git-container-config
+# Feature's post-create.sh), not a failure.
 exit 0

@@ -220,23 +220,20 @@ volume to declare now instead of two.
 
 ## Relationship to devc
 
-**This Feature and `devc-core/default/scripts/agents-setup.sh` are two files
-with the same behavior, not one.** `agents-setup.sh` is devc's own copy — it
-keeps running exactly as it does today, against devc's own
+**devc no longer carries its own copy of this script.** It used to run an
+equivalent `devc-core/default/scripts/agents-setup.sh` against its own
 `/usr/local/share/devc/claude-seed` and `/usr/local/share/devc/claude-json`
-paths. Swapping devc onto this published Feature is a separate, later change
-(see [`.plans/devc-swap-baseline-features.md`](../../.plans/devc-swap-baseline-features.md)),
-and that swap is now also what retargets devc's seed bind onto this Feature's
-fixed path and drops devc's second volume.
+paths; that script is retired, and devc now declares this Feature directly
+in its bundled `devcontainer.json` (see
+[`.plans/archived/devc-swap-baseline-features.md`](../../.plans/archived/devc-swap-baseline-features.md)),
+with its seed bind retargeted onto this Feature's fixed path and the second,
+`claude-json-*` volume dropped outright — `0.2.0`'s fold of `~/.claude.json`
+into `~/.claude` left nothing for it to back.
 
-Both are named for _agents_ plural now (`agents-setup.sh` already says so in
-its own comment, `# Copilot or other agent setup would join here`; this Feature
-was originally published as `claude-config` and renamed to `agents` to match,
-before any consumer depended on the old id) — if you are editing "the agent
-setup script," check which file you mean regardless: this Feature's
-`post-create.sh` is namespaced under `/usr/local/share/devc-features/agents/`,
-devc's copy runs from `devc-core/default/scripts/` and writes nothing under
-that namespace.
+This Feature is named for _agents_ plural (the original id was
+`claude-config`, renamed before any consumer depended on it — see
+[../README.md](../README.md)) — `post-create.sh` is namespaced under
+`/usr/local/share/devc-features/agents/`.
 
 devc's own `~/.claude` seed is documented in
 [`devc/README.md`](../../devc/README.md#claude-config-configdevcclaude); its
@@ -245,12 +242,6 @@ devc's own `~/.claude` seed is documented in
 host seed directory always exists before devc ever binds it in. That function
 has a `seedDir` parameter of its own — it names a **host** path and is
 unrelated to the Feature option of the same name that `0.2.0` removed.
-
-Enabling this Feature in a devc container today would be **partly** redundant
-with devc's own baseline and partly not: both seed-link the same way
-(harmlessly — the block is idempotent), but they now disagree about where
-`~/.claude.json` lives, and the last one to run wins. Do not enable both until
-the swap plan lands.
 
 ## What this is not
 
