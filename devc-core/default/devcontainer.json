@@ -10,24 +10,18 @@
     "ghcr.io/devcontainers/features/git-lfs:1": {
       "autoPull": false
     },
-    "ghcr.io/devcontainers/features/go:1": { "version": "latest" },
+    // "ghcr.io/devcontainers/features/go:1": { "version": "latest" },
     "ghcr.io/devcontainers/features/node:1": {
       "nodeGypDependencies": true,
       "version": "latest",
       "pnpmVersion": "none",
       "nvmVersion": "latest"
     },
-    "ghcr.io/bmingles/devc-tools/node-nvmrc:0": {},
-    "ghcr.io/devcontainers/features/python:1": {
-      "installTools": true,
-      "version": "3.12"
-    }
-    // devc-config is deliberately NOT declared here. devc injects it dynamically into every
-    // container it starts (see overlay.ts's DEVC_CONFIG_FEATURE and withBaselineFeatures) —
-    // that includes the zero-config path this file materializes into. What it does not cover is
-    // `devc init` output run later with devc uninstalled: unlike every other Feature this file
-    // lists, devc-config is devc-specific (it runs a devc-post-create.sh a project committed
-    // for devc's own convention), so it is fine for that one case to lose it.
+    "ghcr.io/bmingles/devc-tools/node-nvmrc:0": {}
+    // "ghcr.io/devcontainers/features/python:1": {
+    //   "installTools": true,
+    //   "version": "3.12"
+    // }
   },
   "remoteEnv": {
     "LANG": "en_US.utf8",
