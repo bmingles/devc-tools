@@ -66,19 +66,37 @@ not (and cannot) extend to a project's own, unrelated Features.
   removes infrastructure rather than repointing it.
 - `devc-core/default/Dockerfile` — the `COPY post-create.sh` / `COPY scripts/`
   / chmod block is deleted; the Claude CLI and Copilot CLI `RUN` steps are
-  deleted (the `agents` Feature's `install.sh` does this now). The `ripgrep`
-  install and the `USER root`/`USER vscode` switches are unrelated and stay.
+  deleted (the `agents` Feature's `install.sh` does this now). What is left
+  after this plan is the `FROM`, the `ripgrep` `RUN`, and the `USER root` /
+  `USER vscode` switches that exist only to bracket it — see
+  [The Dockerfile stays](#the-dockerfile-stays--but-nothing-may-depend-on-it) for
+  the constraint that puts on everything else in this plan.
 - `devc-core/default/post-create.sh` — deleted.
 - `devc-core/default/scripts/agents-setup.sh` — deleted.
 - `devc-core/default/scripts/git-setup.sh` — deleted.
 - `devc-core/default/scripts/bashrc-additions.sh` — deleted; its content moves
   into `features/devc-config/post-create.sh` (see Contracts).
-- `devc-core/default_config.ts` — `installBundledAssets`' fixed `executable`
-  list drops `post-create.sh` and the `scripts/*.sh` readdir loop (nothing
-  left under `scripts/` to chmod); `materializeDefaultConfig`'s
-  `postCreateCommand`/`onCreateCommand` `replaceAll` rewrite is deleted (there
-  is no such key left to rewrite). The `initializeCommand` rewrite is
-  untouched.
+- `devc-core/default_config.ts` — four separate edits, not one:
+  1. `installBundledAssets`' fixed `executable` list drops `post-create.sh`
+     and the `scripts/*.sh` readdir loop (nothing left under `scripts/` to
+     chmod — and the `readdir` would **throw**, not no-op, on the absent
+     directory).
+  2. That same function's **returned** path array drops `${destDir}/post-create.sh`
+     and `scriptsDir`. It is the contract `initProject` reports as `written`,
+     and `init_test.ts` asserts it element-for-element — easy to miss because
+     it sits twenty lines below the `executable` list it mirrors.
+  3. `materializeDefaultConfig`'s `postCreateCommand`/`onCreateCommand`
+     `replaceAll` rewrite is deleted (there is no such key left to rewrite).
+     The `initializeCommand` rewrite is untouched.
+  4. `CLAUDE_SEED_TARGET` (`'/usr/local/share/devc/claude-seed'`) — **delete
+     the export.** Its value goes wrong the moment the bind is retargeted, and
+     it has no code consumers at all: the only reference anywhere is the prose
+     of `CLAUDE_SEED_HOST_DIR`'s own doc comment directly above it. That
+     comment also has to be repointed — it currently says "`post-create.sh`
+     symlinks every top-level _file_ from it", naming a file this plan
+     deletes; it should name the `agents` Feature's `post-create.sh` and the
+     Feature's fixed target instead. `CLAUDE_SEED_HOST_DIR` itself is the
+     **host** path and is unchanged — `container.ts:694` keeps using it.
 - `devc-core/default/initialize-command.sh` — two stale comments already
   predate this plan and get fixed in the same pass: "see the `USER_SHELL_DIR`
   layer in `scripts/bashrc-additions.sh`" (that layer left
@@ -87,8 +105,9 @@ not (and cannot) extend to a project's own, unrelated Features.
   `scripts/git-setup.sh` reference. Confirm before editing rather than
   assuming — `git blame` the two lines.
 - `features/devc-config/post-create.sh` — gains a second fence,
-  `devc:bashrc-additions`, containing `bashrc-additions.sh`'s content
-  unmodified. Sequencing is a real decision — see Contracts.
+  `devc:bashrc-additions`, carrying `bashrc-additions.sh`'s **body**. Not a
+  verbatim paste: four specific things change on the way in, and pasting the
+  file as-is is a defect. Sequencing is a real decision too. Both in Contracts.
 - `features/devc-config/devcontainer-feature.json` — `installsAfter` added;
   `version` bumped (a real behavior change to an already-published Feature).
 - `features/devc-config/install.sh` — header comment updated: two fenced
@@ -99,14 +118,50 @@ not (and cannot) extend to a project's own, unrelated Features.
 - `devc-core/overlay.ts` — `DEVC_CONFIG_FEATURE`'s version bumped to match.
 - `tests/workflow_guards_test.sh` — the existing `devc_config_pin_agrees`
   guard covers the bump automatically; no new guard needed.
-- `devc-core/tests/default_config_test.ts` — the `scripts/agents-setup.sh` /
-  `scripts/git-setup.sh` / `scripts/bashrc-additions.sh` presence assertions
-  in the `materializeDefaultConfig` tests are replaced with assertions that
-  `agents`/`git-container-config` are declared with the right options and
-  that `onCreateCommand` is absent.
-- `devc-core/tests/init_test.ts` — the `.devcontainer/scripts/bashrc-additions.sh`
-  existence assertion is replaced (scaffolded output no longer has a
-  `scripts/` directory at all).
+- `devc-core/tests/default_config_test.ts` — **six** sites, not one. Enumerated
+  because a cold agent that fixes only the obvious two leaves the suite red:
+  1. `'materializeDefaultConfig copies the embedded tree flat to cacheDir…'`
+     (~line 276) — the file list drops `post-create.sh` and all four
+     `scripts/*.sh` entries.
+  2. `'materializeDefaultConfig writes the embedded tree to real disk…'`
+     (~line 451) — the same list, again.
+  3. `'materialized (zero-config) devcontainer.json…'` (~line 299) — asserts
+     `dc.onCreateCommand === 'bash "/usr/local/share/devc/post-create.sh"'`
+     and `dc.postCreateCommand === undefined`. Now **both** keys are absent;
+     replace with assertions that `agents`/`git-container-config` are declared
+     with the options in Contracts. The test's own name says "…the baseline
+     runs via a top-level onCreateCommand" and has to be renamed with it.
+  4. `withRewrites` (~line 515), the helper `assertBundledExcept` compares
+     against — its second `replaceAll` mirrors the rewrite being deleted from
+     `default_config.ts` and has to be deleted in lockstep, or every
+     `assertBundledExcept` caller fails on `devcontainer.json`'s contents.
+  5. `'canonical default devcontainer.json…'` (~line 624) — asserts
+     `config.postCreateCommand === 'bash "/usr/local/share/devc/post-create.sh"'`
+     on a templates-supplied config; same rewrite, same deletion.
+  6. `'a templates subdirectory file overrides the bundled one in place'`
+     (~line 574) — this one **loses its subject**: it overrides
+     `scripts/node-setup.sh` and then asserts the sibling
+     `scripts/agents-setup.sh` came from the bundle, and after this plan
+     `default/` has no subdirectory left to override into. Keep the coverage
+     rather than deleting it — retarget it as "a templates subdirectory file
+     the bundle has no counterpart for is still copied through", asserting the
+     file arrives and the bundled top-level files are untouched. (It cannot
+     use `assertBundledExcept`, which asserts tree equality.)
+
+  One assertion that looks like it needs editing and does **not**: the bridge
+  test's `mounts.filter((m) => m.includes('claude-seed'))` length-1 check
+  (~line 1117). The retargeted bind still contains that substring. Leave it.
+- `devc-core/tests/init_test.ts` — **three** tests, not one:
+  1. `'initProject writes the whole bundled .devcontainer/'` (~line 70) — both
+     the `written` array (drops `post-create.sh` and `scripts`) and the
+     `.devcontainer/scripts/bashrc-additions.sh` existence assertion below it.
+  2. `'initProject makes the lifecycle scripts and scripts/*.sh executable'`
+     (~line 74) — asserts `mode(post-create.sh) === 0o755` and then
+     `Deno.readDir(`${dir}/scripts`)`, which throws on the absent directory.
+     Reduce to `initialize-command.sh`, and rename.
+  3. `'initProject writes the template's Dockerfile instead of the bundled one'`
+     (~line 210) — asserts `.devcontainer/scripts/node-setup.sh` exists.
+     Already failing today (see Validation); this plan removes its subject.
 - `devc/tests/seed_link_test.sh` — currently run against **two** copies
   (`devc-core/default/scripts/agents-setup.sh` and
   `features/agents/post-create.sh`); devc's copy is gone, so this becomes the
@@ -125,10 +180,27 @@ not (and cannot) extend to a project's own, unrelated Features.
   and exercising it against a temp `$HOME`, same shape as `devc_config_test.sh`.
   No second copy to run it against — `bashrc-additions.sh` had none either,
   historically.
-- `devc/README.md` — the "Claude config" section's "`scripts/agents-setup.sh`
-  (run by `post-create.sh`)" line and the "Git setup" section's
-  "`scripts/git-setup.sh` (run by `post-create.sh`)" line both need to
-  reference the Features instead. The fence-harness list drops the two
+- `devc/README.md` — more than the two prose lines. The "Claude config"
+  section's "`scripts/agents-setup.sh` (run by `post-create.sh`)" line
+  (~line 423) and the "Git setup" section's "`scripts/git-setup.sh` (run by
+  `post-create.sh`)" line (~line 537) both need to reference the Features
+  instead. **Also in the same Claude-config section**, three statements of the
+  old container target that a search for "agents-setup" will not surface:
+  the prose "bind-mounted read-only at `/usr/local/share/devc/claude-seed`"
+  (~line 422), the copy-paste migration snippet's `target=…/devc/claude-seed`
+  mount line (~line 468), and the sentence naming "the `claude-seed` mount"
+  beside the `initializeCommand` caveat (~line 475). All three become the
+  Feature's fixed path.
+
+  That section also needs one thing this plan newly makes true and nothing
+  currently documents: **`~/.claude.json` now lives inside the `~/.claude`
+  volume**, so the section's closing bullet ("the container's own `~/.claude`
+  stays a per-workspace volume, so `projects/`, `todos/`, and credentials
+  persist per project") is now the whole story rather than most of it — and
+  the one-re-login-per-workspace cost from the `claude-json-*` deletion is
+  user-visible and belongs here, not only in this plan's Contracts.
+
+  The fence-harness list (~lines 683-698) drops the two
   `agents-setup.sh`/`bashrc-additions.sh` devc-copy invocations and gains the
   new `bashrc_additions_test.sh` line.
 - `docs/manual-verification.md` — new Docker-needed scenarios (see
@@ -151,6 +223,12 @@ not (and cannot) extend to a project's own, unrelated Features.
     // Feature's own default is false.
     "installCopilotCli": true
   },
+  // STOP — this entry depends on which version of git-container-config is
+  // published. As written it describes 0.1.0. If
+  // feature-git-container-config-fixed-identity.md has landed (it is meant to
+  // land FIRST), the option is gone and this becomes a bare `{}`, with the
+  // identity bind retargeted in `mounts` below. Check the published manifest
+  // before writing this entry — do not copy it on faith.
   "ghcr.io/bmingles/devc-tools/git-container-config:0": {
     "identityIncludePath": "/usr/local/share/devc/gitconfig-identity"
     // lfsFilters, lfsSkipSmudge, worktreeRelativePaths, safeDirectory all left
@@ -172,10 +250,13 @@ that key governs only devc's _dynamic_ injection, which stays exactly
 
 ### `devc-core/default/devcontainer.json` — the mounts `agents` 0.2.0 changes
 
-`git-container-config` needs no mount change: its `identityIncludePath` still
-names the `gitconfig-identity` bind devc already declares. `agents` does, and
-this is the one place this plan **removes** infrastructure rather than
-repointing it:
+`git-container-config` needs no mount change **at `0.1.0`**: its
+`identityIncludePath` still names the `gitconfig-identity` bind devc already
+declares. At `0.2.0` it does need one — a retarget parallel to the
+`claude-seed` one below, spelled out in
+[feature-git-container-config-fixed-identity](feature-git-container-config-fixed-identity.md)'s
+Contracts. `agents` needs one either way, and it is the one place this plan
+**removes** infrastructure rather than repointing it:
 
 ```jsonc
 "mounts": [
@@ -237,9 +318,60 @@ set -e
 # devc:devc-config (end)
 
 # devc:bashrc-additions (start)
-# … bashrc-additions.sh's content, unmodified …
+BASHRC="$HOME/.bashrc"
+# … bashrc-additions.sh's body …
 # devc:bashrc-additions (end)
 ```
+
+**"Move the content" is not "paste the file."** Four specific things must
+change on the way in, each of which is a real defect if pasted verbatim:
+
+1. **Drop the `#!/bin/bash` shebang.** It is a file header, not a statement;
+   inlined it is a comment, and pasting it invites someone to treat the fence
+   as a standalone file later.
+2. **The `exit 0` has to become an `if`.** `bashrc-additions.sh` short-circuits
+   with `grep -qF "$MARKER" "$BASHRC" 2>/dev/null && exit 0`. Inside a fence
+   that is no longer a script's own exit — it ends **`devc-config`'s whole
+   `post-create.sh`**. Today it happens to be harmless because this fence is
+   last, which is exactly what makes it a landmine: the next fence added to
+   this file is silently dead. `agents`' `devc:seed-link` fence contains no
+   `exit` at all for this reason — it guards with `if` and `continue`. Do the
+   same: wrap the append in `if ! grep -qF "$MARKER" "$BASHRC" 2>/dev/null;
+   then … fi`.
+3. **`BASHRC="$HOME/.bashrc"` must be a bare assignment at the start of a
+   line, inside the fence.** This is the fence's one parameter, and the
+   harnesses re-point parameters with `sed -e "s#^BASHRC=.*#…#"` — the same
+   mechanism `seed_link_test.sh` uses on `SEED=`/`CLAUDE_DIR=`. Indent it,
+   inline it into the `grep`, or fold it into a larger expression, and the
+   harness silently rewrites nothing and tests the real `~/.bashrc` of
+   whoever ran it.
+4. **`set -e` stays out of the new fence.** The file already sets it once at
+   the top, and the existing `devc:devc-config` fence carries its own copy
+   only because that fence predates having a second one. Do not add a third.
+
+**Two marker conventions live in this one file and must not be harmonized.**
+`# devc:bashrc-additions (start)` / `(end)` is the _fence_, read by the test
+harness. `# >>> devc bashrc-additions >>>` / `# <<< devc bashrc-additions <<<`
+is the _idempotency marker_, written into the user's `~/.bashrc` and grepped
+for on the next create — and it lives inside a quoted heredoc, so it is data,
+not code. They look alike, they are one word apart, and they do opposite jobs:
+"tidying" them into one style breaks either the harness or every existing
+container's `~/.bashrc` guard. Changing the `.bashrc` marker text in
+particular is a silent double-append for anyone whose `~/.bashrc` carries the
+old one.
+
+### `devc/tests/bashrc_additions_test.sh` — and one case fence extraction cannot cover
+
+Follow `devc_config_test.sh`'s shape (extract the fence, run it against a temp
+`$HOME`), with one addition drawn from the precedent above: fence extraction
+tests a fragment in its own process, so it **cannot** catch the `exit 0`
+class of bug or verify that the two fences run in the intended order in one
+process. Add at least one case that runs the **whole installed
+`post-create.sh`** — the way `git-container-config/test/git_config_test.sh`
+runs the real installed hook — against a temp `$HOME` with a project hook
+present, asserting both that the hook ran and that `~/.bashrc` got its block.
+That single case is the only thing that actually tests the ordering decision
+this plan is making.
 
 **Project hook first, bashrc-additions last** — restoring the pre-`devc-config`
 historical order (`agents-setup → git-setup → project-hook → bashrc-additions`,
@@ -281,6 +413,104 @@ fenced block) to a Feature already live on ghcr.io. `overlay.ts`'s
 `DEVC_CONFIG_FEATURE` moves to `0.2.0` in the same commit;
 `workflow_guards_test.sh`'s existing pin guard fails until both agree, same
 as it already does for any version drift.
+
+## The Dockerfile stays — but nothing may depend on it
+
+`devc-core/default/Dockerfile` **survives this plan**, holding its base image and
+the `ripgrep` install. That is a deliberate decision, not an oversight: removing
+it is a manual step the author will take later, by hand, once the swap is proven
+working in a real container. **Do not delete it, and do not write a plan or a
+follow-up that does.**
+
+What this plan must still guarantee is that the Dockerfile is only ever holding
+a **preference**, never a dependency — so that removing it later is a decision
+about base images and nothing else. Concretely:
+
+- **Every Feature this plan introduces must stand alone against a plain base
+  image.** `agents` and `git-container-config` already do — both install what
+  they need in their own `install.sh` and assume no build-time cooperation.
+  Do not "simplify" either by moving anything back into a `RUN` step, and do
+  not add a Dockerfile line to make a Feature work. If a Feature needs
+  something at build time, that belongs in its own `install.sh`.
+- **`ripgrep` stays where it is, and must not be turned into a Feature.**
+  The Dockerfile's comment about it is misleading and should be read with care:
+  it explains why Claude Code can use `rg` _without_ one being installed (the
+  Bash tool injects a shell function routing to the copy bundled inside the
+  `claude` binary). It is not a statement that Claude needs the package. The
+  real reason it is there is that an unrelated tool the author uses wants it —
+  a **base-image preference**, not a devc dependency. Nothing in devc, and
+  nothing in any Feature here, depends on `rg` being present.
+
+  So it does not want an `installRipgrep` option on `agents`, and it does not
+  want a Feature of its own. Leave the `RUN` alone. When the Dockerfile does
+  eventually go, `rg` goes with it, and a user who wants extra packages in
+  their base supplies their own `Dockerfile` (plus the `devcontainer.json`
+  `"build"` stanza naming it) through the existing `~/.config/devc/templates/`
+  sparse overlay — the same mechanism that already overrides every other
+  bundled file. No new opt-out is needed, and "which tools are in my base
+  image" is the user's call rather than something devc has an opinion about.
+- **When the manual removal happens, it is not just deleting a file** — noted
+  here so it is not a surprise later. `devcontainer.json` switches from
+  `"build": { "dockerfile": … }` to a plain `"image"`, and
+  `default_config.ts`'s `installBundledAssets` names `${destDir}/Dockerfile` in
+  its returned path array with `default_config_test.ts` asserting the bundled
+  tree contains it (`assertBundledExcept`, `withRewrites`, and the two
+  file-list tests). None of that is this plan's work. All of it is cheaper if
+  this plan **adds no new references to the Dockerfile**, which it must not.
+
+## Precedent from `agents` `0.2.0` — what carries, what does not
+
+`agents` has had the most refinement of the three Features involved, so it is
+worth stating explicitly which of its lessons transfer to the other two and
+which are specific to it. Getting this wrong in either direction — copying a
+pattern that does not apply, or ignoring one that does — is the likeliest way
+this plan produces something inconsistent with the collection.
+
+**Carries: a path option whose value only ever has one sensible setting should
+be a fixed path the consumer mounts onto.** This is what `0.2.0` did to
+`seedDir`/`claudeJsonDir`, following `bash-config`'s `dirs/user`.
+`git-container-config`'s `identityIncludePath` is the same shape and the same
+smell: this plan's own Contracts hands it
+`/usr/local/share/devc/gitconfig-identity`, a devc-namespace path, which is
+precisely the "the consumer names the path _and_ mounts it" duplication
+`agents` removed. A fixed
+`/usr/local/share/devc-features/git-container-config/identity`, `touch`ed
+empty at build time, would drop the option, one `check_opt` call and one
+`bake()` call, and devc would retarget its existing identity bind exactly the
+way it retargets `claude-seed` here — the file bind already works, since
+Docker's file-bind restriction applies to _volumes_, not binds, and devc binds
+that file today.
+
+**Not folded into this plan**, for the same reason `agents` `0.2.0` landed on
+its own first: it is a breaking `0.2.0` for an already-published Feature and
+deserves its own version bump and its own review. But it interacts with this
+plan's Contracts (which mount, which option), so **whoever picks it up should
+land it before this plan, not after** — otherwise devc's identity mount gets
+retargeted twice. One honest cost to weigh when that plan is written: today,
+`identityIncludePath` set to a file that is not there produces a warning,
+because naming a path is an opt-in that can visibly fail. A fixed
+always-present empty file cannot distinguish "consumer mounted nothing" from
+"consumer mounted an empty identity", so that warning goes away — the same
+trade `agents` accepted for an empty seed.
+
+**Does not carry: `bake()`.** `agents` deleting its baking machinery was a
+consequence of having no options left, not a verdict on the technique. A
+Feature's options reach `install.sh` as environment variables at **build**
+time only; the manifest's `postCreateCommand` takes no arguments and no
+substitutions, so a Feature with real create-time options has no other way to
+get them across. `git-container-config` has five and keeps them. Do not treat
+`agents`' deletion as a reason to strip baking from anything else.
+
+**Already carried, do not re-derive:** the `warn()` helper and the "must exit
+0 on every skip path" rule. `git-container-config/post-create.sh` states and
+follows both.
+
+**Carries, and is a gap here: the offline harness runs the _real installed
+artifact_.** `git-container-config/test/git_config_test.sh` (48 checks) runs
+the real `install.sh` into a temp `SHARE_DIR` and executes the hook it
+installed, so it cannot drift from what a container gets. That is a stronger
+shape than fence extraction, which tests a fragment. It matters for the new
+harness this plan adds — see the fence Contracts below.
 
 ## Concept boundaries
 
@@ -330,36 +560,56 @@ as it already does for any version drift.
       removed; Claude/Copilot `RUN` steps removed
 - [ ] `devc-core/default/post-create.sh` — deleted
 - [ ] `devc-core/default/scripts/` — deleted (all three files)
-- [ ] `devc-core/default_config.ts` — `installBundledAssets`' executable list
-      and `scripts/*.sh` loop trimmed; the `onCreateCommand` `replaceAll`
-      rewrite removed
+- [ ] `devc-core/default_config.ts` — `installBundledAssets`' executable list,
+      `scripts/*.sh` loop **and returned path array** trimmed; the
+      `onCreateCommand` `replaceAll` rewrite removed; `CLAUDE_SEED_TARGET`
+      deleted and `CLAUDE_SEED_HOST_DIR`'s doc comment repointed at the
+      `agents` Feature
 - [ ] `devc-core/default/initialize-command.sh` — the two stale
       `scripts/*.sh` comment references fixed
 - [ ] `features/devc-config/post-create.sh` — `devc:bashrc-additions` fence
-      added, project-hook fence first
+      added, project-hook fence first; shebang dropped, `exit 0` converted to
+      an `if`, `BASHRC=` bare at line-start, no second `set -e` (see Contracts
+      — pasting the file verbatim is a defect, not a shortcut)
 - [ ] `features/devc-config/devcontainer-feature.json` — `installsAfter`;
       `version` → `0.2.0`
 - [ ] `features/devc-config/install.sh` — header comment updated
 - [ ] `features/devc-config/README.md` — the new fence, the ordering
       guarantee and its limit, the reach extension
 - [ ] `devc-core/overlay.ts` — `DEVC_CONFIG_FEATURE` → `0.2.0`
-- [ ] `devc-core/tests/default_config_test.ts` — replace the
-      `scripts/*.sh`-presence assertions with the new Feature-declaration
-      assertions
-- [ ] `devc-core/tests/init_test.ts` — replace the
-      `.devcontainer/scripts/bashrc-additions.sh` assertion
-- [ ] `devc/tests/bashrc_additions_test.sh` — new, offline
+- [ ] `devc-core/tests/default_config_test.ts` — all six sites in Existing
+      touchpoints, `withRewrites` and the retargeted subdirectory-overlay test
+      included
+- [ ] `devc-core/tests/init_test.ts` — all three tests in Existing touchpoints
+      (`written` array, the `scripts/` readDir, the `node-setup.sh` assertion)
+- [ ] `devc/tests/bashrc_additions_test.sh` — new, offline; includes the
+      whole-file case that fence extraction cannot cover (fence ordering, and
+      the `exit 0` class of bug)
 - [ ] `devc/README.md` — Claude config / Git setup prose repointed at the
-      Features; fence-harness list updated (drop two stale devc-copy lines,
-      add the new harness)
+      Features; the three remaining `/usr/local/share/devc/claude-seed`
+      statements retargeted; the `~/.claude.json` fold and the one-re-login
+      cost documented; fence-harness list updated (drop two stale devc-copy
+      lines, add the new harness)
 - [ ] `docs/manual-verification.md` — new Docker scenarios (see Validation)
 - [ ] `.plans/PLAN.md` — register, and move this plan to `archived/` on
       completion
 
 ## Validation
 
+> **The `devc-core` suite is RED before this plan starts** — 3 failures, all
+> `scripts/node-setup.sh` not found (`default_config_test.ts:276`, `:451`,
+> `init_test.ts:210`). That file was deleted when the `node-nvmrc` Feature took
+> its job; its test assertions were never removed. **Not caused by this plan**
+> — verify with `git stash` before assuming otherwise. It is listed here rather
+> than left to be rediscovered because all three assertions sit inside the very
+> lists this plan edits, so the plan fixes them for free: the correct end state
+> is `devc-core` **green**, not "red the same way it started". `devc`,
+> `tests/features_test.sh` and `tests/workflow_guards_test.sh` are all green
+> today and must stay that way.
+
 - [ ] `cd devc-core && deno task check && deno task test` — green, with the
-      updated `materializeDefaultConfig`/`init` assertions.
+      updated `materializeDefaultConfig`/`init` assertions. This suite goes
+      **red → green**; see the note above.
 - [ ] `cd devc && deno task check && deno task test` — green.
 - [ ] `bash devc/tests/seed_link_test.sh ../features/agents/post-create.sh`
       — still green, now the only copy.
@@ -441,5 +691,22 @@ as it already does for any version drift.
   `installsAfter`'s enumerated-list design cannot do this, and no
   alternative is designed here.
 - **Deleting `devc-core/default/`'s `Dockerfile` or `initialize-command.sh`
-  entirely.** Both keep real jobs (image base + ripgrep; host-side identity
-  extraction and mount-source seeding) independent of this plan.
+  entirely.** The Dockerfile keeps its base image and `ripgrep` and is
+  explicitly **left in place** — the author removes it by hand later, once this
+  swap is proven working in a real container. Do not schedule that removal as
+  follow-up work; see
+  [The Dockerfile stays](#the-dockerfile-stays--but-nothing-may-depend-on-it).
+  `initialize-command.sh` keeps a real job independent of all of this
+  (host-side identity extraction and mount-source seeding), though it loses one
+  line of work if `git-container-config` later drops `identityIncludePath`.
+
+- **Anything about `ripgrep`.** Not a devc dependency and not a Feature's job —
+  a base-image preference. Its `RUN` step stays exactly where it is. See
+  [The Dockerfile stays](#the-dockerfile-stays--but-nothing-may-depend-on-it).
+
+- **Dropping `git-container-config`'s `identityIncludePath` for a fixed mount
+  point.** Written up separately as
+  [feature-git-container-config-fixed-identity](feature-git-container-config-fixed-identity.md),
+  which is meant to land **before** this plan — while devc still consumes
+  neither Feature and a breaking change is free. That plan owns the two
+  amendments to this one (the `features` entry and the identity mount).

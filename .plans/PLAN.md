@@ -11,22 +11,22 @@
 
 ### Pending
 
-- [devc-embedded-devcontainer-cli](devc-embedded-devcontainer-cli.md) —
-  **written and implemented, mostly validated**, which is why it is here rather
-  than in `archived/`. `devc` now depends on `@devcontainers/cli` as a pinned npm
-  package embedded by `deno compile`, instead of shelling out to a `devcontainer`
-  on `PATH`; `docker` becomes the only prerequisite. The from-source path is
-  tested and green, and — as of 2026-08-24, in an environment with `deno compile`
-  and npm registry access — so is the compiled one: `./devc __devcontainer
-  --version` prints the pinned `0.88.0` from a real compiled binary, and a
-  zero-config `devc up` / `devc init` round-trips through the embedded CLI with
-  `node`, `npm`, `devcontainer` and `deno` all off `PATH`, failing only where a
-  Docker daemon would be needed. Still open: the same round trip with a real
-  Docker daemon, and one cross-compiled target — neither runnable in a sandbox
-  with no Docker. It also widens devc to an unscoped `--allow-run`, forced by
-  the host `initializeCommand`'s `/bin/sh -c` moving inside devc's own sandbox;
-  the plan argues that trade, and reverses a note in `install.sh` that had
-  refused it.
+- [feature-git-container-config-fixed-identity](feature-git-container-config-fixed-identity.md)
+  — **written, not yet implemented. Land this BEFORE the swap plan below.**
+  `git-container-config` `0.2.0` drops `identityIncludePath` for a fixed
+  `identity/gitconfig` mount point, the same change `agents` `0.2.0` made to
+  `seedDir`/`claudeJsonDir` and the `bash-config` `dirs/user` shape: mount onto
+  a known path rather than tell the Feature where you mounted. Its four
+  remaining options are all behavior switches, none naming a path.
+
+  Ordering is not a preference. devc consumes **neither** `agents` nor
+  `git-container-config` today — both are published, but `agents-setup.sh` and
+  `git-setup.sh` still do the work — so a breaking change to either is free
+  right now. Once the swap plan declares them at the floating `:0` tag in
+  devc's bundled config, and that config is baked into a released `devc`
+  binary, `:0` floats forward into every already-shipped binary on its users'
+  next container create. After that point a breaking Feature change needs a
+  coordinated release or a deprecation window, which is why this goes first.
 
 - [devc-swap-baseline-features](devc-swap-baseline-features.md) — **written,
   not yet implemented.** devc swaps its own `agents-setup.sh`/`git-setup.sh`
@@ -43,42 +43,75 @@
   named as a fallback and declined to implement pre-emptively — see this
   plan's Why section.
 
-Splitting pieces of devc's baseline out as publishable devcontainer Features.
-Read [design/devc-feature-split.md](design/devc-feature-split.md) first — it
-settles, once, which pieces **can** be a Feature (a Feature can declare no
-`initializeCommand`, no read-only mount, and no string mount) and the rules all
-five plans inherit.
+### Standing rules for Feature work
 
-The two `feature-*-config` plans below still have a host-coupled half that the
-Feature cannot declare. That does **not** make them devc-only: a host bind mount and an
-`initializeCommand` belong to the **consumer's `devcontainer.json`**, which every
-devcontainer project has. devc is one consumer — it writes those lines for you.
-The shipped `devc-bridge` Feature already works exactly this way (it declares no
-mounts; non-devc projects copy one line from its README). Hence the rule every
-plan inherits and proves with a scenario: **`"<feature>": {}` must install
-cleanly and do something useful**, and no option may default to a devc path.
+Not a plan group — these are the conventions every Feature plan in this file
+has inherited, kept here because they still bind new ones. The
+baseline-splitting plans they were written to introduce are all complete and
+archived. Read [design/devc-feature-split.md](design/devc-feature-split.md)
+first: it settles, once, which pieces **can** be a Feature (a Feature can
+declare no `initializeCommand`, no read-only mount, and no string mount).
 
-The other big rule: **copy, don't move.** Every plan below leaves
-`devc/default/` running exactly as it does today; swapping devc onto the
-published Features is a later plan, deliberately not written yet, because a
-baseline that references an unpublished `ghcr.io` ref breaks every `devc up` —
-the failure [devc-bridge-feature](archived/devc-bridge-feature.md) already had to
-reverse once.
-
-The machinery they land on is already generalized —
-[features-collection](archived/features-collection.md) made `features/` a real
-collection, so each of the two below only adds a directory: no edit to
-`publish-feature.yml`, and `features/README.md` gains a row. Order among them
-does not matter — [feature-node-nvmrc](archived/feature-node-nvmrc.md) went
-first, then [feature-shell-dirs](archived/feature-shell-dirs.md). **A new Feature
-starts at its own `0.1.0`**, not at the repo's
-version: [feature-independent-versions](archived/feature-independent-versions.md)
-landed first and unpinned Features from the `v*` tag, and each of the two
-manifest contracts below already says so. Bump a Feature's `version` in the
-commit that changes it; a push to `main` under `features/` publishes it from its
-own matrix job.
+- **A Feature with a host-coupled half is still not devc-only.** A host bind
+  mount and an `initializeCommand` belong to the **consumer's
+  `devcontainer.json`**, which every devcontainer project has; devc is one
+  consumer and writes those lines for you. `devc-bridge` works exactly this way
+  (it declares no mounts; non-devc projects copy one line from its README).
+  Hence the rule every plan proves with a scenario: **`"<feature>": {}` must
+  install cleanly and do something useful**, and no option may default to a
+  devc path.
+- **Copy, don't move.** A plan that extracts something out of `devc-core/default/`
+  leaves it running exactly as it does today. A baseline referencing an
+  unpublished `ghcr.io` ref breaks every `devc up` — the failure
+  [devc-bridge-feature](archived/devc-bridge-feature.md) already had to reverse
+  once. The swap onto the published Features is now written up as
+  [devc-swap-baseline-features](devc-swap-baseline-features.md) above; until it
+  lands, the rule still holds for everything it has not yet swapped.
+- **A new Feature starts at its own `0.1.0`**, not the repo's version —
+  [feature-independent-versions](archived/feature-independent-versions.md)
+  unpinned Features from the `v*` tag. Bump a Feature's `version` in the commit
+  that changes it; a push to `main` under `features/` publishes it from its own
+  matrix job, gated by `features/PUBLISH_ALLOWLIST.txt`.
+- **Adding a Feature is just adding a directory.**
+  [features-collection](archived/features-collection.md) made `features/` a real
+  collection: no edit to `publish-feature.yml`, and `features/README.md` gains a
+  row.
+- **Break a Feature before devc consumes it, not after.** Once devc's bundled
+  config declares a Feature at the floating `:0` tag and that config is baked
+  into a released binary, `:0` floats forward into every already-shipped binary
+  on its users' next container create — so a breaking change then needs a
+  coordinated release or a deprecation window. `agents` `0.2.0` took this
+  window; `feature-git-container-config-fixed-identity` above is sequenced to
+  take it too.
 
 ### Completed
+
+- [devc-embedded-devcontainer-cli](archived/devc-embedded-devcontainer-cli.md) —
+  ✅ Done, code complete; two items in the plan's own Validation list need a
+  real Docker host and are unrun, the same standing
+  [devc-inject-project-hook](archived/devc-inject-project-hook.md) below is
+  filed under. (It sat in **Pending** for a while on the stricter reading that
+  those two items had to clear first — moved here on 2026-08-26 to match how
+  every other Docker-blocked plan in this file is filed.)
+
+  `devc` depends on `@devcontainers/cli` as a pinned npm package embedded by
+  `deno compile` (`devc/deno.json` pins `0.88.0`; `devc/devcontainer_selfexec.ts`
+  is the hidden `__devcontainer` subcommand that re-execs the binary, since the
+  CLI ships no programmatic API) instead of shelling out to a `devcontainer` on
+  `PATH` — `docker` becomes the only prerequisite. Landed in
+  `27130c2 devc: embed the devcontainer CLI instead of finding one on PATH`.
+
+  The from-source path is tested and green, and — as of 2026-08-24, in an
+  environment with `deno compile` and npm registry access — so is the compiled
+  one: `./devc __devcontainer --version` prints the pinned `0.88.0` from a real
+  compiled binary, and a zero-config `devc up` / `devc init` round-trips through
+  the embedded CLI with `node`, `npm`, `devcontainer` and `deno` all off `PATH`,
+  failing only where a Docker daemon would be needed. **Still unrun:** the same
+  round trip against a real Docker daemon, and one cross-compiled target.
+
+  It also widens devc to an unscoped `--allow-run`, forced by the host
+  `initializeCommand`'s `/bin/sh -c` moving inside devc's own sandbox; the plan
+  argues that trade, and reverses a note in `install.sh` that had refused it.
 
 - [devc-inject-project-hook](archived/devc-inject-project-hook.md) — ✅ Done,
   code complete and unit-tested; the Docker-host items in the plan's own
