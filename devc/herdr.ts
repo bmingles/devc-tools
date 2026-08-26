@@ -20,6 +20,10 @@
 // The watcher prints a line whenever the container's foreground command changes; devc maps that
 // line to a Herdr agent kind ({@link herdrAgentKindFor}) and rotates the sidecar
 // ({@link startHerdrSidecar}). Prompt → no kind → no sidecar → the pane honestly shows no agent.
+//
+// Undocumented, opt-in diagnostics: `DEVC_HERDR_WATCH_DEBUG=<path>` appends a timestamped trail
+// of watcher lines and spawn/kill events to that file — see {@link debugLog}'s doc comment for
+// why it's a file rather than stderr. No-op, and untouched by every test, when unset.
 
 import { fromFileUrl } from 'jsr:@std/path';
 import type { SelfExecRuntime } from './devcontainer_selfexec.ts';
@@ -335,6 +339,28 @@ export async function runHerdrSidecarBody(): Promise<never> {
 // Rotation and teardown
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Timestamped diagnostic trail for the rotation lifecycle — watcher lines, kind decisions,
+ * spawn/kill starts and completions — appended to `DEVC_HERDR_WATCH_DEBUG`'s value when set, a
+ * no-op otherwise (the default, and the only mode in every offline test). A **file**, never
+ * `console.error`/stderr: during `devc claude` the attach's `docker exec -it` inherits devc's own
+ * stdio, so anything devc itself writes to stderr lands in the *same* live terminal a full-screen
+ * agent may be drawing to — exactly the corruption the plan's "pane stays clean" validation item
+ * guards against. Best-effort: a write failure (bad path, full disk) never breaks the feature.
+ */
+export function debugLog(msg: string): void {
+  const path = Deno.env.get('DEVC_HERDR_WATCH_DEBUG');
+  if (!path) return;
+  try {
+    Deno.writeTextFileSync(path, `${new Date().toISOString()} ${msg}\n`, {
+      append: true,
+      create: true,
+    });
+  } catch {
+    // best-effort — diagnostics must never break the feature they're diagnosing
+  }
+}
+
 async function readLines(
   readable: ReadableStream<Uint8Array>,
   onLine: (line: string) => void,
@@ -396,8 +422,16 @@ export function startHerdrSidecar(
   let stopped = false;
 
   const rotator = createSidecarRotator<Deno.ChildProcess>(
-    (kind) => spawnSidecar(kind, runtime),
-    killChild,
+    (kind) => {
+      const child = spawnSidecar(kind, runtime);
+      debugLog(`sidecar spawn kind=${kind} pid=${child.pid}`);
+      return child;
+    },
+    async (child) => {
+      debugLog(`sidecar kill pid=${child.pid} start`);
+      await killChild(child);
+      debugLog(`sidecar kill pid=${child.pid} done`);
+    },
   );
 
   if (spec.mode === 'pinned') {
@@ -413,19 +447,26 @@ export function startHerdrSidecar(
       stdout: 'piped',
       stderr: 'null',
     }).spawn();
+    debugLog(`watcher spawned pid=${watcherChild.pid} watchId=${spec.watchId}`);
     readLines(
       watcherChild.stdout,
-      (line) => rotator.setKind(herdrAgentKindFor(line)),
+      (line) => {
+        const kind = herdrAgentKindFor(line);
+        debugLog(`watcher line=${JSON.stringify(line)} kind=${kind ?? 'null'}`);
+        rotator.setKind(kind);
+      },
     )
-      .catch(() => {});
+      .catch((e) => debugLog(`watcher read error: ${e}`));
   }
 
   return {
     async stop() {
       if (stopped) return;
       stopped = true;
+      debugLog('stop() called');
       if (watcherChild) await killChild(watcherChild);
       await rotator.stop();
+      debugLog('stop() done');
     },
   };
 }

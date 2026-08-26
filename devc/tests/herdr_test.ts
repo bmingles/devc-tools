@@ -2,6 +2,7 @@ import { assert, assertEquals } from 'jsr:@std/assert@^1';
 import { fromFileUrl } from 'jsr:@std/path';
 import {
   createSidecarRotator,
+  debugLog,
   DEVC_HERDR_WATCH_ENV,
   HERDR_SIDECAR_SUBCOMMAND,
   herdrAgentKindFor,
@@ -290,4 +291,44 @@ Deno.test('the sidecar body exits 0 immediately on EOF', async () => {
   }).output();
 
   assertEquals(code, 0, `exited ${code}: ${new TextDecoder().decode(stderr)}`);
+});
+
+// ---------------------------------------------------------------------------------------------
+// debugLog — opt-in diagnostics, a file only, never touched when unset
+// ---------------------------------------------------------------------------------------------
+
+Deno.test('debugLog: a no-op when DEVC_HERDR_WATCH_DEBUG is unset', () => {
+  const before = Deno.env.get('DEVC_HERDR_WATCH_DEBUG');
+  Deno.env.delete('DEVC_HERDR_WATCH_DEBUG');
+  try {
+    // Must not throw, and there is nothing to assert on disk — no path was even named.
+    debugLog('should go nowhere');
+  } finally {
+    if (before !== undefined) Deno.env.set('DEVC_HERDR_WATCH_DEBUG', before);
+  }
+});
+
+Deno.test('debugLog: appends a timestamped line to the named file when set', async () => {
+  const dir = await Deno.makeTempDir();
+  const path = `${dir}/herdr-debug.log`;
+  const before = Deno.env.get('DEVC_HERDR_WATCH_DEBUG');
+  Deno.env.set('DEVC_HERDR_WATCH_DEBUG', path);
+  try {
+    debugLog('first');
+    debugLog('second');
+    const contents = await Deno.readTextFile(path);
+    const lines = contents.trim().split('\n');
+    assertEquals(lines.length, 2, 'both calls must append, not overwrite');
+    assert(lines[0].endsWith('first'));
+    assert(lines[1].endsWith('second'));
+    // ISO timestamp prefix on each line
+    assert(/^\d{4}-\d{2}-\d{2}T/.test(lines[0]));
+  } finally {
+    if (before === undefined) {
+      Deno.env.delete('DEVC_HERDR_WATCH_DEBUG');
+    } else {
+      Deno.env.set('DEVC_HERDR_WATCH_DEBUG', before);
+    }
+    await Deno.remove(dir, { recursive: true });
+  }
 });
