@@ -336,8 +336,52 @@ own matrix job.
   a fixed absolute path instead of a workspace-relative one, so the scenario
   does not depend on the answer).
 
+- **`agents` 0.2.0 — no path options; `~/.claude.json` folds into `~/.claude`**
+  (2026-08-25). ✅ Done, no plan file — a review-driven simplification of an
+  already-published Feature, small enough to implement directly. Supersedes
+  much of the [feature-claude-config](archived/feature-claude-config.md) entry
+  immediately below, which describes the `0.1.0` shape.
+
+  All three path options (`claudeDir`, `seedDir`, `claudeJsonDir`) are removed.
+  `~/.claude` is derived from the remote user's `$HOME` — the Claude Code CLI
+  resolves its own state directory as `$CLAUDE_CONFIG_DIR` or, unset,
+  `$HOME/.claude` (read out of the installed CLI's own resolver), so any other
+  value pointed the Feature at a directory Claude Code never reads. The seed is
+  fixed at `/usr/local/share/devc-features/agents/claude-seed`, created empty
+  at build time, the `bash-config` `dirs/user` shape: a consumer mounts onto it
+  rather than naming it. And `~/.claude.json` — a _sibling_ of `~/.claude` by
+  the same resolver, and the one piece of state a volume mounted there would
+  miss — is now unconditionally symlinked to `~/.claude/.claude.json`, so one
+  volume captures everything and the second volume plus the option naming it
+  are both gone. A pre-existing real file is **moved**, not deleted (the step
+  is unconditional now, so an `rm` would be data loss); a symlink left by an
+  older version is repointed by comparing its target, which costs one re-login.
+
+  With no path options left, `install.sh`'s `bake()` rewriting and its
+  path-option injection guard are deleted outright — nothing to bake, nothing
+  to guard. Two `grep`s in `install_options_test.sh` replace the bake guard by
+  asserting `install.sh` and `post-create.sh` still name the same seed path.
+  The `devc:seed-link` fence is byte-identical apart from its two
+  parameterizing assignments, so `devc/tests/seed_link_test.sh` runs against it
+  unmodified — 20 checks, green.
+
+  Verified here, offline: `seed_link_test.sh` (20), the rewritten
+  `install_options_test.sh` (28) and `claude_json_test.sh` (27),
+  `tests/features_test.sh`, `tests/workflow_guards_test.sh`, `deno fmt --check`.
+  **Not verified (no Docker):** the two `devcontainer features test` scenarios,
+  rewritten but unrun — `test.sh` (bare `{}`) and `with_seed` (renamed from
+  `with_seed_and_json`, now passing **no** options, differing from the default
+  scenario only by what its `onCreateCommand` writes into the fixed seed).
+
+  `devc-core/default/` is deliberately untouched — devc's own `agents-setup.sh`
+  still runs against its own `/usr/local/share/devc/` paths, per the
+  copy-don't-move rule. Retargeting devc's seed bind and deleting its
+  `claude-json-*` volume belongs to
+  [devc-swap-baseline-features](devc-swap-baseline-features.md), whose
+  Contracts and open questions were amended in the same commit.
+
 - [feature-claude-config](archived/feature-claude-config.md) — ✅ Done, safe
-  path. **Renamed twice after landing, both on user feedback**: published
+  path. **Describes `0.1.0`; see the entry above for what `0.2.0` changed.** **Renamed twice after landing, both on user feedback**: published
   first as `claude-config` per the plan's own id — the plan already installs
   a second vendor's CLI (Copilot) and says so in its own concept boundaries
   ("named for Claude specifically" vs. `agents-setup.sh`'s agents-plural

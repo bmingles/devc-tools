@@ -1,12 +1,13 @@
 # agents (devcontainer Feature)
 
 Installs coding-agent CLIs at build time — the **Claude Code CLI**, and optionally
-the **GitHub Copilot CLI** — and at create time wires `~/.claude` and
-`~/.claude.json` to whatever persistence and seed the consumer has mounted. Named
-for the plural: only two CLIs today, but the install-guard shape each one uses
-(idempotent, remote-user, network-required-or-fail-the-build) is meant to take a
-third without a rename. **Not** the `anthropic.claude-code` VS Code extension —
-see [What this is not](#what-this-is-not).
+the **GitHub Copilot CLI** — and at create time links a host config seed into
+`~/.claude` and folds `~/.claude.json` into `~/.claude`, so **one** volume
+captures all of Claude Code's state and **one** host directory supplies all of
+your config. Named for the plural: only two CLIs today, but the install-guard
+shape each one uses (idempotent, remote-user, network-required-or-fail-the-build)
+is meant to take a third without a rename. **Not** the `anthropic.claude-code`
+VS Code extension — see [What this is not](#what-this-is-not).
 
 ```jsonc
 "features": {
@@ -14,27 +15,29 @@ see [What this is not](#what-this-is-not).
 }
 ```
 
-No mounts, no required options. A bare `{}` installs the Claude CLI and does
-nothing else — no seed linking, `~/.claude.json` left completely alone, Copilot
-absent. Each further capability is one mount plus one option paste; see
-[What a consumer mounts](#what-a-consumer-mounts-in-itself) below.
+No mounts, no options you have to set. A bare `{}` installs the Claude CLI,
+leaves an empty seed directory for you to mount onto, and points
+`~/.claude.json` at `~/.claude/.claude.json`.
 
 > The tag tracks **this Feature's own** version line, not the repo's — see
 > [../README.md#versions](../README.md#versions). It is `:0` while this Feature is
 > pre-1.0.
 
-## The four Claude paths
+## The three Claude paths
 
-Four different paths, three different lifetimes — reproduced here rather than
-paraphrased, because getting one of these confused for another is the whole
-failure mode this Feature exists to prevent:
+Three paths, three lifetimes — reproduced here rather than paraphrased, because
+getting one of these confused for another is the whole failure mode this Feature
+exists to prevent:
 
-| Path                                      | What it is                                                                        | Lifetime                                                  |
-| ----------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `~/.claude` (`claudeDir`)                 | Claude Code's own state directory — `projects/`, `todos/`, credentials, settings. | Per-workspace, if you mount a volume there (your choice). |
-| `~/.claude.json`                          | Claude Code's auth/session file.                                                  | Same lifetime as whatever `claudeJsonDir` backs it with.  |
-| a host seed directory (`seedDir`)         | **Your** config — `CLAUDE.md`, `settings.json`, `statusline.sh` — read-only.      | Lives on your host; the container only ever reads it.     |
-| `claude-seed` (the container mount point) | Where `seedDir` is bind-mounted to, inside the container.                         | Same as the bind mount.                                   |
+| Path                                                | What it is                                                                                                                 | Lifetime                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `~/.claude`                                         | Claude Code's own state directory — `projects/`, `todos/`, credentials, settings, and now `.claude.json` too.              | Per-workspace, if you mount a volume there (your choice).      |
+| `/usr/local/share/devc-features/agents/claude-seed` | **Fixed.** Where you bind-mount your own host config. Created empty at build time; this Feature only ever reads it.        | Same as your bind mount; empty and harmless if you mount none. |
+| a host seed directory                               | **Your** config — `CLAUDE.md`, `settings.json`, `statusline.sh`. The one thing you decide, and you decide it with a mount. | Lives on your host; the container only ever reads it.          |
+
+`~/.claude.json` is deliberately **not** in that table any more: it is now a
+symlink into `~/.claude`, with no lifetime of its own. See
+[Why `~/.claude.json` moves](#why-claudejson-moves).
 
 ## What it does
 
@@ -51,54 +54,96 @@ At **build time** (as root):
    when the binary is already there. **Network is required** when either
    install option is true — a failed download fails the build, rather than
    leaving a container that looks fine until the first `claude`.
-2. Pre-creates `claudeDir` (default `$_REMOTE_USER_HOME/.claude`) owned by the
-   remote user. See [The volume question](#the-volume-question) for why.
+2. Pre-creates `$_REMOTE_USER_HOME/.claude` owned by the remote user. See
+   [The volume question](#the-volume-question) for why.
+3. Pre-creates the seed directory, empty. It is this Feature's published
+   surface — the same shape as `bash-config`'s `dirs/user`.
 
 At **create time** (as the remote user, before any user `postCreateCommand`),
 `post-create.sh` runs three steps:
 
-1. **Ownership repair.** If `claudeDir` exists and is not owned by the current
-   user, a non-recursive `sudo chown` fixes it (best-effort; a missing `sudo`
-   only warns). Non-recursive is a hard requirement, not a style choice —
-   subpaths like `skills/` may be host bind mounts and must not be chowned.
-   Expected to be a no-op given step 2 of the build-time install above; kept
-   because it is cheap and the alternative is unverified — see
-   [The volume question](#the-volume-question).
-2. **Seed links.** When `seedDir` is non-empty and exists, every top-level
-   _file_ in it is symlinked into `claudeDir` — host edits are live, host file
-   modes (the statusline exec bit) survive, deletions on the host prune the
-   link on the next create. Directories are ignored by design: a
-   `~/.claude/skills/` mount point (something else's job, not this Feature's)
-   would either get a nested `skills/skills` or fail on a busy mountpoint if
-   this tried to link over it. Empty (the default) skips the whole step — this
-   Feature never invents a seed path, since only the consumer's own
-   `devcontainer.json` can mount one in.
-3. **`~/.claude.json`.** When `claudeJsonDir` is non-empty: the directory is
-   chowned (best-effort), `"$claudeJsonDir/claude.json"` is seeded with `{}` if
-   absent, and `~/.claude.json` is replaced with a symlink to it unless it
-   already is one. A volume can only mount at a _directory_, which is the whole
-   reason for the indirection — a per-workspace `~/.claude.json` (a file)
-   cannot be a mount target on its own. Empty (the default) leaves
-   `~/.claude.json` alone entirely — the plain file Claude Code creates itself,
-   for a consumer with nothing mounted here.
+1. **Ownership repair.** If `~/.claude` is not owned by the current user, a
+   non-recursive `sudo chown` fixes it (best-effort; a missing `sudo` only
+   warns). Non-recursive is a hard requirement, not a style choice — subpaths
+   like `skills/` may be host bind mounts and must not be chowned. Expected to
+   be a no-op given step 2 above; kept because it is cheap and the alternative
+   is unverified — see [The volume question](#the-volume-question).
+2. **Seed links.** Every top-level _file_ in the seed directory is symlinked
+   into `~/.claude` — host edits are live, host file modes (the statusline exec
+   bit) survive, deletions on the host prune the link on the next create.
+   Directories are ignored by design: a `~/.claude/skills/` mount point
+   (something else's job, not this Feature's) would either get a nested
+   `skills/skills` or fail on a busy mountpoint if this tried to link over it.
+   An empty seed — nothing mounted — links nothing and moves on.
+3. **`~/.claude.json`.** Replaced with a symlink to `~/.claude/.claude.json`,
+   seeded with `{}` if nothing is there yet. Unconditional. See
+   [below](#why-claudejson-moves).
 
 Every skip path exits `0`. A `postCreateCommand` that fails aborts container
-creation, and none of these skips (no seed, no claude.json volume, ownership
-already correct) is worth an unbootable container.
+creation, and none of these skips (an empty seed, ownership already correct) is
+worth an unbootable container.
 
 | Option              | Default | Meaning                                                                                                  |
 | ------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
 | `installClaudeCli`  | `true`  | Install the Claude Code CLI at build time, as the remote user.                                           |
 | `installCopilotCli` | `false` | Install the GitHub Copilot CLI too. Defaults false — see [below](#why-installcopilotcli-defaults-false). |
-| `claudeDir`         | `""`    | Container path for `~/.claude`. Empty resolves to `$_REMOTE_USER_HOME/.claude` at build time.            |
-| `seedDir`           | `""`    | Container path to a read-only host config seed. Empty skips seed linking entirely.                       |
-| `claudeJsonDir`     | `""`    | Container path to a directory backing `~/.claude.json`. Empty leaves the file alone.                     |
 
-Every path option is pasted into a double-quoted shell assignment in
-`post-create.sh`, so a value containing a double quote, backtick, dollar sign,
-backslash or newline fails the **build**, naming the option, rather than
-silently producing a script that does something else — same policy as every
-other Feature in this collection.
+That is the whole option surface.
+
+### Why there are no path options
+
+Versions before `0.2.0` had three: `claudeDir`, `seedDir` and `claudeJsonDir`.
+All three are gone, and each for its own reason:
+
+- **`claudeDir`** was a footgun rather than a capability. Claude Code resolves
+  its own state directory as `$CLAUDE_CONFIG_DIR`, or `$HOME/.claude` when that
+  variable is unset — so any value other than the remote user's own
+  `~/.claude` pointed this Feature at a directory Claude Code never reads, and
+  did it silently. There is exactly one correct answer, and the Feature now
+  derives it.
+- **`seedDir`** existed because the Feature "never invents a path only the
+  consumer can mount." But the consumer does not need to _name_ the path to
+  mount onto it — `bash-config` already fixes `dirs/user` and asks you to
+  mount there. Fixing the path deletes the option **and** the class of bug
+  where the mount target and the option disagree.
+- **`claudeJsonDir`** is answered by [the section below](#why-claudejson-moves).
+
+With no path options left, `install.sh` has nothing to validate and nothing to
+bake: the injection guard and the `bake()` rewriting earlier versions carried
+are gone with them. What replaced the bake guard is a pair of `grep`s in
+`test/install_options_test.sh` asserting that the seed path `install.sh`
+creates and the one `post-create.sh` reads are still the same string.
+
+### Why `~/.claude.json` moves
+
+Claude Code resolves its config/auth file as `$CLAUDE_CONFIG_DIR/.claude.json`,
+falling back to `$HOME/.claude.json`. It is therefore a **sibling** of
+`~/.claude`, not a member of it — the one piece of Claude Code state that a
+volume mounted at `~/.claude` does not capture. And a volume can only mount at a
+_directory_, so `~/.claude.json` cannot be a mount target on its own.
+
+Earlier versions solved that with a second volume and the `claudeJsonDir`
+option naming where it was mounted. Symlinking the file into `~/.claude`
+instead solves it with no volume and no option: **one** mount now captures
+everything, and `.claude.json` sits next to the `.credentials.json` and
+`history.jsonl` it belongs with.
+
+This is unconditional — there is nothing left to opt into. With no volume
+mounted it is an indirection inside one home directory, which costs nothing and
+keeps one code path instead of two.
+
+Two consequences worth knowing:
+
+- **A pre-existing real `~/.claude.json` is _moved_, not deleted.** The step
+  used to run only when you opted in, so deleting the file it replaced was
+  defensible; unconditional, it would be data loss. If
+  `~/.claude/.claude.json` does not exist yet and `~/.claude.json` is a real
+  file, it is `mv`d into place and you keep your session.
+- **A symlink left by an older version is repointed, not kept.** The check
+  compares the link's _target_, not just whether it is a link. Upgrading from
+  `0.1.x` with a `claudeJsonDir` volume therefore starts a fresh
+  `.claude.json` in the `~/.claude` volume — one re-login, once. The old
+  volume is left untouched on disk; nothing deletes it for you.
 
 ### Why `installCopilotCli` defaults `false`
 
@@ -110,41 +155,42 @@ should not silently get a second vendor's CLI too — each install stays
 opt-in per CLI, so the default here is the narrower one and devc opts in
 explicitly.
 
-## What a consumer mounts in itself
+## What a consumer mounts
 
 A Feature can declare no read-only mount and no `initializeCommand` (see
-[../README.md](../README.md#layout)), so the seed and the auth persistence are
-both, unavoidably, the consumer's own `devcontainer.json` — paste what you want:
+[../README.md](../README.md#layout)), so both mounts below are, unavoidably,
+your own `devcontainer.json` — but neither needs a matching option any more:
 
 ```jsonc
-// persistence: per-workspace auth + config that survives a rebuild
 "mounts": [
+  // persistence: per-workspace Claude state that survives a rebuild — one volume,
+  // and ~/.claude.json rides along inside it
   "type=volume,source=claude-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
-  "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/usr/local/share/claude-json",
   // seed: your own host config, read-only and live
-  "type=bind,source=${localEnv:HOME}/.config/claude-seed,target=/usr/local/share/claude-seed,readonly"
+  "type=bind,source=${localEnv:HOME}/.config/claude-seed,target=/usr/local/share/devc-features/agents/claude-seed,readonly"
 ],
 "initializeCommand": "mkdir -p ${localEnv:HOME}/.config/claude-seed",
 "features": {
-  "ghcr.io/bmingles/devc-tools/agents:0": {
-    "seedDir": "/usr/local/share/claude-seed",
-    "claudeJsonDir": "/usr/local/share/claude-json"
-  }
+  "ghcr.io/bmingles/devc-tools/agents:0": {}
 }
 ```
 
-Each piece is independent — mount only the volume you want, or only the seed.
-`${localWorkspaceFolderBasename}` substitution inside a **consumer's own**
-`mounts` (as above) is ordinary, documented devcontainer behavior — nothing
-about the open question below affects it. So per-workspace isolation is
-available to every consumer **today**, however that question eventually lands;
-it costs one extra line in your own config, not a missing capability.
+Each piece is independent — mount only the volume you want, or only the seed,
+or neither. `${localWorkspaceFolderBasename}` substitution inside a
+**consumer's own** `mounts` (as above) is ordinary, documented devcontainer
+behavior — nothing about the open question below affects it. So per-workspace
+isolation is available to every consumer **today**, however that question
+eventually lands; it costs one line in your own config, not a missing
+capability.
+
+The seed bind is `readonly` on purpose, and that has one edge: seeded files are
+symlinked into `~/.claude`, so Claude Code writing to one of them (a `/config`
+change, a plugin install touching `settings.json`) fails. Host edits reaching
+the container live, with no rebuild, is the trade that buys.
 
 ## The volume question
 
-devc's baseline names its two volumes per workspace —
-`claude-code-config-${localWorkspaceFolderBasename}` and
-`claude-json-${localWorkspaceFolderBasename}` — and a Feature _can_ declare
+devc's baseline names its volumes per workspace — and a Feature _can_ declare
 `type=volume` mounts (no `readonly` needed, so the object form is legal in the
 published Feature schema). Doing so would make this Feature self-sufficient for
 persistence, with no paste required.
@@ -156,50 +202,55 @@ array?** `${localEnv:HOME}` is measured working (see
 but that is a different variable class, and nobody has run a container to
 check this one — no Docker in the environment this Feature was written in.
 
-If it substitutes, declaring both volumes here is strictly better and a later
-version of this Feature should do it. If it does not, declaring them anyway
+If it substitutes, declaring the volume here is strictly better and a later
+version of this Feature should do it. If it does not, declaring it anyway
 would silently give **every project one shared volume** — worse than declaring
 nothing, since two unrelated repos would share Claude auth and history with no
 way to tell. That asymmetry is why this version takes the safe path: **no
-`mounts` are declared**, and the two lines above are a paste instead of a
-default. See
+`mounts` are declared**, and the line above is a paste instead of a default.
+See
 [`.plans/design/devc-feature-split.md`](../../.plans/design/devc-feature-split.md)
 (open question 2) for the note recording this as still unmeasured, and open
 question 3 for a related, also-unmeasured question about first-use volume
 ownership — which is why the ownership-repair step in `post-create.sh` stays,
 belt-and-braces, regardless of how question 2 eventually lands.
 
+Note that this question got **cheaper** at `0.2.0`, not harder: there is one
+volume to declare now instead of two.
+
 ## Relationship to devc
 
 **This Feature and `devc-core/default/scripts/agents-setup.sh` are two files
 with the same behavior, not one.** `agents-setup.sh` is devc's own copy — it
-keeps running exactly as it does today; swapping devc onto this published
-Feature is a separate, later change (see `.plans/PLAN.md`). Both are named for
-_agents_ plural now (`agents-setup.sh` already says so in its own comment,
-`# Copilot or other agent setup would join here`; this Feature was originally
-published as `claude-config` and renamed to `agents` to match, before
-any consumer depended on the old id) — if you are editing "the agent setup
-script," check which file you mean regardless: this Feature's `post-create.sh`
-is namespaced under `/usr/local/share/devc-features/agents/`, devc's
-copy runs from `devc-core/default/scripts/` and writes nothing under that
-namespace.
+keeps running exactly as it does today, against devc's own
+`/usr/local/share/devc/claude-seed` and `/usr/local/share/devc/claude-json`
+paths. Swapping devc onto this published Feature is a separate, later change
+(see [`.plans/devc-swap-baseline-features.md`](../../.plans/devc-swap-baseline-features.md)),
+and that swap is now also what retargets devc's seed bind onto this Feature's
+fixed path and drops devc's second volume.
 
-The path devc's own script and docs cite has moved since this plan was
-written: the plan that produced this Feature cites `devc/default/scripts/`,
-`devc/default/Dockerfile` and `devc/default/devcontainer.json`, all of which
-had already become `devc-core/default/` by the time this Feature was
-implemented — the same rename `git-container-config`'s README already records.
-Every path in this document uses the current, real location.
+Both are named for _agents_ plural now (`agents-setup.sh` already says so in
+its own comment, `# Copilot or other agent setup would join here`; this Feature
+was originally published as `claude-config` and renamed to `agents` to match,
+before any consumer depended on the old id) — if you are editing "the agent
+setup script," check which file you mean regardless: this Feature's
+`post-create.sh` is namespaced under `/usr/local/share/devc-features/agents/`,
+devc's copy runs from `devc-core/default/scripts/` and writes nothing under
+that namespace.
 
 devc's own `~/.claude` seed is documented in
 [`devc/README.md`](../../devc/README.md#claude-config-configdevcclaude); its
 `ensureClaudeSeedDir` (in
 [`devc-core/default_config.ts`](../../devc-core/default_config.ts)) is why the
-host seed directory always exists before devc ever binds it in. Enabling this
-Feature in a devc container today would be redundant with devc's own
-baseline — both would seed-link and manage `~/.claude.json` the same way,
-harmlessly (the block is idempotent) — but is not yet how devc itself is
-wired.
+host seed directory always exists before devc ever binds it in. That function
+has a `seedDir` parameter of its own — it names a **host** path and is
+unrelated to the Feature option of the same name that `0.2.0` removed.
+
+Enabling this Feature in a devc container today would be **partly** redundant
+with devc's own baseline and partly not: both seed-link the same way
+(harmlessly — the block is idempotent), but they now disagree about where
+`~/.claude.json` lives, and the last one to run wins. Do not enable both until
+the swap plan lands.
 
 ## What this is not
 
@@ -212,7 +263,12 @@ surprise a consumer did not ask for.
 
 **Not a place for the `devc:skills` per-skill bind mounts** either — those are
 wizard output `devc config` writes into `devc.json` as overlay mounts, not
-baseline config, and nothing about them is Feature-shaped.
+baseline config, and nothing about them is Feature-shaped. They are also why
+the seed step ignores directories.
+
+**Not a way to share one `.claude.json` across projects.** Folding it into
+`~/.claude` ties its lifetime to whatever you mount there — a per-workspace
+volume keeps it per-workspace, exactly as the separate volume did.
 
 ## Tests
 
@@ -227,14 +283,15 @@ bash features/agents/test/claude_json_test.sh
 `seed_link_test.sh` is devc's own shared harness (see
 [`devc/README.md`](../../devc/README.md#development)), reused unmodified
 against this Feature's copy of the `devc:seed-link` block — the drift guard.
+The block is byte-identical to devc's across `0.2.0` apart from its two
+parameterizing assignments, which is the whole point of the fence.
 `install_options_test.sh` runs the real `install.sh` with `curl` and `runuser`
 stubbed on `PATH` (no network, no real privilege switch — that half needs
-Docker), covering option baking, the path-option injection guard, the
-already-installed idempotent skip, and that a failed download fails the build.
-`claude_json_test.sh` runs the real, installed `post-create.sh` against a temp
-`HOME` with `stat`/`sudo` stubbed, covering the ownership-repair and
-`~/.claude.json` steps (the seed-link step is what the first command above
-already covers).
+Docker), covering the two fixed paths, the already-installed idempotent skip,
+and that a failed download fails the build. `claude_json_test.sh` runs the
+real, installed `post-create.sh` against a temp `HOME` with `stat`/`sudo`
+stubbed, covering ownership repair and every `~/.claude.json` case including
+the move-don't-delete and repoint-a-stale-link paths.
 
 Needs Docker and a network:
 
@@ -243,21 +300,23 @@ bash features/agents/test/run-features-test.sh
 ```
 
 The default scenario (`test.sh`) is the bare `{}` case: `claude` on `PATH` and
-executable by the remote user, `~/.claude` owned by the remote user, nothing
-linked into it, `~/.claude.json` left alone, and `copilot` absent.
-`test/scenarios.json` adds `with_seed_and_json` (a seed and a claude.json
-directory written into a fixed container path by the scenario's own
-`onCreateCommand`, the same technique `git-container-config`'s
-`mounted_identity` scenario uses to stand in for a mount a Feature cannot
-declare — asserting top-level seed files land as symlinks, a seed subdirectory
-does **not**, and `~/.claude.json` becomes a symlink reading back `{}`) and
-`with_copilot` (`installCopilotCli: true` puts `copilot` on `PATH` alongside
-`claude`).
+executable by the remote user, `~/.claude` owned by the remote user, an empty
+seed directory with nothing linked out of it, `~/.claude.json` a symlink into
+`~/.claude` reading back `{}`, and `copilot` absent. `test/scenarios.json` adds
+`with_seed` (a populated seed written into the fixed container path by the
+scenario's own `onCreateCommand`, the same technique
+`git-container-config`'s `mounted_identity` scenario uses to stand in for a
+mount a Feature cannot declare — asserting top-level seed files land as
+symlinks and a seed subdirectory does **not**) and `with_copilot`
+(`installCopilotCli: true` puts `copilot` on `PATH` alongside `claude`).
+Neither scenario passes a path option, because there are none: `with_seed`
+differs from the default scenario only by what it writes into the seed.
 
 ## Publishing
 
-This Feature is **not** on
-[`features/PUBLISH_ALLOWLIST.txt`](../PUBLISH_ALLOWLIST.txt) — it does not
-publish to ghcr.io yet. See
+This Feature **is** on
+[`features/PUBLISH_ALLOWLIST.txt`](../PUBLISH_ALLOWLIST.txt) and publishes to
+ghcr.io. `0.2.0` removes three options, which is breaking for anyone who set
+them — the floating `:0` tag carries it. See
 [../README.md#the-publish-allowlist](../README.md#the-publish-allowlist) for
 what that gate is and isn't.

@@ -1,51 +1,41 @@
 #!/bin/bash
-# agents create-time step — wires ~/.claude and ~/.claude.json to whatever persistence and
-# seed the consumer has mounted.
+# agents create-time step — links the host config seed into ~/.claude, and folds ~/.claude.json
+# into ~/.claude so one volume captures all of Claude Code's state.
 #
-# install.sh copies this file to /usr/local/share/devc-features/agents/post-create.sh at
-# image build time and bakes CLAUDE_DIR, SEED_DIR and CLAUDE_JSON_DIR below; the manifest's
-# postCreateCommand names that copy, and the devcontainer CLI runs it as the remote user, before
-# any user postCreateCommand.
+# install.sh copies this file to /usr/local/share/devc-features/agents/post-create.sh at image
+# build time; the manifest's postCreateCommand names that copy, and the devcontainer CLI runs it
+# as the remote user, before any user postCreateCommand. Running as the remote user is what makes
+# $HOME the right base for both paths below — there is nothing for install.sh to bake in.
 #
 # Copied from devc-core/default/scripts/agents-setup.sh — see README.md's "Relationship to devc"
 # for which file is which. The devc:seed-link block below is copied verbatim from that file: only
-# its two parameterizing assignments (SEED and CLAUDE_DIR) differ, pointed at this Feature's
-# baked options instead of devc's hardcoded paths, so devc/tests/seed_link_test.sh runs against
-# both copies unmodified.
+# its two parameterizing assignments (SEED and CLAUDE_DIR) differ, so
+# devc/tests/seed_link_test.sh runs against both copies unmodified.
 #
 # The script must exit 0 on every skip path: a postCreateCommand that fails aborts container
-# creation, and none of the skips here (no seedDir, no claudeJsonDir, ownership already correct)
-# is worth an unbootable container.
+# creation, and none of the skips here (an empty seed, ownership already correct) is worth an
+# unbootable container.
 set -e
 
 warn() {
   echo "agents: $*" >&2
 }
 
-# --- baked by install.sh from the Feature's options ------------------------------------------
-# CLAUDE_DIR is always a resolved absolute path by the time install.sh finishes (an empty
-# claudeDir option resolves to $_REMOTE_USER_HOME/.claude there, not here); `${VAR-}` only
-# matters when this file is run standalone, unbaked.
-CLAUDE_DIR="${CLAUDE_DIR-}"
-SEED_DIR="${SEED_DIR-}"
-CLAUDE_JSON_DIR="${CLAUDE_JSON_DIR-}"
-# -----------------------------------------------------------------------------------------------
-
 # --- 1. ownership repair -------------------------------------------------------------------
-# Belt-and-braces: install.sh already pre-creates CLAUDE_DIR owned by the remote user at build
+# Belt-and-braces: install.sh already pre-creates ~/.claude owned by the remote user at build
 # time, and whether a first-use empty named volume mounted over it at create time inherits that
 # ownership is unmeasured (no Docker in the environment this Feature was written in — see
 # .plans/design/devc-feature-split.md, open question 3). Cheap either way, so it stays.
 #
 # Non-recursive — a hard requirement, not a style choice: subpaths like skills/ are host bind
 # mounts and must not be chowned.
-if [ -d "$CLAUDE_DIR" ]; then
-  owner="$(stat -c '%U' "$CLAUDE_DIR" 2> /dev/null || true)"
+if [ -d "$HOME/.claude" ]; then
+  owner="$(stat -c '%U' "$HOME/.claude" 2> /dev/null || true)"
   if [ -n "$owner" ] && [ "$owner" != "$(id -un)" ]; then
     if command -v sudo > /dev/null 2>&1; then
-      sudo chown "$(id -un)" "$CLAUDE_DIR" || warn "could not chown $CLAUDE_DIR"
+      sudo chown "$(id -un)" "$HOME/.claude" || warn "could not chown $HOME/.claude"
     else
-      warn "$CLAUDE_DIR is owned by $owner and no sudo is available to fix it"
+      warn "$HOME/.claude is owned by $owner and no sudo is available to fix it"
     fi
   fi
 fi
@@ -63,8 +53,8 @@ fi
 #
 # Runs on every container create, so additions, edits, and deletions on the host all take
 # effect without deleting the volume.
-SEED="$SEED_DIR"
-CLAUDE_DIR="$CLAUDE_DIR"
+SEED=/usr/local/share/devc-features/agents/claude-seed
+CLAUDE_DIR="$HOME/.claude"
 
 # Drop links a previous create made whose seed file has since been removed or renamed. Only
 # symlinks pointing into $SEED are touched, so volume state (projects/, todos/,
@@ -101,22 +91,43 @@ fi
 # devc:seed-link (end)
 
 # --- 3. ~/.claude.json ---------------------------------------------------------------------
-# A volume can only mount at a directory, so a per-workspace ~/.claude.json (a file) cannot be a
-# mount target directly: claudeJsonDir names the directory instead, and ~/.claude.json is
-# symlinked to a file inside it, seeded on first run so Claude Code reads/writes through it.
-# Empty (the default) leaves ~/.claude.json alone entirely — the plain file Claude Code creates
-# itself, for a consumer with nothing mounted here.
-if [ -n "$CLAUDE_JSON_DIR" ]; then
-  if command -v sudo > /dev/null 2>&1; then
-    sudo chown "$(id -un)" "$CLAUDE_JSON_DIR" || warn "could not chown $CLAUDE_JSON_DIR"
+# Claude Code resolves its config/auth file as "$CLAUDE_CONFIG_DIR/.claude.json", falling back to
+# "$HOME/.claude.json" when that variable is unset (verified against the CLI's own resolver).
+# So it is a *sibling* of ~/.claude, not a member of it — the one piece of Claude Code state a
+# volume mounted at ~/.claude would otherwise miss, and a file cannot be a volume mount target
+# on its own. Symlinking it into ~/.claude is what lets a single mount capture everything;
+# earlier versions of this Feature needed a second volume and a claudeJsonDir option to say
+# where it was.
+#
+# Unconditional: there is nothing left to opt into. With no volume mounted this is an
+# indirection inside one home directory, which costs nothing and keeps one code path.
+# Every step below warns rather than fails. Being unconditional is exactly why: this now runs in
+# every container, so a read-only ~/.claude, or a ~/.claude.json that is somehow a directory,
+# would take container creation down with it. A container that boots with its auth file
+# unrelocated beats one that does not boot.
+mkdir -p "$CLAUDE_DIR" || warn "could not create $CLAUDE_DIR"
+JSON_TARGET="$CLAUDE_DIR/.claude.json"
+
+if [ ! -e "$JSON_TARGET" ]; then
+  if [ -f "$HOME/.claude.json" ] && [ ! -L "$HOME/.claude.json" ]; then
+    # A real file here is Claude Code's own earlier run, or a consumer with no volume mounted.
+    # Move it rather than delete it — this step is unconditional now, so an `rm` would be data
+    # loss for anyone who never asked to have their auth relocated.
+    mv "$HOME/.claude.json" "$JSON_TARGET" || warn "could not move ~/.claude.json into $CLAUDE_DIR"
   else
-    warn "no sudo available to chown $CLAUDE_JSON_DIR"
+    echo '{}' > "$JSON_TARGET" || warn "could not seed $JSON_TARGET"
   fi
-  if [ ! -f "$CLAUDE_JSON_DIR/claude.json" ]; then
-    echo '{}' > "$CLAUDE_JSON_DIR/claude.json"
-  fi
-  if [ ! -L "$HOME/.claude.json" ]; then
-    rm -f "$HOME/.claude.json"
-    ln -s "$CLAUDE_JSON_DIR/claude.json" "$HOME/.claude.json"
-  fi
+fi
+
+# Compares the link target, not just "is a symlink": a link left by an older version of this
+# Feature points at some other directory entirely, and has to be repointed rather than kept.
+# Guarded on the target existing, so a failed seed above leaves ~/.claude.json as it was rather
+# than replacing it with a dangling link.
+# The directory case is checked first and explicitly: `ln -sfn` given a real directory does not
+# fail, it silently creates the link *inside* it, which is worse than doing nothing.
+if [ -d "$HOME/.claude.json" ] && [ ! -L "$HOME/.claude.json" ]; then
+  warn "$HOME/.claude.json is a directory — leaving it alone"
+elif [ -e "$JSON_TARGET" ] && [ "$(readlink "$HOME/.claude.json" 2> /dev/null)" != "$JSON_TARGET" ]; then
+  rm -f "$HOME/.claude.json" 2> /dev/null || true
+  ln -sfn "$JSON_TARGET" "$HOME/.claude.json" || warn "could not link ~/.claude.json"
 fi

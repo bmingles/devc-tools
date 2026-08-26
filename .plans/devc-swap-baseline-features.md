@@ -7,7 +7,9 @@ devc's own scripts:
 
 1. **`agents-setup.sh`** is retired. devc's bundled `devcontainer.json` declares
    the already-published [`agents`](../features/agents/README.md) Feature
-   instead, with options pointing at the same mounts devc already declares.
+   instead. As of that Feature's `0.2.0` this takes **no** path options: devc
+   retargets its seed bind onto the Feature's fixed path and drops its
+   `claude-json-*` volume outright (see Contracts).
    The Dockerfile's own Claude/Copilot CLI install steps are retired too — the
    Feature's `install.sh` does that now.
 2. **`git-setup.sh`** is retired the same way, onto
@@ -58,8 +60,10 @@ not (and cannot) extend to a project's own, unrelated Features.
 ## Existing touchpoints
 
 - `devc-core/default/devcontainer.json` — `features` gains `agents` and
-  `git-container-config` entries with options; `onCreateCommand` and its
-  comment are deleted.
+  `git-container-config` entries; `onCreateCommand` and its comment are
+  deleted. `mounts` changes too: the `claude-json-*` volume is deleted and the
+  `claude-seed` bind is retargeted (see Contracts) — the one place this plan
+  removes infrastructure rather than repointing it.
 - `devc-core/default/Dockerfile` — the `COPY post-create.sh` / `COPY scripts/`
   / chmod block is deleted; the Claude CLI and Copilot CLI `RUN` steps are
   deleted (the `agents` Feature's `install.sh` does this now). The `ripgrep`
@@ -140,15 +144,11 @@ not (and cannot) extend to a project's own, unrelated Features.
 "features": {
   // … existing entries …
   "ghcr.io/bmingles/devc-tools/agents:0": {
-    // claudeDir left at its default (resolves to $_REMOTE_USER_HOME/.claude at
-    // build time) — MEASURE that this equals /home/vscode/.claude, the path
-    // devc's own claude-code-config-* volume already mounts at, before
-    // shipping. If it does not, set claudeDir explicitly instead of relying
-    // on the default.
-    "seedDir": "/usr/local/share/devc/claude-seed",
-    "claudeJsonDir": "/usr/local/share/devc/claude-json",
-    // Preserves current behavior: devc's own Dockerfile installs Copilot
-    // unconditionally today. The Feature's own default is false.
+    // The only option this Feature still takes that devc needs. There are no
+    // path options as of agents 0.2.0 — ~/.claude is derived from the remote
+    // user's home, and the seed path is fixed. Preserves current behavior:
+    // devc's own Dockerfile installs Copilot unconditionally today, and the
+    // Feature's own default is false.
     "installCopilotCli": true
   },
   "ghcr.io/bmingles/devc-tools/git-container-config:0": {
@@ -170,12 +170,37 @@ subject to. No new opt-out mechanism, no `baselineFeatures` involvement —
 that key governs only devc's _dynamic_ injection, which stays exactly
 `devc-config`, alone.
 
-No mounts change. `agents` and `git-container-config` declare none
-themselves (a Feature cannot), and devc's own `mounts` array already has
-every target these options name — `claude-code-config-*` → `~/.claude`,
-`claude-json-*` → `/usr/local/share/devc/claude-json`, the `claude-seed` bind,
-the `gitconfig-identity` bind. This plan repoints existing infrastructure at
-existing mounts; it adds none.
+### `devc-core/default/devcontainer.json` — the mounts `agents` 0.2.0 changes
+
+`git-container-config` needs no mount change: its `identityIncludePath` still
+names the `gitconfig-identity` bind devc already declares. `agents` does, and
+this is the one place this plan **removes** infrastructure rather than
+repointing it:
+
+```jsonc
+"mounts": [
+  // unchanged
+  "type=volume,source=claude-code-config-${localWorkspaceFolderBasename},target=/home/vscode/.claude",
+
+  // DELETED — agents 0.2.0 symlinks ~/.claude.json to ~/.claude/.claude.json,
+  // so the second volume has nothing left to back:
+  //   "type=volume,source=claude-json-${localWorkspaceFolderBasename},target=/usr/local/share/devc/claude-json",
+
+  // RETARGETED onto the Feature's fixed seed path. The host source is unchanged.
+  "type=bind,source=${localEnv:HOME}/.config/devc/.claude,target=/usr/local/share/devc-features/agents/claude-seed,consistency=cached,readonly"
+]
+```
+
+Two consequences to state plainly rather than discover:
+
+- **One re-login per workspace**, once. `~/.claude.json` moves from the
+  `claude-json-*` volume into the `.claude` volume, and nothing migrates the
+  contents across — accepted deliberately (the Feature's own repoint logic
+  handles the symlink, not the data). The orphaned `claude-json-*` volumes are
+  left on disk for the user to `docker volume prune`.
+- **`/usr/local/share/devc/claude-seed` and `/usr/local/share/devc/claude-json`
+  stop existing** once `agents-setup.sh` is deleted. Nothing else references
+  either path; `gitconfig-identity` stays where it is.
 
 ### `devc-core/default/` — post-create.sh, scripts/, and onCreateCommand removed
 
@@ -299,7 +324,8 @@ as it already does for any version drift.
 ## Checklist
 
 - [ ] `devc-core/default/devcontainer.json` — `agents`/`git-container-config`
-      entries; `onCreateCommand` removed
+      entries; `onCreateCommand` removed; `claude-json-*` volume deleted and
+      the `claude-seed` bind retargeted onto the Feature's fixed path
 - [ ] `devc-core/default/Dockerfile` — `post-create.sh`/`scripts/` COPY+chmod
       removed; Claude/Copilot `RUN` steps removed
 - [ ] `devc-core/default/post-create.sh` — deleted
@@ -345,10 +371,11 @@ as it already does for any version drift.
       `overlay.ts` and the manifest disagree on `0.2.0`.
 - [ ] `bash tests/features_test.sh` — green.
 - [ ] `deno fmt --check` clean.
-- [ ] (needs Docker) **`claudeDir`'s default actually resolves to
-      `/home/vscode/.claude`** for this base image/remote user — the one
-      value this plan assumes rather than measures. If it does not, set
-      `claudeDir` explicitly rather than relying on the default.
+- [ ] (needs Docker) **`agents` derives `~/.claude` as `/home/vscode/.claude`**
+      for this base image/remote user — the path devc's `claude-code-config-*`
+      volume already mounts at. `0.2.0` derives this from `$HOME` at create
+      time rather than baking it, so a mismatch is now visible in the
+      container rather than silent, but it is still unmeasured here.
 - [ ] (needs Docker) **Zero-config end-to-end**: `devc up` on a project with
       no config of its own. `~/.claude` seeded and owned correctly,
       `~/.claude.json` symlinked, git identity/LFS/`safe.directory` all set —
@@ -376,11 +403,12 @@ as it already does for any version drift.
 
 ## Open questions to measure, not assume
 
-1. **Does `claudeDir`'s empty default really resolve to `/home/vscode/.claude`
-   for `mcr.microsoft.com/devcontainers/base:noble` + the `vscode` remote
-   user?** Assumed equal to devc's own mount target; not yet run against a
-   real build. If wrong, the volume mounts somewhere the Feature isn't
-   looking, silently losing `~/.claude` persistence.
+1. **Does `$HOME` really resolve to `/home/vscode` for
+   `mcr.microsoft.com/devcontainers/base:noble` + the `vscode` remote user at
+   `postCreateCommand` time?** Assumed equal to devc's own mount target; not
+   yet run against a real build. If wrong, the volume mounts somewhere the
+   Feature isn't looking, silently losing `~/.claude` persistence — and now
+   `~/.claude.json` with it, since `0.2.0` folds that in.
 2. **Does `installsAfter` govern lifecycle-command order, or only
    image-build order?** Cited in the Why section as settled devcontainer CLI
    behavior — worth reconfirming against the pinned `@devcontainers/cli`
@@ -396,9 +424,14 @@ as it already does for any version drift.
 ## Not in this plan
 
 - **Any change to what `agents`/`git-container-config` themselves do.** Both
-  are consumed as published, at their current `0.1.0`. If either needs a
-  behavior change, that is a separate plan versioning that Feature on its
-  own.
+  are consumed as published — `agents` at `0.2.0` (which dropped its three
+  path options and folded `~/.claude.json` into `~/.claude`, landed separately
+  before this plan runs), `git-container-config` at `0.1.0`. If either needs a
+  behavior change, that is a separate plan versioning that Feature on its own.
+
+- **Migrating the contents of the `claude-json-*` volumes.** Deliberately not
+  done: one re-login per workspace is the accepted cost, and the orphaned
+  volumes are left for the user to prune.
 - **Reaching project mode with `agents`/`git-container-config` themselves.**
   Only `devc-config` is dynamically injected. A project-mode repo still gets
   neither Claude config nor git identity restoration from devc unless it

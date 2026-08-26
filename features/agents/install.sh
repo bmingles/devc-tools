@@ -1,8 +1,8 @@
 #!/bin/sh
-# agents Feature install — install the agent CLIs at build time, pre-create claudeDir, and
-# place the create-time script with the option values baked in.
+# agents Feature install — install the agent CLIs at build time, pre-create ~/.claude and the
+# seed mount point, and place the create-time script.
 #
-# Runs as root at image *build* time. Two things happen here that post-create.sh cannot:
+# Runs as root at image *build* time. Three things happen here that post-create.sh cannot:
 #
 #   - The CLI installs. Copied from devc-core/default/Dockerfile's two guards, run as the remote
 #     user (not root) so the binaries land under a directory that user can later update
@@ -10,15 +10,24 @@
 #     either install option is true: a failed download fails the build, matching
 #     devc-bridge/install.sh's stance (better than a container that looks fine until the first
 #     `claude`).
-#   - Pre-creating claudeDir owned by the remote user, so a first-use empty named volume a
+#   - Pre-creating ~/.claude owned by the remote user, so a first-use empty named volume a
 #     consumer mounts there (see README) starts from a real, owned directory rather than one
 #     mounted root-owned. post-create.sh's ownership repair (a non-recursive `sudo chown`) is
 #     kept anyway as belt-and-braces — whether Docker actually seeds a fresh volume's ownership
 #     from what was already at that path is unmeasured (no Docker in the environment this
 #     Feature was written in; see .plans/design/devc-feature-split.md, open question 3).
+#   - Pre-creating the seed directory, empty. It is this Feature's published surface: a consumer
+#     bind-mounts their own host config onto it, exactly as bash-config's dirs/user works. Empty
+#     is a working state, not a broken one — post-create.sh's seed-link step finds nothing to
+#     link and moves on, which is what the bare `{}` case is.
 #
 # Installing the CLIs as root would put them somewhere the remote user cannot update — the exact
 # reason devc-core/default/Dockerfile switches USER before its own two RUN lines.
+#
+# There are no path options to validate or bake. Every path this Feature touches is either fixed
+# (the seed) or derived from the remote user's own home (~/.claude), so the option-injection
+# guard and the bake() rewriting that earlier versions carried have nothing left to guard or
+# rewrite — see README.md's "Why there are no path options".
 set -e
 
 die() {
@@ -29,37 +38,8 @@ die() {
 # Options reach install.sh uppercased with non-word characters stripped (the CLI's getSafeId),
 # and booleans arrive as the strings "true"/"false". The defaults are repeated here rather than
 # trusted from the manifest so the script also runs standalone.
-#
-# `${VAR-default}` rather than `${VAR:-default}` for the three path options: an explicitly empty
-# value means something different from "unset" for all three (claudeDir falls back to
-# $_REMOTE_USER_HOME/.claude below; seedDir and claudeJsonDir disable their whole step in
-# post-create.sh) and must not fall back to a non-empty default. node-nvmrc, shell-dirs and
-# git-container-config make the same distinction for the same reason.
 INSTALL_CLAUDE_CLI_OPT="${INSTALLCLAUDECLI:-true}"
 INSTALL_COPILOT_CLI_OPT="${INSTALLCOPILOTCLI:-false}"
-CLAUDE_DIR_OPT="${CLAUDEDIR-}"
-SEED_DIR_OPT="${SEEDDIR-}"
-CLAUDE_JSON_DIR_OPT="${CLAUDEJSONDIR-}"
-
-# All three path options are pasted into a double-quoted shell assignment in post-create.sh, so
-# anything that could end that string, start an expansion or add a line is rejected outright
-# rather than silently producing a script that does something else. Same policy, wording and
-# character set as node-nvmrc/shell-dirs/bash-config/git-container-config. These are container
-# paths; none of this is a real restriction.
-check_path_opt() { # check_path_opt <option name> <value>
-  case "$2" in
-    *'"'*) die "$1 may not contain a double quote: $2" ;;
-    *'`'*) die "$1 may not contain a backtick: $2" ;;
-    *'$'*) die "$1 may not contain a dollar sign: $2" ;;
-    *'\'*) die "$1 may not contain a backslash: $2" ;;
-    # A literal newline, which would turn the rest of the value into its own line of shell.
-    *'
-'*) die "$1 may not contain a newline: $2" ;;
-  esac
-}
-check_path_opt claudeDir "$CLAUDE_DIR_OPT"
-check_path_opt seedDir "$SEED_DIR_OPT"
-check_path_opt claudeJsonDir "$CLAUDE_JSON_DIR_OPT"
 
 # /usr/local/share/devc-features/<id>/ is the Feature namespace. /usr/local/share/devc/ is
 # devc's own baseline namespace and no Feature writes into it — not sharing the prefix is what
@@ -68,15 +48,13 @@ SHARE_DIR="${SHARE_DIR:-/usr/local/share/devc-features/agents}"
 
 FEATURE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# --- resolve claudeDir now, at build time, so the pre-create below and the value baked into
-# post-create.sh agree on the same literal path -------------------------------------------------
-#
 # _REMOTE_USER_HOME is set by the CLI whenever it knows the remote user (every real Feature
-# install); falls back to $HOME for a manual run or the offline test harness.
+# install); falls back to $HOME for a manual run or the offline test harness. Claude Code
+# resolves its own state directory as $CLAUDE_CONFIG_DIR or, unset, $HOME/.claude — so the
+# remote user's home is the only correct answer here, and there is nothing to make an option of.
 REMOTE_USER_HOME="${_REMOTE_USER_HOME:-$HOME}"
 REMOTE_USER="${_REMOTE_USER:-$(id -un)}"
-CLAUDE_DIR_RESOLVED="$CLAUDE_DIR_OPT"
-[ -n "$CLAUDE_DIR_RESOLVED" ] || CLAUDE_DIR_RESOLVED="$REMOTE_USER_HOME/.claude"
+CLAUDE_DIR="$REMOTE_USER_HOME/.claude"
 
 # --- CLI installs, as the remote user, not root -------------------------------------------------
 #
@@ -121,47 +99,27 @@ if [ "$INSTALL_COPILOT_CLI_OPT" = true ]; then
   install_cli Copilot copilot https://gh.io/copilot-install
 fi
 
-# --- pre-create claudeDir, owned by the remote user ---------------------------------------------
-# See the top-of-file comment on open question 3. Runs even when claudeDir will be immediately
+# --- pre-create ~/.claude, owned by the remote user ---------------------------------------------
+# See the top-of-file comment on open question 3. Runs even when CLAUDE_DIR will be immediately
 # mounted over by a consumer's own volume — belt-and-braces either way, and cheap.
-mkdir -p "$CLAUDE_DIR_RESOLVED"
+mkdir -p "$CLAUDE_DIR"
 if [ "$(id -un)" != "$REMOTE_USER" ]; then
-  chown "$REMOTE_USER" "$CLAUDE_DIR_RESOLVED" 2> /dev/null ||
-    echo "agents: could not chown $CLAUDE_DIR_RESOLVED to $REMOTE_USER (post-create.sh repairs this)"
+  chown "$REMOTE_USER" "$CLAUDE_DIR" 2> /dev/null ||
+    echo "agents: could not chown $CLAUDE_DIR to $REMOTE_USER (post-create.sh repairs this)"
 fi
 
-# --- the create-time script -----------------------------------------------------------------
+# --- the create-time script, and the seed mount point -------------------------------------------
 #
-# The manifest's postCreateCommand takes no arguments, so the options have to cross into
-# post-create.sh at build time. They are baked by rewriting its `VAR="${VAR-default}"` lines,
-# which keeps the file in the repo readable and runnable on its own.
+# claude-seed stays root-owned and is never written to by this Feature: a consumer mounts their
+# own host directory onto it read-only, and post-create.sh only ever reads it. Left empty when
+# nobody mounts anything, which is the bare `{}` case.
+mkdir -p "$SHARE_DIR/claude-seed"
 
-bake() { # bake <file> <var> <value>
-  _bake_tmp="$1.bake.$$"
-  # awk with the replacement passed as a -v value, rather than sed: a `&` in a value is a
-  # back-reference in a sed replacement and a `|` would end the expression.
-  awk -v var="$2" -v line="$2=\"$3\"" '
-    index($0, var "=") == 1 { print line; next }
-                            { print }
-  ' "$1" > "$_bake_tmp"
-  mv -f "$_bake_tmp" "$1"
-  # A rename or a reformat upstream would otherwise leave the option silently unwired, with the
-  # `${VAR-default}` fallback quietly standing in for whatever the consumer asked for.
-  # -qxF, not -q: the pattern is built from the same value, so a regex metacharacter in it must
-  # not be able to make a failed bake look like a successful one.
-  grep -qxF "$2=\"$3\"" "$1" || die "could not bake $2 into $(basename "$1")"
-}
-
-mkdir -p "$SHARE_DIR"
 # Plain cp rather than `install -o root`: this runs as root, so the copy is root-owned either
 # way, and no ownership flag means the script still runs unprivileged in the test harness.
 cp "$FEATURE_DIR/post-create.sh" "$SHARE_DIR/post-create.sh"
-bake "$SHARE_DIR/post-create.sh" CLAUDE_DIR "$CLAUDE_DIR_RESOLVED"
-bake "$SHARE_DIR/post-create.sh" SEED_DIR "$SEED_DIR_OPT"
-bake "$SHARE_DIR/post-create.sh" CLAUDE_JSON_DIR "$CLAUDE_JSON_DIR_OPT"
 chmod 0755 "$SHARE_DIR/post-create.sh"
 
 echo "agents: create-time script installed at $SHARE_DIR/post-create.sh"
-echo "agents: claudeDir='$CLAUDE_DIR_RESOLVED' seedDir='$SEED_DIR_OPT'" \
-  "claudeJsonDir='$CLAUDE_JSON_DIR_OPT' installClaudeCli=$INSTALL_CLAUDE_CLI_OPT" \
-  "installCopilotCli=$INSTALL_COPILOT_CLI_OPT"
+echo "agents: claudeDir='$CLAUDE_DIR' seedDir='$SHARE_DIR/claude-seed'" \
+  "installClaudeCli=$INSTALL_CLAUDE_CLI_OPT installCopilotCli=$INSTALL_COPILOT_CLI_OPT"

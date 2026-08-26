@@ -3,11 +3,12 @@
 # Feature with **no options** (`"agents": {}`).
 #
 # That combination is the bare-`{}` case every Feature in this collection has to survive (see
-# .plans/design/devc-feature-split.md): the Claude CLI installs and nothing else — no seed
-# linking (seedDir defaults empty, the Feature never invents this path), ~/.claude.json left
-# completely alone, and Copilot absent (installCopilotCli defaults false).
+# .plans/design/devc-feature-split.md): the Claude CLI installs, the seed directory exists and is
+# empty so nothing is linked, ~/.claude.json is folded into ~/.claude, and Copilot is absent
+# (installCopilotCli defaults false).
 #
-# The seedDir/claudeJsonDir/installCopilotCli scenarios live in scenarios.json.
+# There are no path options to pass — the seed scenario in scenarios.json differs from this one
+# only by what its onCreateCommand writes into the seed, not by configuration.
 set -e
 
 source dev-container-features-test-lib
@@ -19,16 +20,12 @@ check "and is executable" test -x "$SHARE/post-create.sh"
 check "and is owned by root" bash -c \
   "[ \"\$(stat -c '%U:%G' $SHARE/post-create.sh)\" = 'root:root' ]"
 
-# The options cross into the create-time script at build time — the manifest's
-# postCreateCommand takes no arguments — so "did the bake happen" is a real property. These are
-# the defaults, since this scenario passes no options. claudeDir's empty default resolves at
-# build time to $_REMOTE_USER_HOME/.claude — this scenario's remote user is $HOME here.
-check "CLAUDE_DIR baked to \$HOME/.claude" \
-  grep -qxF "CLAUDE_DIR=\"$HOME/.claude\"" "$SHARE/post-create.sh"
-check "SEED_DIR baked empty — seed linking is off" \
-  grep -qx 'SEED_DIR=""' "$SHARE/post-create.sh"
-check "CLAUDE_JSON_DIR baked empty — ~/.claude.json is left alone" \
-  grep -qx 'CLAUDE_JSON_DIR=""' "$SHARE/post-create.sh"
+# --- the seed directory is this Feature's published surface ----------------------------------
+# install.sh creates it empty at build time so a consumer has something to bind-mount onto, and
+# so the bare `{}` case is an empty seed rather than a missing path.
+check "the seed directory exists" test -d "$SHARE/claude-seed"
+check "and is empty — nothing was mounted onto it" bash -c \
+  "[ -z \"\$(ls -A $SHARE/claude-seed)\" ]"
 
 # --- the Claude CLI ------------------------------------------------------------------------
 check "claude is on PATH" bash -c "command -v claude"
@@ -44,10 +41,17 @@ check "~/.claude exists" test -d "$HOME/.claude"
 check "and is owned by the remote user" bash -c \
   "[ \"\$(stat -c '%U' $HOME/.claude)\" = \"\$(id -un)\" ]"
 
-# --- nothing linked, nothing touched ----------------------------------------------------------
-check "seedDir was empty, so ~/.claude has nothing linked into it" bash -c \
+# --- nothing linked out of an empty seed ------------------------------------------------------
+check "the seed was empty, so ~/.claude has nothing linked into it" bash -c \
   "[ -z \"\$(find \"$HOME/.claude\" -mindepth 1 -maxdepth 1 -type l)\" ]"
-check "~/.claude.json is not a symlink — claudeJsonDir was empty" \
-  test ! -L "$HOME/.claude.json"
+
+# --- ~/.claude.json is folded into ~/.claude, unconditionally ---------------------------------
+# The one place Claude Code keeps state outside ~/.claude. Doing this with no volume mounted, as
+# here, is an indirection inside one home directory; with a volume at ~/.claude it is what makes
+# a single mount capture everything.
+check "~/.claude.json is a symlink" test -L "$HOME/.claude.json"
+check "it points inside ~/.claude" \
+  test "$(readlink "$HOME/.claude.json")" = "$HOME/.claude/.claude.json"
+check "and reads back the seeded {}" test "$(cat "$HOME/.claude.json")" = '{}'
 
 reportResults

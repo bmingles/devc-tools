@@ -1,12 +1,9 @@
 {
-  "with_seed_and_json": {
+  "with_seed": {
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-    "onCreateCommand": "sudo mkdir -p /usr/local/share/agents-test/seed/skills /usr/local/share/agents-test/claude-json && sudo chmod -R 777 /usr/local/share/agents-test && printf '# md\\n' > /usr/local/share/agents-test/seed/CLAUDE.md && printf '{}\\n' > /usr/local/share/agents-test/seed/settings.json && echo 'a skill' > /usr/local/share/agents-test/seed/skills/inner.md",
+    "onCreateCommand": "sudo mkdir -p /usr/local/share/devc-features/agents/claude-seed/skills && sudo chmod -R 777 /usr/local/share/devc-features/agents/claude-seed && printf '# md\\n' > /usr/local/share/devc-features/agents/claude-seed/CLAUDE.md && printf '{}\\n' > /usr/local/share/devc-features/agents/claude-seed/settings.json && echo 'a skill' > /usr/local/share/devc-features/agents/claude-seed/skills/inner.md",
     "features": {
-      "agents": {
-        "seedDir": "/usr/local/share/agents-test/seed",
-        "claudeJsonDir": "/usr/local/share/agents-test/claude-json"
-      }
+      "agents": {}
     }
   },
   "with_copilot": {
