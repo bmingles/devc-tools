@@ -28,6 +28,21 @@
   the plan argues that trade, and reverses a note in `install.sh` that had
   refused it.
 
+- [devc-swap-baseline-features](devc-swap-baseline-features.md) — **written,
+  not yet implemented.** devc swaps its own `agents-setup.sh`/`git-setup.sh`
+  onto the already-published `agents`/`git-container-config` Features
+  (declared statically in the bundled `devcontainer.json`, same treatment as
+  `bash-config`/`node-nvmrc`); `bashrc-additions.sh` moves _into_
+  `devc-config`'s `post-create.sh` as a second fence instead, since
+  `devc-config` is the one Feature devc dynamically injects into every
+  container — a deliberate reach extension, not a filing convenience. With
+  all three scripts gone, `devc-core/default/scripts/`, `post-create.sh` and
+  `onCreateCommand` are removed outright. Reopens (and resolves, via
+  `installsAfter` rather than the phase-level `onCreateCommand` trick) the
+  ordering question the previous plan's own "Not in this plan" section
+  named as a fallback and declined to implement pre-emptively — see this
+  plan's Why section.
+
 Splitting pieces of devc's baseline out as publishable devcontainer Features.
 Read [design/devc-feature-split.md](design/devc-feature-split.md) first — it
 settles, once, which pieces **can** be a Feature (a Feature can declare no
