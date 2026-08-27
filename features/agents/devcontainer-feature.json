@@ -19,9 +19,12 @@
     "installPiCli": {
       "type": "boolean",
       "default": false,
-      "description": "Install the pi coding agent CLI at build time, same shape as installClaudeCli. Defaults false: each agent CLI stays opt-in on its own, so enabling this Feature for Claude does not silently install a third vendor's CLI too."
+      "description": "Install the pi coding agent CLI at build time, same shape as installClaudeCli. Defaults false: each agent CLI stays opt-in on its own, so enabling this Feature for Claude does not silently install a third vendor's CLI too. Unlike the other two, pi installs itself with npm, so this option requires Node.js 22.19.0 or newer and npm in the image — add a node Feature alongside this one (installsAfter already orders this Feature behind it). The binary lands in ~/.local/bin beside claude and copilot, not in the active nvm node version's directory."
     }
   },
-  "installsAfter": ["ghcr.io/bmingles/devc-tools/node-nvmrc"],
+  "installsAfter": [
+    "ghcr.io/devcontainers/features/node",
+    "ghcr.io/bmingles/devc-tools/node-nvmrc"
+  ],
   "postCreateCommand": "bash /usr/local/share/devc-features/agents/post-create.sh"
 }

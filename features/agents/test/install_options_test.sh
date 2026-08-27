@@ -10,7 +10,9 @@
 # `runuser`/`su` really drop privileges the way the stub here does not even attempt to. Both need
 # test/run-features-test.sh under Docker. What this DOES pin, against the real install.sh: that
 # the two fixed paths post-create.sh depends on are really created and really named the way it
-# expects, the idempotent-CLI-already-installed skip, and that a failed download fails the build.
+# expects, the idempotent-CLI-already-installed skip, that a failed download fails the build, and
+# the node prelude the npm-installed CLI (pi) depends on — that it finds node through nvm when
+# node is not on PATH, and that it pins npm's global prefix to ~/.local.
 #
 # There are no path options left to bake or to guard against injection — see README.md's "Why
 # there are no path options". The two greps in case 1 are what replaced the bake guard: a rename
@@ -49,6 +51,11 @@ case "$url" in
   *pi*) bin=pi ;;
   *) bin=unknown ;;
 esac
+# The emitted script runs in the installer's own environment, so having it record what it was
+# handed is how the node prelude's two guarantees — node on PATH, npm's global prefix pinned to
+# ~/.local — get asserted without a real installer.
+echo "printf '$bin npm_config_prefix=%s\\n' \"\$npm_config_prefix\" >> \"\$INSTALLER_ENV_LOG\""
+echo "printf '$bin node=%s\\n' \"\$(command -v node || echo none)\" >> \"\$INSTALLER_ENV_LOG\""
 echo "mkdir -p \"\$HOME/.local/bin\"; printf '#!/bin/sh\necho fake-$bin\n' > \"\$HOME/.local/bin/$bin\"; chmod +x \"\$HOME/.local/bin/$bin\""
 CURL
 chmod +x "$STUBS/curl"
@@ -82,6 +89,41 @@ for real_bin in claude copilot pi; do
   fi
 done
 
+# --- a fake node toolchain, and a fake nvm that puts it on PATH --------------------------------
+#
+# The node prelude in install.sh only checks that `node` and `npm` are *findable*; the real
+# installer that would use them is itself stubbed above. So these need to be no more than
+# executable files with the right names.
+NODE_STUBS="$WORK/node-stubs"
+mkdir -p "$NODE_STUBS"
+cat > "$NODE_STUBS/node" << 'FAKENODE'
+#!/bin/sh
+# The prelude calls `node -e <compare script> <min>` to gate on version, and `node --version`
+# only to name what it found. FAKE_NODE_TOO_OLD=1 makes the gate say "too old" without needing a
+# second real Node.js installed just for this.
+case "${1:-}" in
+  -e) [ "${FAKE_NODE_TOO_OLD:-}" = 1 ] && exit 1; exit 0 ;;
+  --version) echo "${FAKE_NODE_VERSION:-v99.0.0}" ;;
+  *) echo fake-node ;;
+esac
+FAKENODE
+printf '#!/bin/sh\necho fake-npm\n' > "$NODE_STUBS/npm"
+chmod +x "$NODE_STUBS/node" "$NODE_STUBS/npm"
+
+# This devcontainer has a real node on PATH (and a real /usr/local/share/nvm), which is what
+# makes the prelude's happy path testable at all — and, in the other direction, is why the
+# "no node and no nvm anywhere" failure arm is NOT testable here: the prelude would find the
+# container's own nvm and succeed. That arm is left to a real container, and the paired-constant
+# grep below is what guards the part of it this harness can reach.
+NO_NODE_PATH="$CLEAN_PATH"
+for real_bin in node npm; do
+  real_path="$(command -v "$real_bin" 2> /dev/null || true)"
+  if [ -n "$real_path" ]; then
+    real_dir="$(dirname "$real_path")"
+    NO_NODE_PATH="$(printf '%s' "$NO_NODE_PATH" | tr ':' '\n' | grep -vxF "$real_dir" | paste -sd: -)"
+  fi
+done
+
 # setup <name> [VAR=value ...] — run the real install.sh with this case's env, into a fresh
 # SHARE_DIR and a fresh fake remote-user HOME.
 setup() {
@@ -90,11 +132,13 @@ setup() {
   rm -rf "$CASE"
   mkdir -p "$CASE/share" "$CASE/home"
   : > "$CASE/curl.log"; : > "$CASE/runuser.log"; : > "$CASE/runuser_user.log"
+  : > "$CASE/installer_env.log"
   env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI -u INSTALLPICLI \
     SHARE_DIR="$CASE/share" \
     _REMOTE_USER="$(id -un)" _REMOTE_USER_HOME="$CASE/home" \
     FAKE_REMOTE_HOME="$CASE/home" \
     CURL_LOG="$CASE/curl.log" RUNUSER_LOG="$CASE/runuser.log" RUNUSER_USER_LOG="$CASE/runuser_user.log" \
+    INSTALLER_ENV_LOG="$CASE/installer_env.log" \
     PATH="$STUBS:$CLEAN_PATH" \
     "$@" sh "$FEATURE_DIR/install.sh" > "$CASE/install.log" 2> "$CASE/install.err"
   status=$?
@@ -137,6 +181,76 @@ check "copilot installed too" test -x "$WORK/c2b/home/.local/bin/copilot"
 check "pi installed too" test -x "$WORK/c2b/home/.local/bin/pi"
 check "curl invoked three times (claude, copilot, pi)" \
   test "$(wc -l < "$WORK/c2b/curl.log")" -eq 3
+# The npm-installed CLI is the only one that gets the node prelude, so exactly one env record is
+# written — and it must show npm's global prefix pinned. Unpinned, npm under nvm would resolve
+# the prefix to the *active node version's* directory and drop pi out of PATH on the next
+# version switch; see install.sh's prelude.
+check "the pi install pinned npm's global prefix to the fake remote ~/.local" \
+  grep -qxF "pi npm_config_prefix=$WORK/c2b/home/.local" "$WORK/c2b/installer_env.log"
+check "and claude's install got no prelude — the pin is scoped to the npm-installed CLI" \
+  grep -qxF "claude npm_config_prefix=" "$WORK/c2b/installer_env.log"
+
+echo "case 2c: node is not on PATH — the prelude sources nvm and finds it"
+# The real-world build-time case, and the bug this prelude exists for: the node Feature has
+# installed node, but it is wired into /etc/bash.bashrc, which a non-interactive shell like the
+# installer's never sources. Point NVM_DIR at a fake nvm.sh (the first entry the prelude probes)
+# and hand install.sh a PATH with no node on it at all.
+rm -rf "${WORK:?}/c2c"
+mkdir -p "$WORK/c2c/share" "$WORK/c2c/home/.nvm"
+: > "$WORK/c2c/curl.log"; : > "$WORK/c2c/runuser.log"; : > "$WORK/c2c/runuser_user.log"
+: > "$WORK/c2c/installer_env.log"
+printf 'export PATH="%s:$PATH"\n' "$NODE_STUBS" > "$WORK/c2c/home/.nvm/nvm.sh"
+env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI -u INSTALLPICLI \
+  SHARE_DIR="$WORK/c2c/share" _REMOTE_USER="$(id -un)" _REMOTE_USER_HOME="$WORK/c2c/home" \
+  FAKE_REMOTE_HOME="$WORK/c2c/home" CURL_LOG="$WORK/c2c/curl.log" \
+  RUNUSER_LOG="$WORK/c2c/runuser.log" RUNUSER_USER_LOG="$WORK/c2c/runuser_user.log" \
+  INSTALLER_ENV_LOG="$WORK/c2c/installer_env.log" NVM_DIR="$WORK/c2c/home/.nvm" \
+  INSTALLCLAUDECLI=false INSTALLPICLI=true PATH="$STUBS:$NO_NODE_PATH" \
+  sh "$FEATURE_DIR/install.sh" > "$WORK/c2c/install.log" 2> "$WORK/c2c/install.err"
+status=$?
+check "install.sh exits 0 — nvm supplied the toolchain" test "$status" -eq 0
+check "pi installed" test -x "$WORK/c2c/home/.local/bin/pi"
+check "the installer really saw the nvm-supplied node, not one already on PATH" \
+  grep -qxF "pi node=$NODE_STUBS/node" "$WORK/c2c/installer_env.log"
+
+echo "case 2d: node is present but too old — the build fails naming the version"
+# Without this gate the installer's own preflight would fail, exit 1, and install_cli could only
+# report it as "network required" — the misleading message the whole prelude exists to stop.
+rm -rf "${WORK:?}/c2e"
+mkdir -p "$WORK/c2e/share" "$WORK/c2e/home/.nvm"
+: > "$WORK/c2e/curl.log"; : > "$WORK/c2e/runuser.log"; : > "$WORK/c2e/runuser_user.log"
+: > "$WORK/c2e/installer_env.log"
+printf 'export PATH="%s:$PATH"\n' "$NODE_STUBS" > "$WORK/c2e/home/.nvm/nvm.sh"
+env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI -u INSTALLPICLI \
+  SHARE_DIR="$WORK/c2e/share" _REMOTE_USER="$(id -un)" _REMOTE_USER_HOME="$WORK/c2e/home" \
+  FAKE_REMOTE_HOME="$WORK/c2e/home" CURL_LOG="$WORK/c2e/curl.log" \
+  RUNUSER_LOG="$WORK/c2e/runuser.log" RUNUSER_USER_LOG="$WORK/c2e/runuser_user.log" \
+  INSTALLER_ENV_LOG="$WORK/c2e/installer_env.log" NVM_DIR="$WORK/c2e/home/.nvm" \
+  FAKE_NODE_TOO_OLD=1 FAKE_NODE_VERSION=v20.20.2 \
+  INSTALLCLAUDECLI=false INSTALLPICLI=true PATH="$STUBS:$NO_NODE_PATH" \
+  sh "$FEATURE_DIR/install.sh" > "$WORK/c2e/install.log" 2> "$WORK/c2e/install.err"
+status=$?
+check "install.sh exits non-zero" test "$status" -ne 0
+check "it names the version it needs and the one it found" \
+  grep -q 'needs Node.js 22.19.0 or newer; the container has v20.20.2' "$WORK/c2e/install.err"
+check "it does NOT blame the network" \
+  bash -c "! grep -q 'network required' '$WORK/c2e/install.err'"
+check "the installer was never downloaded — the gate ran first" \
+  test ! -s "$WORK/c2e/curl.log"
+
+echo "case 2e: the node prelude and install.sh agree on the toolchain-missing exit code"
+# The "no node and no nvm anywhere" arm cannot run here — see the NO_NODE_PATH comment above.
+# What this harness can still guard is the pair of constants that arm depends on: the prelude
+# exits with a code install.sh must recognize, and a rename on one side alone would silently
+# turn a missing toolchain back into the misleading "network required" message.
+check "install.sh declares the toolchain-missing status" \
+  grep -qxF 'NODE_MISSING_STATUS=78' "$FEATURE_DIR/install.sh"
+check "and the prelude exits with that same code" \
+  grep -qxF '  exit 78' "$FEATURE_DIR/install.sh"
+check "the prelude names Node.js in its failure messages, not the network" \
+  grep -q 'Node.js \$NODE_MIN or newer and npm are required' "$FEATURE_DIR/install.sh"
+check "and the minimum pi is installed with is the version its package declares" \
+  grep -q 'install_cli Pi pi https://pi.dev/install.sh 22.19.0' "$FEATURE_DIR/install.sh"
 
 echo "case 3: installClaudeCli=false, installCopilotCli=false, installPiCli=false — no CLI installed, no curl at all"
 setup c3 INSTALLCLAUDECLI=false
@@ -157,7 +271,8 @@ chmod +x "$WORK/c4/home/.local/bin/claude"
 env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI -u INSTALLPICLI \
   SHARE_DIR="$WORK/c4/share" _REMOTE_USER="$(id -un)" _REMOTE_USER_HOME="$WORK/c4/home" \
   FAKE_REMOTE_HOME="$WORK/c4/home" CURL_LOG="$WORK/c4/curl.log" RUNUSER_LOG="$WORK/c4/runuser.log" \
-  RUNUSER_USER_LOG="$WORK/c4/runuser_user.log" PATH="$STUBS:$CLEAN_PATH" \
+  RUNUSER_USER_LOG="$WORK/c4/runuser_user.log" INSTALLER_ENV_LOG="$WORK/c4/installer_env.log" \
+  PATH="$STUBS:$CLEAN_PATH" \
   sh "$FEATURE_DIR/install.sh" > "$WORK/c4/install.log" 2> "$WORK/c4/install.err"
 status=$?
 check "install.sh still exits 0" test "$status" -eq 0

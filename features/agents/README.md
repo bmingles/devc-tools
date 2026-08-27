@@ -47,9 +47,10 @@ At **build time** (as root):
 1. Installs the Claude CLI (when `installClaudeCli`, default `true`), the
    GitHub Copilot CLI (when `installCopilotCli`, default `false`), and the pi
    coding agent CLI (when `installPiCli`, default `false`) — as the **remote
-   user**, not root, into `~/.local/bin`. Installing as root would put the
-   binary somewhere the remote user cannot later update (`claude`/`copilot
-   update`/`pi update`) — the same reason
+   user**, not root, into `~/.local/bin`. pi has an extra prerequisite the
+   other two do not — see [Why pi needs Node.js](#why-pi-needs-nodejs).
+   Installing as root would put the binary somewhere the remote user cannot
+   later update (`claude`/`copilot update`/`pi update`) — the same reason
    [`devc-core/default/Dockerfile`](../../devc-core/default/Dockerfile) switches
    `USER` before its own two equivalent `RUN` lines, which this Feature copies
    the install guards from verbatim. Idempotent: a rebuild does not re-download
@@ -85,11 +86,11 @@ Every skip path exits `0`. A `postCreateCommand` that fails aborts container
 creation, and none of these skips (an empty seed, ownership already correct) is
 worth an unbootable container.
 
-| Option              | Default | Meaning                                                                                                  |
-| ------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| `installClaudeCli`  | `true`  | Install the Claude Code CLI at build time, as the remote user.                                           |
-| `installCopilotCli` | `false` | Install the GitHub Copilot CLI too. Defaults false — see [below](#why-installcopilotcli-defaults-false). |
-| `installPiCli`      | `false` | Install the pi coding agent CLI too. Defaults false, same reasoning as `installCopilotCli`.               |
+| Option              | Default | Meaning                                                                                                                                                            |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `installClaudeCli`  | `true`  | Install the Claude Code CLI at build time, as the remote user.                                                                                                     |
+| `installCopilotCli` | `false` | Install the GitHub Copilot CLI too. Defaults false — see [below](#why-installcopilotcli-defaults-false).                                                           |
+| `installPiCli`      | `false` | Install the pi coding agent CLI too. Defaults false, same reasoning as `installCopilotCli`. **Requires Node.js in the image** — see [below](#why-pi-needs-nodejs). |
 
 That is the whole option surface.
 
@@ -147,6 +148,85 @@ Two consequences worth knowing:
   `0.1.x` with a `claudeJsonDir` volume therefore starts a fresh
   `.claude.json` in the `~/.claude` volume — one re-login, once. The old
   volume is left untouched on disk; nothing deletes it for you.
+
+### Why pi needs Node.js
+
+`claude` and `copilot` ship self-contained installers that drop a binary. **pi
+installs itself with `npm`**, so `installPiCli: true` requires **Node.js
+22.19.0 or newer and npm** in the image. Add a node Feature alongside this one:
+
+```jsonc
+"features": {
+  "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+  "ghcr.io/bmingles/devc-tools/agents:0": { "installPiCli": true }
+}
+```
+
+This Feature's `installsAfter` already names `ghcr.io/devcontainers/features/node`
+and `ghcr.io/bmingles/devc-tools/node-nvmrc`, so ordering is handled for you.
+Without a node Feature the build fails naming the requirement, rather than
+producing a container that looks fine until the first `pi`.
+
+Two things `install.sh` has to do for this that are worth knowing, because
+neither is obvious and both are easy to break:
+
+- **It sources nvm itself.** Ordering alone is not enough. The devcontainers
+  node Feature wires nvm into `/etc/bash.bashrc`, and bash sources that file
+  only for _interactive_ shells (`/etc/profile` guards it on `$PS1`). The
+  build-time install runs a non-interactive shell, so node is on disk and
+  invisible to it — `installsAfter` fixes the install _order_, not the `PATH`.
+  The installer script therefore sources `$NVM_DIR/nvm.sh` (falling back to
+  `/usr/local/share/nvm` and `~/.nvm`) when `node` is not already found.
+- **It pins npm's global prefix to `~/.local`.** Under nvm, npm's global prefix
+  is the _active node version's own directory_
+  (`/usr/local/share/nvm/versions/node/<version>`). Left unpinned, `pi` would
+  land there — and drop out of `PATH` the moment
+  [`node-nvmrc`](../node-nvmrc/README.md) switched the container onto a
+  different version for a project's `.nvmrc`, with the idempotency guard
+  (`[ ! -x "$HOME/.local/bin/pi" ]`) never seeing it on a rebuild either.
+  `npm_config_prefix=$HOME/.local` puts it beside `claude` and `copilot`
+  instead, where it is stable across version switches.
+
+The build also refuses a too-old Node.js up front, naming the version it needs
+and the one it found. That gate should never fire with the node Feature at its
+default `"version": "lts"` — it is there for a hand-lowered one, and so that
+the failure is not reported as a network error, which is what pi's own preflight
+exit code would otherwise look like from here.
+
+#### pi and a project's `.nvmrc`
+
+`~/.local/bin/pi` is a symlink to `dist/bundle/cli.js`, whose shebang is
+`#!/usr/bin/env node` — so **pi runs under whatever `node` is first on `PATH` at
+the time you run it, not the one it was installed with.** With
+[`node-nvmrc`](../node-nvmrc/README.md) that is the version your workspace's
+`.nvmrc` pins, because that Feature's `containerEnv` puts its `pin/bin` ahead of
+everything else.
+
+The pin only decides which `node` is found — `pi` itself is still found in
+`~/.local/bin`, so this is a version question, never a "command not found" one:
+
+| `.nvmrc` pins       | Result                                                                      |
+| ------------------- | --------------------------------------------------------------------------- |
+| ≥ 22.19.0 (any LTS) | Works.                                                                      |
+| < 22.19.0           | **pi fails at runtime**, with a raw `SyntaxError`, not a version complaint. |
+
+Measured on pi 0.84.3 under Node 20.20.2:
+
+```
+SyntaxError: The requested module 'node:fs' does not provide an export named 'globSync'
+```
+
+`engines` is enforced by npm at install time, not by node at run time, so
+nothing intercepts this with a readable message. In practice every current LTS
+line satisfies it (`lts/jod` is 22.23.2, `lts/krypton` is 24.20.0) — a project
+would have to pin Node 20 or older to hit it.
+
+There is no fix for this inside the Feature that does not trade one problem for
+another: pinning pi's launcher to the Node it was installed with would decouple
+it from `.nvmrc`, but leaves a dangling interpreter if that version is ever
+removed. If a project must pin an older Node **and** wants pi, run pi from
+outside the container, or give it its own Node via a wrapper on `PATH` ahead of
+`pin/bin`.
 
 ### Why `installCopilotCli` defaults `false`
 
@@ -304,7 +384,9 @@ scenario's own `onCreateCommand`, the same technique
 mount a Feature cannot declare — asserting top-level seed files land as
 symlinks and a seed subdirectory does **not**), `with_copilot`
 (`installCopilotCli: true` puts `copilot` on `PATH` alongside `claude`), and
-`with_pi` (`installPiCli: true` puts `pi` on `PATH` alongside `claude`). None
+`with_pi` (`installPiCli: true` plus a node Feature — it puts `pi` on `PATH`
+alongside `claude`, and is the only scenario that exercises the node prelude
+against a real container, asserting `pi` resolves to `~/.local/bin/pi`). None
 of these scenarios pass a path option, because there are none: `with_seed`
 differs from the default scenario only by what it writes into the seed.
 
