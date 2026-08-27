@@ -556,6 +556,8 @@ Commands:
   config   Configure the dev container for the current project (TUI)
   attach   Attach to the dev container for the current project
   claude   Launch Claude inside the dev container for the current project
+  copilot  Launch GitHub Copilot CLI inside the dev container for the current project
+  pi       Launch pi inside the dev container for the current project
   up       Start the dev container for the current project
   build    Rebuild the dev container for the current project
   exec     Execute a command inside the dev container for the current project
@@ -656,6 +658,44 @@ Usage: devc claude [PATH] [EXTRA_ARGS...]
 Arguments:
   [PATH]         Path to the project (default: current directory)
   [EXTRA_ARGS]   Additional arguments forwarded to Claude
+
+Options:
+  -h, --help     Print help
+```
+
+## `copilot`
+
+Launch the GitHub Copilot CLI inside the dev container for the project in the
+current working directory, creating/starting the container if necessary. Same
+shape as [`claude`](#claude), for the `copilot` binary the
+[`agents` Feature](../../features/agents/README.md) optionally installs
+(`installCopilotCli`).
+
+```text
+Usage: devc copilot [PATH] [EXTRA_ARGS...]
+
+Arguments:
+  [PATH]         Path to the project (default: current directory)
+  [EXTRA_ARGS]   Additional arguments forwarded to Copilot
+
+Options:
+  -h, --help     Print help
+```
+
+## `pi`
+
+Launch the pi coding agent CLI inside the dev container for the project in the
+current working directory, creating/starting the container if necessary. Same
+shape as [`claude`](#claude), for the `pi` binary the
+[`agents` Feature](../../features/agents/README.md) optionally installs
+(`installPiCli`).
+
+```text
+Usage: devc pi [PATH] [EXTRA_ARGS...]
+
+Arguments:
+  [PATH]         Path to the project (default: current directory)
+  [EXTRA_ARGS]   Additional arguments forwarded to pi
 
 Options:
   -h, --help     Print help

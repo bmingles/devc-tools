@@ -29,7 +29,9 @@
     // path is fixed. Preserves current behavior: devc's own Dockerfile used to install
     // Copilot unconditionally, and the Feature's own default is false.
     "ghcr.io/bmingles/devc-tools/agents:0": {
-      "installCopilotCli": true
+      "installClaudeCli": true,
+      "installCopilotCli": true,
+      "installPiCli": true
     },
     // Bare {}, like bash-config's. There is no identityIncludePath left to pass —
     // lfsFilters, lfsSkipSmudge, worktreeRelativePaths, safeDirectory all left at their

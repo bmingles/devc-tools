@@ -35,6 +35,8 @@ devc up      [PATH] [--json]                          Create/start the container
 devc build   [PATH] [--no-cache] [--json]             Recreate the container from scratch
 devc attach  [PATH] [--build] [--no-clear]            Start (creating if needed) and attach a login shell
 devc claude  [PATH] [EXTRA_ARGS...]                   Start and run `claude` (+ forwarded args) in a login shell
+devc copilot [PATH] [EXTRA_ARGS...]                   Start and run `copilot` (+ forwarded args) in a login shell
+devc pi      [PATH] [EXTRA_ARGS...]                   Start and run `pi` (+ forwarded args) in a login shell
 devc exec    [PATH] [--cwd DIR] [--env K=V]... -- CMD Start and run CMD directly (no shell)
 devc mounts  [PATH] [--json]                          List the container's mounts
 devc stop    [PATH]                                   Stop the container
@@ -70,8 +72,9 @@ Notes:
   without the Docker layer cache.
 - `attach --build` forces the same rebuild before attaching; `--no-clear` keeps
   the shell-init output on screen instead of clearing on the first prompt.
-  `attach`/`claude` exit with the attached shell/command's own exit code (e.g.
-  130 on a signal-driven detach); `devc`/`docker` infra failures exit 125.
+  `attach`/`claude`/`copilot`/`pi` exit with the attached shell/command's own
+  exit code (e.g. 130 on a signal-driven detach); `devc`/`docker` infra
+  failures exit 125.
 - `exec` runs the command after `--` directly (no shell) and exits with the
   command's own exit code; `devc`/`docker` infra failures exit 125. `--env` is
   repeatable and a value without `=` is an error (exit 125).
@@ -131,16 +134,17 @@ Notes:
   and its image is given a `<name>:latest` alias tag (both best-effort, never
   fatal).
 
-`attach`/`claude` also propagate the host terminal identity (`TERM`,
+`attach`/`claude`/`copilot`/`pi` also propagate the host terminal identity (`TERM`,
 `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `$TMUX`) and tint the terminal for the
 duration of the attach so a container shell reads as visually distinct from a
 local one.
 
 ### Herdr integration
 
-A `devc attach`/`devc claude` running in a [Herdr](https://herdr.dev) pane
-shows the agent that is actually running **inside** the container — `claude`,
-`copilot`, `codex`, … — with Herdr's own idle/working/blocked status, and
+A `devc attach`/`devc claude`/`devc copilot`/`devc pi` running in a
+[Herdr](https://herdr.dev) pane shows the agent that is actually running
+**inside** the container — `claude`, `copilot`, `pi`, `codex`, … — with
+Herdr's own idle/working/blocked status, and
 shows no agent at all when the container shell is sitting at a bare prompt.
 No flag, no per-project config: it is driven entirely by environment,
 gated on all of:

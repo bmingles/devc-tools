@@ -6,8 +6,8 @@
 #   bash features/agents/test/install_options_test.sh
 #
 # What this cannot cover, because it needs a real container: whether the CLI installers
-# (claude.ai/install.sh, gh.io/copilot-install) actually work, and whether `runuser`/`su` really
-# drop privileges the way the stub here does not even attempt to. Both need
+# (claude.ai/install.sh, gh.io/copilot-install, pi.dev/install.sh) actually work, and whether
+# `runuser`/`su` really drop privileges the way the stub here does not even attempt to. Both need
 # test/run-features-test.sh under Docker. What this DOES pin, against the real install.sh: that
 # the two fixed paths post-create.sh depends on are really created and really named the way it
 # expects, the idempotent-CLI-already-installed skip, and that a failed download fails the build.
@@ -46,6 +46,7 @@ for a in "$@"; do case "$a" in http*) url="$a" ;; esac; done
 case "$url" in
   *claude*) bin=claude ;;
   *copilot*) bin=copilot ;;
+  *pi*) bin=pi ;;
   *) bin=unknown ;;
 esac
 echo "mkdir -p \"\$HOME/.local/bin\"; printf '#!/bin/sh\necho fake-$bin\n' > \"\$HOME/.local/bin/$bin\"; chmod +x \"\$HOME/.local/bin/$bin\""
@@ -73,7 +74,7 @@ chmod +x "$STUBS/runuser"
 # `! command -v claude` guard would find the real one and skip the fake install silently, so every
 # case below would "pass" without curl ever running. Strip those directories out.
 CLEAN_PATH="$PATH"
-for real_bin in claude copilot; do
+for real_bin in claude copilot pi; do
   real_path="$(command -v "$real_bin" 2> /dev/null || true)"
   if [ -n "$real_path" ]; then
     real_dir="$(dirname "$real_path")"
@@ -89,7 +90,7 @@ setup() {
   rm -rf "$CASE"
   mkdir -p "$CASE/share" "$CASE/home"
   : > "$CASE/curl.log"; : > "$CASE/runuser.log"; : > "$CASE/runuser_user.log"
-  env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI \
+  env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI -u INSTALLPICLI \
     SHARE_DIR="$CASE/share" \
     _REMOTE_USER="$(id -un)" _REMOTE_USER_HOME="$CASE/home" \
     FAKE_REMOTE_HOME="$CASE/home" \
@@ -116,6 +117,8 @@ check "claude was installed (curl invoked once)" test "$(wc -l < "$WORK/c1/curl.
 check "claude binary landed under the fake remote HOME" test -x "$WORK/c1/home/.local/bin/claude"
 check "copilot was NOT installed — installCopilotCli defaults false" \
   test ! -e "$WORK/c1/home/.local/bin/copilot"
+check "pi was NOT installed — installPiCli defaults false" \
+  test ! -e "$WORK/c1/home/.local/bin/pi"
 check "the CLI install ran as the configured remote user" \
   grep -qxF "$(id -un)" "$WORK/c1/runuser_user.log"
 
@@ -126,7 +129,16 @@ check "claude installed" test -x "$WORK/c2/home/.local/bin/claude"
 check "copilot installed too" test -x "$WORK/c2/home/.local/bin/copilot"
 check "curl invoked twice (claude, then copilot)" test "$(wc -l < "$WORK/c2/curl.log")" -eq 2
 
-echo "case 3: installClaudeCli=false, installCopilotCli=false — no CLI installed, no curl at all"
+echo "case 2b: installPiCli=true — all three CLIs land"
+setup c2b INSTALLCOPILOTCLI=true INSTALLPICLI=true
+check "install.sh exits 0" test "$status" -eq 0
+check "claude installed" test -x "$WORK/c2b/home/.local/bin/claude"
+check "copilot installed too" test -x "$WORK/c2b/home/.local/bin/copilot"
+check "pi installed too" test -x "$WORK/c2b/home/.local/bin/pi"
+check "curl invoked three times (claude, copilot, pi)" \
+  test "$(wc -l < "$WORK/c2b/curl.log")" -eq 3
+
+echo "case 3: installClaudeCli=false, installCopilotCli=false, installPiCli=false — no CLI installed, no curl at all"
 setup c3 INSTALLCLAUDECLI=false
 check "install.sh exits 0" test "$status" -eq 0
 check "no curl invocation happened" test ! -s "$WORK/c3/curl.log"
@@ -142,7 +154,7 @@ rm -rf "${WORK:?}/c4"
 mkdir -p "$WORK/c4/share" "$WORK/c4/home/.local/bin"
 printf '#!/bin/sh\necho already-there\n' > "$WORK/c4/home/.local/bin/claude"
 chmod +x "$WORK/c4/home/.local/bin/claude"
-env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI \
+env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI -u INSTALLPICLI \
   SHARE_DIR="$WORK/c4/share" _REMOTE_USER="$(id -un)" _REMOTE_USER_HOME="$WORK/c4/home" \
   FAKE_REMOTE_HOME="$WORK/c4/home" CURL_LOG="$WORK/c4/curl.log" RUNUSER_LOG="$WORK/c4/runuser.log" \
   RUNUSER_USER_LOG="$WORK/c4/runuser_user.log" PATH="$STUBS:$CLEAN_PATH" \
@@ -159,7 +171,7 @@ check "install.sh exits non-zero" test "$status" -ne 0
 check "it names the failure" grep -q 'network required' "$WORK/c5/install.err"
 check "no post-create.sh was left half-installed" test ! -f "$HOOK"
 
-echo "case 6: a failed download with both CLIs disabled does not matter — curl is never reached"
+echo "case 6: a failed download with all CLIs disabled does not matter — curl is never reached"
 setup c6 INSTALLCLAUDECLI=false CURL_FAIL=1
 check "install.sh exits 0" test "$status" -eq 0
 

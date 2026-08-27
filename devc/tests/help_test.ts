@@ -23,8 +23,8 @@ Deno.test('topLevelHelp lists every command, the version option, and the footer'
   );
 });
 
-Deno.test('COMMAND_HELP has a Usage block for each of the eleven commands', () => {
-  assertEquals(COMMANDS.length, 11);
+Deno.test('COMMAND_HELP has a Usage block for each of the thirteen commands', () => {
+  assertEquals(COMMANDS.length, 13);
   for (const { name } of COMMANDS) {
     const block = COMMAND_HELP[name];
     assert(block !== undefined, `missing help block for ${name}`);
@@ -52,7 +52,7 @@ Deno.test("helpRequested respects exec's `--` boundary", () => {
 Deno.test('build is listed and documents its own options', () => {
   assertStringIncludes(
     topLevelHelp(),
-    'build    Rebuild the dev container for the current project',
+    'build     Rebuild the dev container for the current project',
   );
   const block = COMMAND_HELP['build'];
   assertStringIncludes(block, '--no-cache');

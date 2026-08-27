@@ -13,5 +13,13 @@
         "installCopilotCli": true
       }
     }
+  },
+  "with_pi": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "agents": {
+        "installPiCli": true
+      }
+    }
   }
 }

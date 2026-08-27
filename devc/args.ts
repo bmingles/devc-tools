@@ -6,7 +6,7 @@ export interface AttachArgs {
   noClear: boolean;
 }
 
-/** Parses `devc attach` / `devc claude` arguments. */
+/** Parses `devc attach` / `devc claude` / `devc copilot` / `devc pi` arguments. */
 export function parseAttachArgs(args: string[]): AttachArgs {
   const rebuild = args.includes('--build');
   const noClear = args.includes('--no-clear');

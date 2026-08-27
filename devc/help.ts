@@ -5,7 +5,7 @@
 /** CLI version. Single source of truth — the compiled binary cannot read `deno.json` at runtime. */
 export const VERSION = '0.1.0';
 
-/** The eleven subcommands, in the order they appear in the top-level `Commands:` list. */
+/** The thirteen subcommands, in the order they appear in the top-level `Commands:` list. */
 export const COMMANDS: { name: string; summary: string }[] = [
   {
     name: 'init',
@@ -22,6 +22,15 @@ export const COMMANDS: { name: string; summary: string }[] = [
   {
     name: 'claude',
     summary: 'Launch Claude inside the dev container for the current project',
+  },
+  {
+    name: 'copilot',
+    summary:
+      'Launch GitHub Copilot CLI inside the dev container for the current project',
+  },
+  {
+    name: 'pi',
+    summary: 'Launch pi inside the dev container for the current project',
   },
   { name: 'up', summary: 'Start the dev container for the current project' },
   {
@@ -103,6 +112,28 @@ export const COMMAND_HELP: Record<string, string> = {
     'Arguments:',
     '  [PATH]         Path to the project (default: current directory)',
     '  [EXTRA_ARGS]   Additional arguments forwarded to Claude',
+    '',
+    'Options:',
+    '  -h, --help     Print help',
+  ].join('\n'),
+
+  copilot: [
+    'Usage: devc copilot [PATH] [EXTRA_ARGS...]',
+    '',
+    'Arguments:',
+    '  [PATH]         Path to the project (default: current directory)',
+    '  [EXTRA_ARGS]   Additional arguments forwarded to Copilot',
+    '',
+    'Options:',
+    '  -h, --help     Print help',
+  ].join('\n'),
+
+  pi: [
+    'Usage: devc pi [PATH] [EXTRA_ARGS...]',
+    '',
+    'Arguments:',
+    '  [PATH]         Path to the project (default: current directory)',
+    '  [EXTRA_ARGS]   Additional arguments forwarded to pi',
     '',
     'Options:',
     '  -h, --help     Print help',

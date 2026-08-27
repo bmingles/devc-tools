@@ -4,8 +4,8 @@
 #
 # That combination is the bare-`{}` case every Feature in this collection has to survive (see
 # .plans/design/devc-feature-split.md): the Claude CLI installs, the seed directory exists and is
-# empty so nothing is linked, ~/.claude.json is folded into ~/.claude, and Copilot is absent
-# (installCopilotCli defaults false).
+# empty so nothing is linked, ~/.claude.json is folded into ~/.claude, and Copilot/pi are absent
+# (installCopilotCli/installPiCli default false).
 #
 # There are no path options to pass — the seed scenario in scenarios.json differs from this one
 # only by what its onCreateCommand writes into the seed, not by configuration.
@@ -31,8 +31,9 @@ check "and is empty — nothing was mounted onto it" bash -c \
 check "claude is on PATH" bash -c "command -v claude"
 check "claude is executable by the remote user" test -x "$(command -v claude)"
 
-# --- Copilot stays absent — installCopilotCli defaults false --------------------------------
+# --- Copilot and pi stay absent — installCopilotCli/installPiCli default false ---------------
 check "copilot is NOT on PATH" bash -c "! command -v copilot"
+check "pi is NOT on PATH" bash -c "! command -v pi"
 
 # --- ~/.claude ownership ---------------------------------------------------------------------
 # install.sh pre-creates it owned by the remote user at build time; post-create.sh's belt-and-

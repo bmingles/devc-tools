@@ -59,9 +59,9 @@ function fail(e: unknown): never {
 }
 
 /**
- * Shared `devc attach` / `devc claude` flow: start (or rebuild) the container
- * for `target`, then attach. When `command` is given (`devc claude`), it runs
- * inside a login shell instead of dropping into an interactive shell.
+ * Shared `devc attach` / `devc claude` / `devc copilot` / `devc pi` flow: start (or rebuild) the
+ * container for `target`, then attach. When `command` is given (`devc claude`/`devc copilot`/
+ * `devc pi`), it runs inside a login shell instead of dropping into an interactive shell.
  */
 async function attach(rawArgs: string[], command?: string): Promise<void> {
   const { target: rawTarget, rebuild, noClear } = parseAttachArgs(rawArgs);
@@ -189,6 +189,14 @@ if (subcommand === 'attach') {
 
 if (subcommand === 'claude') {
   await attach(Deno.args.slice(1), 'claude');
+}
+
+if (subcommand === 'copilot') {
+  await attach(Deno.args.slice(1), 'copilot');
+}
+
+if (subcommand === 'pi') {
+  await attach(Deno.args.slice(1), 'pi');
 }
 
 if (subcommand === 'stop') {

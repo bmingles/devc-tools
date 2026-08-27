@@ -1,13 +1,14 @@
 # agents (devcontainer Feature)
 
 Installs coding-agent CLIs at build time — the **Claude Code CLI**, and optionally
-the **GitHub Copilot CLI** — and at create time links a host config seed into
-`~/.claude` and folds `~/.claude.json` into `~/.claude`, so **one** volume
-captures all of Claude Code's state and **one** host directory supplies all of
-your config. Named for the plural: only two CLIs today, but the install-guard
-shape each one uses (idempotent, remote-user, network-required-or-fail-the-build)
-is meant to take a third without a rename. **Not** the `anthropic.claude-code`
-VS Code extension — see [What this is not](#what-this-is-not).
+the **GitHub Copilot CLI** and the **pi coding agent CLI** — and at create time
+links a host config seed into `~/.claude` and folds `~/.claude.json` into
+`~/.claude`, so **one** volume captures all of Claude Code's state and **one**
+host directory supplies all of your config. Named for the plural: three CLIs
+today, and the install-guard shape each one uses (idempotent, remote-user,
+network-required-or-fail-the-build) is meant to take a fourth without a
+rename. **Not** the `anthropic.claude-code` VS Code extension — see
+[What this is not](#what-this-is-not).
 
 ```jsonc
 "features": {
@@ -43,17 +44,18 @@ symlink into `~/.claude`, with no lifetime of its own. See
 
 At **build time** (as root):
 
-1. Installs the Claude CLI (when `installClaudeCli`, default `true`) and the
-   GitHub Copilot CLI (when `installCopilotCli`, default `false`) — as the
-   **remote user**, not root, into `~/.local/bin`. Installing as root would put
-   the binary somewhere the remote user cannot later update (`claude`/`copilot
-   update`) — the same reason
+1. Installs the Claude CLI (when `installClaudeCli`, default `true`), the
+   GitHub Copilot CLI (when `installCopilotCli`, default `false`), and the pi
+   coding agent CLI (when `installPiCli`, default `false`) — as the **remote
+   user**, not root, into `~/.local/bin`. Installing as root would put the
+   binary somewhere the remote user cannot later update (`claude`/`copilot
+   update`/`pi update`) — the same reason
    [`devc-core/default/Dockerfile`](../../devc-core/default/Dockerfile) switches
    `USER` before its own two equivalent `RUN` lines, which this Feature copies
    the install guards from verbatim. Idempotent: a rebuild does not re-download
-   when the binary is already there. **Network is required** when either
-   install option is true — a failed download fails the build, rather than
-   leaving a container that looks fine until the first `claude`.
+   when the binary is already there. **Network is required** when any install
+   option is true — a failed download fails the build, rather than leaving a
+   container that looks fine until the first `claude`.
 2. Pre-creates `$_REMOTE_USER_HOME/.claude` owned by the remote user. See
    [The volume question](#the-volume-question) for why.
 3. Pre-creates the seed directory, empty. It is this Feature's published
@@ -87,6 +89,7 @@ worth an unbootable container.
 | ------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
 | `installClaudeCli`  | `true`  | Install the Claude Code CLI at build time, as the remote user.                                           |
 | `installCopilotCli` | `false` | Install the GitHub Copilot CLI too. Defaults false — see [below](#why-installcopilotcli-defaults-false). |
+| `installPiCli`      | `false` | Install the pi coding agent CLI too. Defaults false, same reasoning as `installCopilotCli`.               |
 
 That is the whole option surface.
 
@@ -153,7 +156,8 @@ devc's own baseline installs both CLIs unconditionally today, and will pass
 named and scoped for agent CLIs plural, a consumer who enables it for Claude
 should not silently get a second vendor's CLI too — each install stays
 opt-in per CLI, so the default here is the narrower one and devc opts in
-explicitly.
+explicitly. `installPiCli` defaults `false` for the identical reason: enabling
+this Feature for Claude must not silently install a third vendor's CLI either.
 
 ## What a consumer mounts
 
@@ -293,14 +297,15 @@ bash features/agents/test/run-features-test.sh
 The default scenario (`test.sh`) is the bare `{}` case: `claude` on `PATH` and
 executable by the remote user, `~/.claude` owned by the remote user, an empty
 seed directory with nothing linked out of it, `~/.claude.json` a symlink into
-`~/.claude` reading back `{}`, and `copilot` absent. `test/scenarios.json` adds
-`with_seed` (a populated seed written into the fixed container path by the
+`~/.claude` reading back `{}`, and `copilot`/`pi` absent. `test/scenarios.json`
+adds `with_seed` (a populated seed written into the fixed container path by the
 scenario's own `onCreateCommand`, the same technique
 `git-container-config`'s `mounted_identity` scenario uses to stand in for a
 mount a Feature cannot declare — asserting top-level seed files land as
-symlinks and a seed subdirectory does **not**) and `with_copilot`
-(`installCopilotCli: true` puts `copilot` on `PATH` alongside `claude`).
-Neither scenario passes a path option, because there are none: `with_seed`
+symlinks and a seed subdirectory does **not**), `with_copilot`
+(`installCopilotCli: true` puts `copilot` on `PATH` alongside `claude`), and
+`with_pi` (`installPiCli: true` puts `pi` on `PATH` alongside `claude`). None
+of these scenarios pass a path option, because there are none: `with_seed`
 differs from the default scenario only by what it writes into the seed.
 
 ## Publishing

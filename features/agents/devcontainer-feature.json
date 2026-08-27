@@ -1,8 +1,8 @@
 {
   "id": "agents",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "name": "Agent CLI config",
-  "description": "Installs coding-agent CLIs at build time — the Claude Code CLI, and optionally the GitHub Copilot CLI, with room for more to join the same install-guard shape later — and at create time points ~/.claude at one fixed seed directory and folds ~/.claude.json into ~/.claude so a single volume captures all of Claude Code's state. No path options: the seed is always /usr/local/share/devc-features/agents/claude-seed, the one thing a consumer decides is what to bind-mount onto it. Declares no mounts: whether `${localWorkspaceFolderBasename}` substitutes inside a Feature's own `mounts` is unmeasured, so the per-workspace volume stays a one-line paste from the README rather than a Feature declaration that risks one shared volume across every project.",
+  "description": "Installs coding-agent CLIs at build time — the Claude Code CLI, and optionally the GitHub Copilot CLI and the pi coding agent CLI, with room for more to join the same install-guard shape later — and at create time points ~/.claude at one fixed seed directory and folds ~/.claude.json into ~/.claude so a single volume captures all of Claude Code's state. No path options: the seed is always /usr/local/share/devc-features/agents/claude-seed, the one thing a consumer decides is what to bind-mount onto it. Declares no mounts: whether `${localWorkspaceFolderBasename}` substitutes inside a Feature's own `mounts` is unmeasured, so the per-workspace volume stays a one-line paste from the README rather than a Feature declaration that risks one shared volume across every project.",
   "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/agents",
   "licenseURL": "https://github.com/bmingles/devc-tools/blob/main/LICENSE",
   "options": {
@@ -15,6 +15,11 @@
       "type": "boolean",
       "default": false,
       "description": "Install the GitHub Copilot CLI at build time, same shape as installClaudeCli. Defaults false: each agent CLI stays opt-in on its own, so enabling this Feature for Claude does not silently install a second vendor's CLI too."
+    },
+    "installPiCli": {
+      "type": "boolean",
+      "default": false,
+      "description": "Install the pi coding agent CLI at build time, same shape as installClaudeCli. Defaults false: each agent CLI stays opt-in on its own, so enabling this Feature for Claude does not silently install a third vendor's CLI too."
     }
   },
   "postCreateCommand": "bash /usr/local/share/devc-features/agents/post-create.sh"

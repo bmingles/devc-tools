@@ -40,6 +40,7 @@ die() {
 # trusted from the manifest so the script also runs standalone.
 INSTALL_CLAUDE_CLI_OPT="${INSTALLCLAUDECLI:-true}"
 INSTALL_COPILOT_CLI_OPT="${INSTALLCOPILOTCLI:-false}"
+INSTALL_PI_CLI_OPT="${INSTALLPICLI:-false}"
 
 # /usr/local/share/devc-features/<id>/ is the Feature namespace. /usr/local/share/devc/ is
 # devc's own baseline namespace and no Feature writes into it — not sharing the prefix is what
@@ -98,6 +99,9 @@ fi
 if [ "$INSTALL_COPILOT_CLI_OPT" = true ]; then
   install_cli Copilot copilot https://gh.io/copilot-install
 fi
+if [ "$INSTALL_PI_CLI_OPT" = true ]; then
+  install_cli Pi pi https://pi.dev/install.sh
+fi
 
 # --- pre-create ~/.claude, owned by the remote user ---------------------------------------------
 # See the top-of-file comment on open question 3. Runs even when CLAUDE_DIR will be immediately
@@ -122,4 +126,5 @@ chmod 0755 "$SHARE_DIR/post-create.sh"
 
 echo "agents: create-time script installed at $SHARE_DIR/post-create.sh"
 echo "agents: claudeDir='$CLAUDE_DIR' seedDir='$SHARE_DIR/claude-seed'" \
-  "installClaudeCli=$INSTALL_CLAUDE_CLI_OPT installCopilotCli=$INSTALL_COPILOT_CLI_OPT"
+  "installClaudeCli=$INSTALL_CLAUDE_CLI_OPT installCopilotCli=$INSTALL_COPILOT_CLI_OPT" \
+  "installPiCli=$INSTALL_PI_CLI_OPT"
