@@ -22,5 +22,6 @@
       "description": "Install the pi coding agent CLI at build time, same shape as installClaudeCli. Defaults false: each agent CLI stays opt-in on its own, so enabling this Feature for Claude does not silently install a third vendor's CLI too."
     }
   },
+  "installsAfter": ["ghcr.io/bmingles/devc-tools/node-nvmrc"],
   "postCreateCommand": "bash /usr/local/share/devc-features/agents/post-create.sh"
 }
