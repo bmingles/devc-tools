@@ -31,7 +31,7 @@
     "ghcr.io/bmingles/devc-tools/agents:0": {
       "installClaudeCli": true,
       "installCopilotCli": false,
-      "installPiCli": false
+      "installPiCli": true
     },
     // Bare {}, like bash-config's. There is no identityIncludePath left to pass —
     // lfsFilters, lfsSkipSmudge, worktreeRelativePaths, safeDirectory all left at their
