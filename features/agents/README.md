@@ -1,13 +1,17 @@
 # agents (devcontainer Feature)
 
 Installs coding-agent CLIs at build time — the **Claude Code CLI**, and optionally
-the **GitHub Copilot CLI** and the **pi coding agent CLI** — and at create time
-links a host config seed into `~/.claude` and folds `~/.claude.json` into
-`~/.claude`, so **one** volume captures all of Claude Code's state and **one**
-host directory supplies all of your config. Named for the plural: three CLIs
-today, and the install-guard shape each one uses (idempotent, remote-user,
-network-required-or-fail-the-build) is meant to take a fourth without a
-rename. **Not** the `anthropic.claude-code` VS Code extension — see
+the **GitHub Copilot CLI**, the **pi coding agent CLI** and the **Herdr terminal
+multiplexer** — and at create time links a host config seed into `~/.claude` and
+folds `~/.claude.json` into `~/.claude`, so **one** volume captures all of Claude
+Code's state and **one** host directory supplies all of your config. It can also
+install a declared set of **pi packages** and **Herdr plugins** at build time, for
+the same reason the CLIs themselves install at build time rather than create time
+— see [Why `piPackages`/`herdrPlugins` run at build
+time](#why-pipackagesherdrplugins-run-at-build-time). Named for the plural: four
+CLIs today, and the install-guard shape each one uses (idempotent, remote-user,
+network-required-or-fail-the-build) is meant to take a fifth without a rename.
+**Not** the `anthropic.claude-code` VS Code extension — see
 [What this is not](#what-this-is-not).
 
 ```jsonc
@@ -45,21 +49,27 @@ symlink into `~/.claude`, with no lifetime of its own. See
 At **build time** (as root):
 
 1. Installs the Claude CLI (when `installClaudeCli`, default `true`), the
-   GitHub Copilot CLI (when `installCopilotCli`, default `false`), and the pi
-   coding agent CLI (when `installPiCli`, default `false`) — as the **remote
-   user**, not root, into `~/.local/bin`. pi has an extra prerequisite the
-   other two do not — see [Why pi needs Node.js](#why-pi-needs-nodejs).
-   Installing as root would put the binary somewhere the remote user cannot
-   later update (`claude`/`copilot update`/`pi update`) — the same reason
+   GitHub Copilot CLI (when `installCopilotCli`, default `false`), the pi
+   coding agent CLI (when `installPiCli`, default `false`), and Herdr (when
+   `installHerdr`, default `false`) — as the **remote user**, not root, into
+   `~/.local/bin`. pi has an extra prerequisite the others do not — see
+   [Why pi needs Node.js](#why-pi-needs-nodejs); Herdr ships a static binary
+   and needs nothing extra. Installing as root would put the binary somewhere
+   the remote user cannot later update (`claude`/`copilot update`/`pi update`/
+   `herdr update`) — the same reason
    [`devc-core/default/Dockerfile`](../../devc-core/default/Dockerfile) switches
    `USER` before its own two equivalent `RUN` lines, which this Feature copies
    the install guards from verbatim. Idempotent: a rebuild does not re-download
    when the binary is already there. **Network is required** when any install
    option is true — a failed download fails the build, rather than leaving a
    container that looks fine until the first `claude`.
-2. Pre-creates `$_REMOTE_USER_HOME/.claude` owned by the remote user. See
+2. Installs any `piPackages` (when `installPiCli` is also true) and any
+   `herdrPlugins` (when `installHerdr` is also true) — see
+   [Why `piPackages`/`herdrPlugins` run at build
+   time](#why-pipackagesherdrplugins-run-at-build-time).
+3. Pre-creates `$_REMOTE_USER_HOME/.claude` owned by the remote user. See
    [The volume question](#the-volume-question) for why.
-3. Pre-creates the seed directory, empty. It is this Feature's published
+4. Pre-creates the seed directory, empty. It is this Feature's published
    surface — the same shape as `bash-config`'s `dirs/user`.
 
 At **create time** (as the remote user, before any user `postCreateCommand`),
@@ -86,11 +96,14 @@ Every skip path exits `0`. A `postCreateCommand` that fails aborts container
 creation, and none of these skips (an empty seed, ownership already correct) is
 worth an unbootable container.
 
-| Option              | Default | Meaning                                                                                                                                                            |
-| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `installClaudeCli`  | `true`  | Install the Claude Code CLI at build time, as the remote user.                                                                                                     |
-| `installCopilotCli` | `false` | Install the GitHub Copilot CLI too. Defaults false — see [below](#why-installcopilotcli-defaults-false).                                                           |
-| `installPiCli`      | `false` | Install the pi coding agent CLI too. Defaults false, same reasoning as `installCopilotCli`. **Requires Node.js in the image** — see [below](#why-pi-needs-nodejs). |
+| Option              | Default | Meaning                                                                                                                                                                                        |
+| ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `installClaudeCli`  | `true`  | Install the Claude Code CLI at build time, as the remote user.                                                                                                                                    |
+| `installCopilotCli` | `false` | Install the GitHub Copilot CLI too. Defaults false — see [below](#why-installcopilotcli-defaults-false).                                                                                          |
+| `installPiCli`      | `false` | Install the pi coding agent CLI too. Defaults false, same reasoning as `installCopilotCli`. **Requires Node.js in the image** — see [below](#why-pi-needs-nodejs).                               |
+| `installHerdr`      | `false` | Install the Herdr terminal multiplexer too. Defaults false, same reasoning as `installCopilotCli`. Ships a static binary — no extra prerequisite.                                                |
+| `piPackages`        | `""`    | Comma-separated pi package sources to install at build time. **Requires `installPiCli: true`** — see [below](#why-pipackagesherdrplugins-run-at-build-time).                                     |
+| `herdrPlugins`      | `""`    | Comma-separated Herdr plugins to install at build time, in GitHub shorthand (`owner/repo[/subdir]`). **Requires `installHerdr: true`** — see [below](#why-pipackagesherdrplugins-run-at-build-time). |
 
 That is the whole option surface.
 
@@ -238,6 +251,68 @@ should not silently get a second vendor's CLI too — each install stays
 opt-in per CLI, so the default here is the narrower one and devc opts in
 explicitly. `installPiCli` defaults `false` for the identical reason: enabling
 this Feature for Claude must not silently install a third vendor's CLI either.
+`installHerdr` defaults `false` for the same reason again — a fourth tool,
+still opt-in on its own.
+
+### Why `piPackages`/`herdrPlugins` run at build time
+
+Both options exist because of one shared fact: **neither `~/.pi` nor
+`~/.config/herdr` is a mount.** `pi install <source>` writes
+`~/.pi/agent/settings.json` and clones or links the package; `herdr plugin
+install <entry> --yes` registers the plugin under `~/.config/herdr`. Anything
+either command does in a **running** container lives only in that container's
+writable layer and is gone on the next rebuild. Installing them here, at
+**build** time, is the only way either survives one — the same reasoning that
+already puts the CLIs themselves in `install.sh` rather than
+`post-create.sh`.
+
+Both are plain comma-separated lists, split and trimmed the same way (empty
+entries — from a leading/trailing/doubled comma or stray whitespace — are
+silently dropped, so a messy value is harmless rather than a build failure):
+
+```jsonc
+"features": {
+  "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+  "ghcr.io/bmingles/devc-tools/agents:0": {
+    "installPiCli": true,
+    "piPackages": "npm:@andrewjacop/pi-herdr,git:github.com/bmingles/pi-dev-extensions@main",
+    "installHerdr": true,
+    "herdrPlugins": "bmingles/herdr-plugins/agent-caffeinate"
+  }
+}
+```
+
+Each has its own hard dependency, and each is a **build failure**, not a
+silent skip, when it is missing — a silent skip would leave a container that
+looks configured (the option is set) and installs nothing, which is worse
+than refusing to build:
+
+- `piPackages` requires `installPiCli: true`. Each entry is passed to
+  `pi install <entry>` as one argument, unparsed — pi itself accepts `npm:`,
+  `git:`, `https://`, `ssh://` and local-path sources, and this option does
+  not validate the form.
+- `herdrPlugins` requires `installHerdr: true`. Each entry is installed with
+  `herdr plugin install <entry> --yes` — **GitHub shorthand only**
+  (`owner/repo[/subdir]`). Herdr's installer accepts nothing else, so a
+  `git:`-style entry here fails with Herdr's own error, not this Feature's.
+  `--yes` is required because `plugin install` otherwise shows a trust
+  preview meant for an interactive terminal, and there is none at build time.
+  Installing also needs `git` and network in the image; a build that fails
+  here says so. Plugin registration is **global to the user, not per
+  session**, so one build-time install covers every session in the
+  container — and if the plugin declares a `min_herdr_version` newer than
+  the Herdr this Feature installed, the install (and therefore the build)
+  fails there too, which is expected, not a bug in this option.
+
+Both are idempotent in practice: reinstalling an already-installed pi
+package is a genuine no-op (verified — npm reports "up to date" and
+`~/.pi/agent/settings.json` gains no duplicate entry), so a rebuild does not
+pay for one.
+
+**A volume mounted at `~/.pi` (or `~/.config/herdr`) shadows whatever this
+installed**, the same footgun this Feature already documents for `~/.claude`
+in [The volume question](#the-volume-question) — there is no `piDir` or
+equivalent option to point either install somewhere else.
 
 ## What a consumer mounts
 
@@ -363,7 +438,10 @@ parameterizing assignments, which is the whole point of the fence.
 `install_options_test.sh` runs the real `install.sh` with `curl` and `runuser`
 stubbed on `PATH` (no network, no real privilege switch — that half needs
 Docker), covering the two fixed paths, the already-installed idempotent skip,
-and that a failed download fails the build. `claude_json_test.sh` runs the
+that a failed download fails the build, the `piPackages`/`herdrPlugins`
+comma-splitting (trailing commas and stray whitespace included), and both
+`die` paths (`piPackages` without `installPiCli`, `herdrPlugins` without
+`installHerdr`). `claude_json_test.sh` runs the
 real, installed `post-create.sh` against a temp `HOME` with `stat`/`sudo`
 stubbed, covering ownership repair and every `~/.claude.json` case including
 the move-don't-delete and repoint-a-stale-link paths.
@@ -377,24 +455,34 @@ bash features/agents/test/run-features-test.sh
 The default scenario (`test.sh`) is the bare `{}` case: `claude` on `PATH` and
 executable by the remote user, `~/.claude` owned by the remote user, an empty
 seed directory with nothing linked out of it, `~/.claude.json` a symlink into
-`~/.claude` reading back `{}`, and `copilot`/`pi` absent. `test/scenarios.json`
-adds `with_seed` (a populated seed written into the fixed container path by the
-scenario's own `onCreateCommand`, the same technique
-`git-container-config`'s `mounted_identity` scenario uses to stand in for a
-mount a Feature cannot declare — asserting top-level seed files land as
-symlinks and a seed subdirectory does **not**), `with_copilot`
-(`installCopilotCli: true` puts `copilot` on `PATH` alongside `claude`), and
-`with_pi` (`installPiCli: true` plus a node Feature — it puts `pi` on `PATH`
-alongside `claude`, and is the only scenario that exercises the node prelude
-against a real container, asserting `pi` resolves to `~/.local/bin/pi`). None
-of these scenarios pass a path option, because there are none: `with_seed`
-differs from the default scenario only by what it writes into the seed.
+`~/.claude` reading back `{}`, and `copilot`/`pi`/`herdr` all absent with no
+pi packages or Herdr plugins installed — the assertion that catches any of
+these defaults flipping. `test/scenarios.json` adds `with_seed` (a populated
+seed written into the fixed container path by the scenario's own
+`onCreateCommand`, the same technique `git-container-config`'s
+`mounted_identity` scenario uses to stand in for a mount a Feature cannot
+declare — asserting top-level seed files land as symlinks and a seed
+subdirectory does **not**), `with_copilot` (`installCopilotCli: true` puts
+`copilot` on `PATH` alongside `claude`), `with_pi` (`installPiCli: true` plus
+a node Feature — it puts `pi` on `PATH` alongside `claude`, and is the only
+scenario that exercises the node prelude against a real container, asserting
+`pi` resolves to `~/.local/bin/pi`), `with_herdr` (`installHerdr: true` puts
+`herdr` on `PATH`, at `~/.local/bin/herdr`, with `herdr --version` working),
+`with_pi_packages` (`installPiCli: true` plus a node Feature plus one
+`piPackages` entry — asserts the package appears in `pi list` and
+`~/.pi/agent/settings.json` exists, owned by the remote user), and
+`with_herdr_plugins` (`installHerdr: true` plus one `herdrPlugins` entry —
+asserts the plugin appears in `herdr plugin list`). The latter two hit the
+network by design, as `with_pi` already does. None of these scenarios pass a
+path option, because there are none: `with_seed` differs from the default
+scenario only by what it writes into the seed.
 
 ## Publishing
 
 This Feature **is** on
 [`features/PUBLISH_ALLOWLIST.txt`](../PUBLISH_ALLOWLIST.txt) and publishes to
 ghcr.io. `0.2.0` removes three options, which is breaking for anyone who set
-them — the floating `:0` tag carries it. See
+them — the floating `:0` tag carries it. `0.4.0` adds `installHerdr`,
+`piPackages` and `herdrPlugins` — backwards compatible, so a minor bump. See
 [../README.md#the-publish-allowlist](../README.md#the-publish-allowlist) for
 what that gate is and isn't.

@@ -1,8 +1,8 @@
 {
   "id": "agents",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "name": "Agent CLI config",
-  "description": "Installs coding-agent CLIs at build time — the Claude Code CLI, and optionally the GitHub Copilot CLI and the pi coding agent CLI, with room for more to join the same install-guard shape later — and at create time points ~/.claude at one fixed seed directory and folds ~/.claude.json into ~/.claude so a single volume captures all of Claude Code's state. No path options: the seed is always /usr/local/share/devc-features/agents/claude-seed, the one thing a consumer decides is what to bind-mount onto it. Declares no mounts: whether `${localWorkspaceFolderBasename}` substitutes inside a Feature's own `mounts` is unmeasured, so the per-workspace volume stays a one-line paste from the README rather than a Feature declaration that risks one shared volume across every project.",
+  "description": "Installs coding-agent CLIs at build time — the Claude Code CLI, and optionally the GitHub Copilot CLI, the pi coding agent CLI and the Herdr terminal multiplexer, with room for more to join the same install-guard shape later — and at create time points ~/.claude at one fixed seed directory and folds ~/.claude.json into ~/.claude so a single volume captures all of Claude Code's state. Also optionally installs a declared set of pi packages and Herdr plugins at build time, since neither ~/.pi nor ~/.config/herdr is a mount. No path options: the seed is always /usr/local/share/devc-features/agents/claude-seed, the one thing a consumer decides is what to bind-mount onto it. Declares no mounts: whether `${localWorkspaceFolderBasename}` substitutes inside a Feature's own `mounts` is unmeasured, so the per-workspace volume stays a one-line paste from the README rather than a Feature declaration that risks one shared volume across every project.",
   "documentationURL": "https://github.com/bmingles/devc-tools/tree/main/features/agents",
   "licenseURL": "https://github.com/bmingles/devc-tools/blob/main/LICENSE",
   "options": {
@@ -20,6 +20,21 @@
       "type": "boolean",
       "default": false,
       "description": "Install the pi coding agent CLI at build time, same shape as installClaudeCli. Defaults false: each agent CLI stays opt-in on its own, so enabling this Feature for Claude does not silently install a third vendor's CLI too. Unlike the other two, pi installs itself with npm, so this option requires Node.js 22.19.0 or newer and npm in the image — add a node Feature alongside this one (installsAfter already orders this Feature behind it). The binary lands in ~/.local/bin beside claude and copilot, not in the active nvm node version's directory."
+    },
+    "installHerdr": {
+      "type": "boolean",
+      "default": false,
+      "description": "Install the Herdr terminal multiplexer at build time, same shape as installClaudeCli. Defaults false: each tool stays opt-in on its own, so enabling this Feature for Claude does not silently install another vendor's tool too. Ships a static binary — no Node.js prerequisite. Herdr's config and plugin state (~/.config/herdr, ~/.local/state/herdr) are not mounts, so they are baked into the image at build time and are container-local at run time — a Herdr session does not outlive its container, but plugins installed via herdrPlugins do."
+    },
+    "piPackages": {
+      "type": "string",
+      "default": "",
+      "description": "Comma-separated pi package sources to install at build time, e.g. 'npm:@andrewjacop/pi-herdr,git:github.com/bmingles/pi-dev-extensions@main'. Requires installPiCli — a non-empty value with installPiCli false fails the build. Empty (the default) installs nothing. Each entry is passed to `pi install <entry>` as-is; pi accepts npm:, git:, https://, ssh:// and local-path sources, and this option does not parse or validate the form. Runs at build time because ~/.pi is not a mount — a `pi install` done in a live container is lost on the next rebuild. A volume later mounted at ~/.pi shadows everything this option installed, the same footgun this Feature already documents for ~/.claude."
+    },
+    "herdrPlugins": {
+      "type": "string",
+      "default": "",
+      "description": "Comma-separated Herdr plugins to install at build time, in GitHub shorthand only (owner/repo[/subdir]), e.g. 'bmingles/herdr-plugins/agent-caffeinate'. Requires installHerdr — a non-empty value with installHerdr false fails the build. Empty (the default) installs nothing. Installed with `herdr plugin install <entry> --yes`; needs git and network at build time. Plugin registration is global to the user, not per session, so a build-time install is well-defined — one registration, every session in the container. A plugin whose min_herdr_version exceeds the installed Herdr version fails the install, and therefore the build."
     }
   },
   "installsAfter": [

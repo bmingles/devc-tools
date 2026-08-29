@@ -48,15 +48,26 @@ for a in "$@"; do case "$a" in http*) url="$a" ;; esac; done
 case "$url" in
   *claude*) bin=claude ;;
   *copilot*) bin=copilot ;;
+  *herdr*) bin=herdr ;;
   *pi*) bin=pi ;;
   *) bin=unknown ;;
 esac
 # The emitted script runs in the installer's own environment, so having it record what it was
 # handed is how the node prelude's two guarantees — node on PATH, npm's global prefix pinned to
 # ~/.local — get asserted without a real installer.
-echo "printf '$bin npm_config_prefix=%s\\n' \"\$npm_config_prefix\" >> \"\$INSTALLER_ENV_LOG\""
-echo "printf '$bin node=%s\\n' \"\$(command -v node || echo none)\" >> \"\$INSTALLER_ENV_LOG\""
-echo "mkdir -p \"\$HOME/.local/bin\"; printf '#!/bin/sh\necho fake-$bin\n' > \"\$HOME/.local/bin/$bin\"; chmod +x \"\$HOME/.local/bin/$bin\""
+#
+# The fake binary it drops also logs its own future invocations to $CLI_INVOKE_LOG (when set)
+# and exits with $FAKE_BIN_EXIT (default 0) — reused by the piPackages/herdrPlugins cases below
+# as the `pi`/`herdr` that install_pi_packages/install_herdr_plugins go on to invoke by bare name
+# in a *later*, separate run_as_remote_user call, once this one has dropped it into
+# $HOME/.local/bin.
+cat << SCRIPT
+printf '$bin npm_config_prefix=%s\\n' "\$npm_config_prefix" >> "\$INSTALLER_ENV_LOG"
+printf '$bin node=%s\\n' "\$(command -v node || echo none)" >> "\$INSTALLER_ENV_LOG"
+mkdir -p "\$HOME/.local/bin"
+printf '#!/bin/sh\necho "$bin \$*" >> "\${CLI_INVOKE_LOG:-/dev/null}"\nexit "\${FAKE_BIN_EXIT:-0}"\n' > "\$HOME/.local/bin/$bin"
+chmod +x "\$HOME/.local/bin/$bin"
+SCRIPT
 CURL
 chmod +x "$STUBS/curl"
 
@@ -71,17 +82,23 @@ while [ $# -gt 0 ]; do
   esac
 done
 echo "$user" >> "$RUNUSER_USER_LOG"
-HOME="$FAKE_REMOTE_HOME" PATH="$PATH" bash -c "$cmd"
+# A real `runuser -l`/`su -` starts a login shell, and a login shell on a devcontainers base
+# image sources ~/.profile, which adds ~/.local/bin to PATH once that directory exists (Ubuntu's
+# stock .profile does exactly this). This stub does not source any profile, so it approximates
+# that one effect directly — the one later steps in this suite (piPackages, herdrPlugins) depend
+# on: a CLI installed in an earlier run_as_remote_user call must be findable by bare name in a
+# later one, the same as it would be in a real container.
+HOME="$FAKE_REMOTE_HOME" PATH="$FAKE_REMOTE_HOME/.local/bin:$PATH" bash -c "$cmd"
 RUNUSER
 chmod +x "$STUBS/runuser"
 
-# This devcontainer has a real `claude` (and possibly `copilot`) already on PATH — this file IS
-# this Feature's own test suite, run inside a container built from an `agents`-like setup.
+# This devcontainer has a real `claude` (and possibly `copilot`/`pi`) already on PATH — this file
+# IS this Feature's own test suite, run inside a container built from an `agents`-like setup.
 # Left in the PATH handed down to install.sh, the installer's own idempotent
 # `! command -v claude` guard would find the real one and skip the fake install silently, so every
 # case below would "pass" without curl ever running. Strip those directories out.
 CLEAN_PATH="$PATH"
-for real_bin in claude copilot pi; do
+for real_bin in claude copilot pi herdr; do
   real_path="$(command -v "$real_bin" 2> /dev/null || true)"
   if [ -n "$real_path" ]; then
     real_dir="$(dirname "$real_path")"
@@ -134,15 +151,17 @@ setup() {
   : > "$CASE/curl.log"; : > "$CASE/runuser.log"; : > "$CASE/runuser_user.log"
   : > "$CASE/installer_env.log"
   env -u INSTALLCLAUDECLI -u INSTALLCOPILOTCLI -u INSTALLPICLI \
+    -u INSTALLHERDR -u PIPACKAGES -u HERDRPLUGINS \
     SHARE_DIR="$CASE/share" \
     _REMOTE_USER="$(id -un)" _REMOTE_USER_HOME="$CASE/home" \
     FAKE_REMOTE_HOME="$CASE/home" \
     CURL_LOG="$CASE/curl.log" RUNUSER_LOG="$CASE/runuser.log" RUNUSER_USER_LOG="$CASE/runuser_user.log" \
-    INSTALLER_ENV_LOG="$CASE/installer_env.log" \
-    PATH="$STUBS:$CLEAN_PATH" \
+    INSTALLER_ENV_LOG="$CASE/installer_env.log" CLI_INVOKE_LOG="$CASE/invoke.log" \
+    PATH="${CASE_PATH:-$STUBS:$CLEAN_PATH}" \
     "$@" sh "$FEATURE_DIR/install.sh" > "$CASE/install.log" 2> "$CASE/install.err"
   status=$?
   HOOK="$CASE/share/post-create.sh"
+  INVOKE_LOG="$CASE/invoke.log"
 }
 
 echo "case 1: bare install — defaults"
@@ -289,6 +308,70 @@ check "no post-create.sh was left half-installed" test ! -f "$HOOK"
 echo "case 6: a failed download with all CLIs disabled does not matter — curl is never reached"
 setup c6 INSTALLCLAUDECLI=false CURL_FAIL=1
 check "install.sh exits 0" test "$status" -eq 0
+
+echo "case 7: piPackages empty (the default) with installPiCli=true — a no-op, no pi invocation"
+setup c7 INSTALLPICLI=true
+check "install.sh exits 0" test "$status" -eq 0
+check "pi CLI itself still installed" test -x "$WORK/c7/home/.local/bin/pi"
+
+echo "case 8: piPackages set, installPiCli left at its default false — a hard error, not a silent skip"
+setup c8 PIPACKAGES=npm:some-package
+check "install.sh exits non-zero" test "$status" -ne 0
+check "the error names piPackages" grep -q 'piPackages' "$WORK/c8/install.err"
+check "and names installPiCli" grep -q 'installPiCli' "$WORK/c8/install.err"
+check "no post-create.sh was left half-installed" test ! -f "$WORK/c8/share/post-create.sh"
+check "the gate ran before any download" test ! -s "$WORK/c8/curl.log"
+
+echo "case 9: herdrPlugins set, installHerdr left at its default false — a hard error, not a silent skip"
+setup c9 HERDRPLUGINS=owner/repo
+check "install.sh exits non-zero" test "$status" -ne 0
+check "the error names herdrPlugins" grep -q 'herdrPlugins' "$WORK/c9/install.err"
+check "and names installHerdr" grep -q 'installHerdr' "$WORK/c9/install.err"
+check "the gate ran before any download" test ! -s "$WORK/c9/curl.log"
+
+echo "case 10: piPackages with installPiCli=true — comma-split, trimmed, empties dropped, each installed"
+# Deliberately messy: leading/trailing whitespace around entries, a doubled comma, and a
+# trailing comma — all of which must collapse to exactly the two real entries, in order. The
+# runuser stub's ~/.local/bin addition (see its definition above) is what lets the pi installed
+# by this same install.sh run be found by bare name for the piPackages step that follows it.
+setup c10 INSTALLPICLI=true \
+  PIPACKAGES=" npm:@andrewjacop/pi-herdr ,,git:github.com/bmingles/pi-dev-extensions@main, "
+check "install.sh exits 0" test "$status" -eq 0
+check "pi CLI itself was installed first" test -x "$WORK/c10/home/.local/bin/pi"
+check "exactly two pi installs ran — the empty/whitespace-only entries were dropped" \
+  test "$(grep -c '^pi ' "$INVOKE_LOG")" -eq 2
+check "the first entry was trimmed before reaching pi" \
+  grep -qxF 'pi install npm:@andrewjacop/pi-herdr' "$INVOKE_LOG"
+check "the second entry was trimmed too, as one argument" \
+  grep -qxF 'pi install git:github.com/bmingles/pi-dev-extensions@main' "$INVOKE_LOG"
+
+echo "case 11: piPackages install fails — the build fails, naming it"
+setup c11 FAKE_BIN_EXIT=1 INSTALLPICLI=true PIPACKAGES=npm:whatever
+check "install.sh exits non-zero" test "$status" -ne 0
+check "it names piPackages in the failure" grep -q 'piPackages install failed' "$WORK/c11/install.err"
+
+echo "case 12: herdrPlugins with installHerdr=true — comma-split, trimmed, each installed with --yes"
+setup c12 INSTALLHERDR=true \
+  HERDRPLUGINS=" bmingles/herdr-plugins/agent-caffeinate , owner/repo/sub,"
+check "install.sh exits 0" test "$status" -eq 0
+check "herdr CLI itself was installed first" test -x "$WORK/c12/home/.local/bin/herdr"
+check "exactly two plugin installs ran" test "$(grep -c '^herdr ' "$INVOKE_LOG")" -eq 2
+check "the first plugin was trimmed and installed with --yes" \
+  grep -qxF 'herdr plugin install bmingles/herdr-plugins/agent-caffeinate --yes' "$INVOKE_LOG"
+check "the second plugin was trimmed too" \
+  grep -qxF 'herdr plugin install owner/repo/sub --yes' "$INVOKE_LOG"
+
+echo "case 13: herdrPlugins install fails — the build fails, naming it"
+setup c13 FAKE_BIN_EXIT=1 INSTALLHERDR=true HERDRPLUGINS=owner/repo
+check "install.sh exits non-zero" test "$status" -ne 0
+check "it names herdrPlugins in the failure" grep -q 'herdrPlugins install failed' "$WORK/c13/install.err"
+
+# Not covered here: herdrPlugins with git absent from PATH. install_herdr_plugins's `have git`
+# guard is straightforward to read, but faking "no git" offline is not: this container's PATH
+# has git in /usr/local/bin, /usr/bin AND /bin, and /bin and /usr/bin also carry sh, bash, and
+# most of the coreutils this harness itself depends on (usrmerge) — stripping every directory
+# that resolves git strips the shell out from under the test too. Left to a real container in
+# test/run-features-test.sh, where a base image legitimately lacking git is a realistic case.
 
 echo
 if [ "$fails" -eq 0 ]; then echo "ALL PASS"; else echo "$fails FAILED"; exit 1; fi
