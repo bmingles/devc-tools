@@ -1,0 +1,7 @@
+{
+  "features": {
+    "ghcr.io/bmingles/devc-tools/agents:0": {
+      "installPiCli": false
+    }
+  }
+}

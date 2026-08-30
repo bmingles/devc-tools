@@ -324,11 +324,8 @@ sharing an earlier one's target replaces it in place, so the base's ordering
 survives and the highest layer's value wins — and
 `customizations.vscode.extensions` dedupe by id.
 
-Two deliberate exceptions:
+One deliberate exception:
 
-- **A Feature's options object is replaced whole**, not deep-merged. Half a
-  project's options blended with half the user's would be far harder to reason
-  about than "the project's entry replaces the user's".
 - **`baselineFeatures` is a veto, not "project wins".** It is
   `user && project`: a machine owner's `false` cannot be talked back on by a
   repo's `devc.json`. A project can still turn it off on its own.

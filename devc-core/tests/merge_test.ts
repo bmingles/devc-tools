@@ -52,15 +52,15 @@ Deno.test('arrays append, lower layer first', () => {
   );
 });
 
-// The one exception, inherited from the flag-era overlay: half a project's options blended with
-// half the user's is much harder to reason about than "the project's entry replaces the user's".
-Deno.test("a Feature's options object is replaced whole, not deep-merged", () => {
+// A Feature's options object merges like any other object: a higher layer can override one
+// option while leaving the rest of what a lower layer set alone.
+Deno.test("a Feature's options object merges per key, not replaced whole", () => {
   assertEquals(
     mergeConfigs([
       { features: { 'ghcr.io/x/node:1': { version: 'lts', pnpm: 'none' } } },
       { features: { 'ghcr.io/x/node:1': { version: '22' } } },
     ]),
-    { features: { 'ghcr.io/x/node:1': { version: '22' } } },
+    { features: { 'ghcr.io/x/node:1': { version: '22', pnpm: 'none' } } },
   );
 });
 

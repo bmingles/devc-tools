@@ -126,33 +126,28 @@ function dedupeExtensions(extensions: readonly unknown[]): unknown[] {
  * Merge one object into another, recursively. A `null` value **deletes** its key (RFC 7386's
  * one borrowed rule) at any depth; arrays append; anything else is replaced by the higher value.
  *
- * `features` is the one exception and it is deliberate: a Feature's options object is replaced
- * whole rather than deep-merged, because half a project's options blended with half the user's
- * is much harder to reason about than "the project's entry replaces the user's". Inherited
- * unchanged from the flag-era `mergeOverlays`.
+ * `features` merges the same as everything else — per Feature id, and within a Feature's options
+ * object, per option key — so a project overlay can override a single option (e.g. one flag in
+ * `installPiCli`) without restating the rest of what the user or base config set.
  */
-function mergeObjects(
-  lower: ConfigObject,
-  higher: ConfigObject,
-  featureOptions = false,
-): ConfigObject {
+function mergeObjects(lower: ConfigObject, higher: ConfigObject): ConfigObject {
   const out: ConfigObject = { ...lower };
   for (const [key, value] of Object.entries(higher)) {
     if (value === null) {
       delete out[key];
       continue;
     }
-    out[key] = featureOptions ? value : mergeValues(out[key], value, key);
+    out[key] = mergeValues(out[key], value);
   }
   return out;
 }
 
-function mergeValues(lower: unknown, higher: unknown, key: string): unknown {
+function mergeValues(lower: unknown, higher: unknown): unknown {
   if (Array.isArray(lower) && Array.isArray(higher)) {
     return [...lower, ...higher];
   }
   if (isPlainObject(lower) && isPlainObject(higher)) {
-    return mergeObjects(lower, higher, key === 'features');
+    return mergeObjects(lower, higher);
   }
   return higher;
 }
@@ -226,7 +221,7 @@ function mergeLayer(lower: ConfigObject, higher: ConfigObject): ConfigObject {
       delete out[key];
       continue;
     }
-    out[key] = replace.has(key) ? value : mergeValues(out[key], value, key);
+    out[key] = replace.has(key) ? value : mergeValues(out[key], value);
   }
   return out;
 }
@@ -238,8 +233,8 @@ function mergeLayer(lower: ConfigObject, higher: ConfigObject): ConfigObject {
  *
  * 1. `null` deletes the key (at any depth).
  * 2. A key named in that layer's `$replace` is set outright, no merging.
- * 3. Two plain objects merge recursively — except a Feature's options object, which is replaced
- *    whole.
+ * 3. Two plain objects merge recursively — `features` included, so a project overlay can
+ *    override a single option on a Feature without restating the rest.
  * 4. Two arrays append, lower first.
  * 5. Anything else: the higher layer wins.
  *

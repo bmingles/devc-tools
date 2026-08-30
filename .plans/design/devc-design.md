@@ -180,8 +180,7 @@ anything else is replaced by the higher layer. Then `mounts` dedupe by target
 mount the base config declares rather than collide with it — and
 `customizations.vscode.extensions` dedupe by id.
 
-Two exceptions: a Feature's options object is replaced whole rather than
-deep-merged, and `baselineFeatures` is `user && project` (a veto, not
+One exception: `baselineFeatures` is `user && project` (a veto, not
 "project wins").
 
 **Delivery** differs by which base won, and the difference is load-bearing:
