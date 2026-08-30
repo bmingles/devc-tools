@@ -24,5 +24,34 @@
         "installPiCli": true
       }
     }
+  },
+  "with_herdr": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "agents": {
+        "installHerdr": true
+      }
+    }
+  },
+  "with_pi_packages": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "ghcr.io/devcontainers/features/node:1": {
+        "version": "lts"
+      },
+      "agents": {
+        "installPiCli": true,
+        "piPackages": "npm:@andrewjacop/pi-herdr"
+      }
+    }
+  },
+  "with_herdr_plugins": {
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+      "agents": {
+        "installHerdr": true,
+        "herdrPlugins": "bmingles/herdr-plugins/agent-caffeinate"
+      }
+    }
   }
 }
