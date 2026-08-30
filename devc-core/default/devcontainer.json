@@ -5,7 +5,6 @@
     "context": "."
   },
   "features": {
-    "ghcr.io/bmingles/devc-tools/bash-config:0": {},
     "ghcr.io/devcontainers-community/features/deno:1": {},
     "ghcr.io/devcontainers/features/git-lfs:1": {
       "autoPull": false
@@ -23,7 +22,10 @@
       "pnpmVersion": "none",
       "nvmVersion": "latest"
     },
-    "ghcr.io/bmingles/devc-tools/node-nvmrc:0": {},
+    // "ghcr.io/devcontainers/features/python:1": {
+    //   "installTools": true,
+    //   "version": "3.12"
+    // }
     // The only option this Feature still takes that devc needs. There are no path options
     // as of agents 0.2.0 — ~/.claude is derived from the remote user's home, and the seed
     // path is fixed. Preserves current behavior: devc's own Dockerfile used to install
@@ -33,15 +35,13 @@
       "installCopilotCli": false,
       "installPiCli": true
     },
+    "ghcr.io/bmingles/devc-tools/bash-config:0": {},
     // Bare {}, like bash-config's. There is no identityIncludePath left to pass —
     // lfsFilters, lfsSkipSmudge, worktreeRelativePaths, safeDirectory all left at their
     // defaults, which already match git-setup.sh's old behavior exactly. The identity bind
     // is retargeted in `mounts` below.
-    "ghcr.io/bmingles/devc-tools/git-container-config:0": {}
-    // "ghcr.io/devcontainers/features/python:1": {
-    //   "installTools": true,
-    //   "version": "3.12"
-    // }
+    "ghcr.io/bmingles/devc-tools/git-container-config:0": {},
+    "ghcr.io/bmingles/devc-tools/node-nvmrc:0": {}
   },
   "remoteEnv": {
     "LANG": "en_US.utf8",
