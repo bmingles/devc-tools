@@ -374,17 +374,18 @@ and the copy in a scratch build of `materializeDefaultConfig` if you want to see
 it fail deterministically. A clean run of `$old` is **not** evidence the race
 does not exist; only a failure is informative.
 
-### 7.4 Two projects, two bridge flags, concurrently
+### 7.4 Two projects, concurrently
 
 ```sh
 # P1 opts into the bridge Feature via .devc/devc.json; P2 does not.
 for i in $(seq 4); do $new up "$P1" >/dev/null & $new up "$P2" >/dev/null & done; wait
-ls -1 ~/.cache/devc/                       # two default-<key>/ dirs, both intact
+ls -1 ~/.cache/devc/projects/              # one dir per project, both intact
 ```
 
-**Pass:** two keyed directories coexist; each project's container reflects its
-own bridge setting. On main this is the flip-flop — one directory, rewritten by
-whichever process ran last.
+**Pass:** each project has its own `projects/<key>/devcontainer.json` and its
+container reflects its own overlay. The bridge opt-in no longer varies the
+`default-<key>/` tree at all — it is a merge layer now (see §11), so that
+directory depends only on the devc version and your `templates/`.
 
 ### 7.5 Round trip, unchanged
 
@@ -540,3 +541,87 @@ need a real Herdr pane driving a real `docker exec`.
 - [ ] **`HERDR_ENV` unset** — `devc attach` spawns exactly one `docker exec`,
       as it does today. The feature is invisible off-Herdr (no Herdr needed
       for this one — it just needs confirming on a normal terminal).
+
+---
+
+## 11. `devc-merged-config` — Docker host
+
+From `.plans/archived/devc-merged-config.md`. Everything that does not need a
+daemon is automated and green (275 core tests, 114 devc tests); these are the
+claims that were read out of `@devcontainers/cli` 0.88.0's minified bundle
+rather than observed against a running Docker.
+
+Set up two projects: `$PROJ` with its own `.devcontainer/devcontainer.json`, and
+`$ZERO` with none. `devc up --print-config <path>` prints the merged config
+without starting anything — use it to see what each check is actually running.
+
+- [ ] **The load-bearing one: what `--override-config` records as the config
+      path.** Every other claim in this section rests on it, and it was read out
+      of the minified bundle rather than observed: the CLI is supposed to take
+      the config's _content_ from the file you point at while still recording
+      the project's own `.devcontainer/devcontainer.json` as `configFilePath`.
+
+      Start `$PROJ` on `main`, note `docker inspect --format '{{index
+      .Config.Labels "devcontainer.config_file"}}' <container>`. Then start it
+      on this branch. **Pass:** the label is unchanged — it points at
+      `$PROJ/.devcontainer/devcontainer.json`, not at anything under
+      `~/.cache/devc/` — and the _same_ container is reused.
+
+      The reuse is a symptom, not the point (one rebuild would cost nothing).
+      `configFilePath` is also what the CLI resolves `build.dockerfile`,
+      `build.context`, `dockerComposeFile` and local `./features/…` against, so
+      if the label is the cache path instead, then: an ordinary project with a
+      relative `"dockerfile": "Dockerfile"` resolves it into
+      `~/.cache/devc/projects/<key>/` and **fails to build** (the next check);
+      VS Code stops sharing the container, since it looks the container up by
+      this exact label; and the project/zero-config split in `buildUpArgs` is
+      pointless — `--override-config` would just be `--config` spelled
+      differently, and project mode would need its paths absolutized too.
+
+      Also confirm the overlay actually took effect (`docker inspect` shows its
+      mounts). If the CLI ignored the override file's content and re-read the
+      project's own config, the label would look right while the overlay
+      silently did nothing.
+- [ ] **Relative paths still resolve against the project.** Give `$PROJ` a
+      `"build": { "dockerfile": "Dockerfile", "context": ".." }` — context at
+      the project root, the common shape — and confirm it builds. The merged
+      config lives in `~/.cache/devc/projects/<key>/` and leaves those values
+      relative, so this only works if the CLI resolves them against the
+      project's own config path.
+- [ ] **A read-only overlay mount is genuinely read-only.** Add
+      `"type=bind,source=$HOME/ref,target=/reference,readonly"` to `$PROJ`'s
+      `devc.json`, rebuild, then `docker exec -u 0 <container> touch
+      /reference/x`. **Pass:** it fails. This is the capability the whole change
+      exists for, and container-root is the bar that matters — a real `ro` bind
+      holds against it, permission-based hiding does not.
+- [ ] **Feature install order survives the merge.** `features` is merged
+      directly now instead of passed as `--additional-features`, which changes
+      key order. Confirm from the build log that `devc-config` still installs
+      _after_ `agents` and `git-container-config` (`installsAfter` should still
+      govern, but the round-robin fallback is order-sensitive).
+- [ ] **The bridge token mount reaches project mode.** With the host bridge
+      seeded (`devc-bridge start` once), add
+      `"features": { "ghcr.io/bmingles/devc-tools/devc-bridge:0": {} }` to
+      `$PROJ`'s `devc.json` and nothing to its `devcontainer.json`. **Pass:**
+      `devc mounts` shows `/run/devc-bridge`, read-only, and the client works
+      from inside. On main this required hand-copying the mount line into the
+      project's own config.
+- [ ] **A hand-written token mount still wins.** Same, but with a
+      `/run/devc-bridge` mount already in `$PROJ`'s `devcontainer.json`.
+      **Pass:** exactly one such mount in `docker inspect`, and it is the
+      hand-written one (the merge dedupes by target, and devc's layer is
+      lowest). Two would be Docker's `Duplicate mount point`.
+- [ ] **Zero-config comes up, and only recreates once.** `devc up $ZERO`.
+      **Pass:** it builds and runs — the merged config carries absolute
+      `build.dockerfile`/`context` into `~/.cache/devc/default-<key>/`. Its
+      `config_file` label moves from the old `default-<key>/` path to
+      `projects/<key>/`, so expect exactly one recreate on the first run after
+      the upgrade, and none after. The old container is stranded by the CLI's
+      own lookup and needs `docker rm` — that is the accepted no-migration cost.
+- [ ] **Compose still works.** A `dockerComposeFile` project comes up. Record
+      what happens to a `readonly` overlay mount: the CLI rewrites `mounts` into
+      its generated compose file and is expected to drop the field, which the
+      merge does not fix.
+- [ ] **VS Code interop.** "Reopen in Container" on the devc-started `$PROJ`
+      container attaches to the _same_ container rather than building its own.
+      Follows from the first check, but worth seeing.

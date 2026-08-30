@@ -56,6 +56,41 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
 
 ### Completed
 
+- [devc-merged-config](archived/devc-merged-config.md) — ✅ Done, code
+  complete and offline-tested; the nine Docker-needed items in
+  [docs/manual-verification.md §11](../docs/manual-verification.md) are unrun
+  (no Docker in this environment), same standing as other entries below.
+
+  The `devc.json` overlay is no longer translated into `devcontainer up` flags.
+  devc merges four layers — `devc → base config → user devc.json → project
+  devc.json` — into one effective `devcontainer.json`, writes it to
+  `~/.cache/devc/projects/<key>/`, and hands that to the CLI: as
+  `--override-config` in project mode (which keeps relative paths and both
+  container-identity labels anchored to the project's own config, so nothing
+  churns) and as `--config` in zero-config mode. Nothing is written into the
+  project; the standalone invariant is untouched.
+
+  New `devc-core/merge.ts` (objects recurse, arrays append, `mounts` dedupe by
+  target, `null` deletes, `$replace` opts out) and `devc-core/merged_config.ts`
+  (`ensureMergedConfig`, atomic `0600` write, per-project stable path). An
+  overlay may now set **any** `devcontainer.json` key, `readonly` mounts
+  included, and can replace or delete what the base config declares.
+
+  It deletes more than it adds: `overlayArgs`, `MOUNT_SPEC_RE`,
+  `isEmptyOverlay`, `computeContainerWorkspaceFolder` (a hand-port of the CLI's
+  worktree-path algorithm — the CLI resolves `${containerWorkspaceFolder}`
+  itself inside a config file), `resolveOverlayRemoteEnv`,
+  `loadDeclaredFeatureIds`, `injectBridgeMount` and its fence, and the
+  per-project `bridge` flag on the config cache key. The devc-bridge token mount
+  became a merge layer, which makes it work in **project mode** for the first
+  time — those users used to copy the line into their own `devcontainer.json`.
+
+  **No backward compatibility, by decision**: no migration for the one-time
+  zero-config container recreate, no `additionalFeatures` alias (the key is
+  `features`), no fallback when a base config cannot be parsed — that is a hard
+  error naming the file. `devc up --print-config` is new, and is how you read
+  the effective config now that it lives in a cache rather than in the project.
+
 - [herdr-agent-sidecar](archived/herdr-agent-sidecar.md) — ✅ Done, code
   complete and offline-tested; the six Docker+Herdr-needed items in the
   plan's own Validation list are unrun (no Docker, no Herdr pane in this

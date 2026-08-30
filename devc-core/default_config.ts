@@ -14,7 +14,6 @@ import {
 } from 'node:fs/promises';
 import process from 'node:process';
 import { parse as parseJsoncLoose, type ParseError } from 'jsonc-parser';
-import { writeBlocks } from './jsonc_edit.ts';
 import { basenamePosix } from './posix.ts';
 import { isAlreadyExists, isDirectoryNotEmpty, isNotFound } from './errors.ts';
 import { logWarning } from './log.ts';
@@ -254,9 +253,6 @@ async function overlayDirFrom(
  * `initialize-command.sh` (so edits apply on recreate) while the hidden zero-config copy
  * still resolves.
  *
- * With `opts.bridge`, a further step injects the devc-bridge token mount — see
- * {@link injectBridgeMount}. It runs after the overlay for the same reason the rewrite does.
- *
  * Writes **unconditionally**, to exactly the directory it is handed. That is the whole of its
  * contract, and it is what makes it directly testable. Production code does not call it: the
  * zero-config path goes through {@link ensureDefaultConfig}, whose content-addressed cache is
@@ -271,7 +267,6 @@ export async function materializeDefaultConfig(
   cacheDir: string = `${homeDir()}/.cache/devc/default`,
   templatesDir: string = TEMPLATES_DIR,
   opts: {
-    bridge?: boolean;
     /**
      * The directory this tree will live in once it is in place; the `initializeCommand` rewrite
      * resolves against it rather than against `cacheDir`. Defaults to `cacheDir`, so a caller
@@ -300,10 +295,7 @@ export async function materializeDefaultConfig(
     '${localWorkspaceFolder}/.devcontainer/initialize-command.sh',
     `${finalDir}/initialize-command.sh`,
   );
-  const final = opts.bridge
-    ? injectBridgeMount(rewritten, configPath)
-    : rewritten;
-  if (final !== raw) await writeFile(configPath, final);
+  if (rewritten !== raw) await writeFile(configPath, rewritten);
 
   return configPath;
 }
@@ -370,8 +362,8 @@ const KEY_SEPARATOR = new Uint8Array([0]);
 
 /**
  * The cache key for a materialized default config: `sha256`, hex, first 12 chars, over — in this
- * order — every file of the bundled `default/` tree, every file of `templatesDir`, and the bridge
- * flag. Each file contributes its posix relative path, a `NUL`, then its bytes.
+ * order — every file of the bundled `default/` tree and every file of `templatesDir`. Each file
+ * contributes its posix relative path, a `NUL`, then its bytes.
  *
  * **Everything that changes the output must be in here.** {@link ensureDefaultConfig} skips the
  * write entirely on a hit, so an input outside the key is an input the user can change with no
@@ -386,10 +378,7 @@ const KEY_SEPARATOR = new Uint8Array([0]);
  * a security boundary — a collision needs ~16M distinct devc/template combinations before it is
  * even worth thinking about, and the cost of one would be a stale config, not a compromise.
  */
-async function defaultConfigKey(
-  templatesDir: string,
-  bridge: boolean,
-): Promise<string> {
+async function defaultConfigKey(templatesDir: string): Promise<string> {
   const hash = createHash('sha256');
   for (const rel of await listTreeUrl(DEFAULT_DIR_URL)) {
     hash.update(rel);
@@ -401,22 +390,23 @@ async function defaultConfigKey(
     hash.update(KEY_SEPARATOR);
     hash.update(await readFile(`${templatesDir}/${rel}`));
   }
-  hash.update(bridge ? '1' : '0');
   return hash.digest('hex').slice(0, 12);
 }
 
 /**
  * The content-addressed zero-config cache, and what the lifecycle actually calls. Returns the
- * path to a materialized `devcontainer.json` for the current bundled `default/` tree, templates
- * and bridge flag — writing **nothing** when a directory for those inputs already exists.
+ * path to a materialized `devcontainer.json` for the current bundled `default/` tree and
+ * templates — writing **nothing** when a directory for those inputs already exists.
  *
  * This exists because the obvious implementation — {@link materializeDefaultConfig} straight into
  * one shared `~/.cache/devc/default` on every start — is a shared mutable path, and three
  * separate problems fall out of it:
  *
- * - The `bridge` flag is resolved *per project* (from that project's overlay) while the directory
- *   was shared across *all* of them, so a bridge project and a non-bridge project wrote different
- *   content to the same file.
+ * - A per-project input (the devc-bridge opt-in, back when it was spliced in here) was resolved
+ *   from that project's overlay while the directory was shared across *all* of them, so two
+ *   projects wrote different content to the same file. Nothing varies per project in this tree
+ *   any more — the overlay is merged in `merged_config.ts` now — but the hazard is the reason
+ *   the cache is keyed rather than shared.
  * - Two copies of core on one machine (an installed `devc` binary and a library consumer's
  *   embedded copy) each carry their own bundled `default/`. Alternating between them rewrote the
  *   config under the other, which `devcontainer up` reads as a changed config — a container
@@ -424,8 +414,8 @@ async function defaultConfigKey(
  * - The unconditional `rm -rf` could land while another process's `devcontainer up` was reading
  *   that same config.
  *
- * Keying the directory by its inputs closes all three at once: distinct versions, template
- * revisions and bridge flags get distinct directories, so nothing clobbers anything; `rename` is
+ * Keying the directory by its inputs closes all three at once: distinct versions and template
+ * revisions get distinct directories, so nothing clobbers anything; `rename` is
  * atomic within a filesystem, so no reader ever sees a half-written tree; and identical inputs
  * give an identical path, so the absolute `initialize-command.sh` baked into the config is stable
  * and nothing rebuilds spuriously.
@@ -445,13 +435,8 @@ async function defaultConfigKey(
 export async function ensureDefaultConfig(
   cacheRoot: string = `${homeDir()}/.cache/devc`,
   templatesDir: string = TEMPLATES_DIR,
-  opts: { bridge?: boolean } = {},
 ): Promise<string> {
-  const bridge = opts.bridge === true;
-  const target = `${cacheRoot}/default-${await defaultConfigKey(
-    templatesDir,
-    bridge,
-  )}`;
+  const target = `${cacheRoot}/default-${await defaultConfigKey(templatesDir)}`;
   const configPath = `${target}/devcontainer.json`;
 
   // The hit test is on the config file rather than the directory, so a tree left half-written by
@@ -477,7 +462,6 @@ export async function ensureDefaultConfig(
     // `staging` but its `initializeCommand` must name `target`, which will not exist until the
     // `rename` below succeeds.
     await materializeDefaultConfig(staging, templatesDir, {
-      bridge,
       finalDir: target,
     });
     try {
@@ -496,14 +480,6 @@ export async function ensureDefaultConfig(
 
   return configPath;
 }
-
-/** The token bind mount the devc-bridge Feature needs. */
-const BRIDGE_MOUNT =
-  'type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly';
-/** Fence id the injected mount is written under, i.e. `devc:bridge-mount`. */
-const BRIDGE_FENCE = 'bridge-mount';
-/** Enough of the mount to recognize one the user already wrote themselves. */
-const BRIDGE_MOUNT_TARGET = 'target=/run/devc-bridge';
 
 /**
  * True when `features` declares a Feature whose id names `name`, by any spelling.
@@ -528,70 +504,16 @@ export function declaresFeatureNamed(
 }
 
 /**
- * True when `additionalFeatures` opts into the devc-bridge Feature, by any spelling — a Feature
- * *named* devc-bridge needs the token mount below regardless of who published it. A thin wrapper
- * over {@link declaresFeatureNamed}: this call site predates the general form and keeps its own
- * name because callers reach for "does this opt into the bridge" more directly than the general
- * question.
+ * True when `features` opts into the devc-bridge Feature, by any spelling — a Feature *named*
+ * devc-bridge needs the token mount regardless of who published it. A thin wrapper over
+ * {@link declaresFeatureNamed}, kept because callers reach for "does this opt into the bridge"
+ * more directly than the general question. The mount itself is contributed by
+ * {@link import("./overlay.ts").devcContributions}.
  */
 export function declaresBridgeFeature(
-  additionalFeatures: Record<string, unknown>,
+  features: Record<string, unknown>,
 ): boolean {
-  return declaresFeatureNamed(additionalFeatures, 'devc-bridge');
-}
-
-/**
- * Insert the devc-bridge token mount into the materialized config's `mounts` array, as the
- * `devc:bridge-mount` fence.
- *
- * Only ever applied to the **cache copy**, and only when a devc.json opted in. The bundled
- * default stays bridge-free so a devc container still comes up on a host that never installed
- * the bridge, and devc still never writes into a project's `.devcontainer/` — project-mode users
- * declare this mount themselves, exactly like a non-devc project.
- *
- * Nothing marks the insertion point, deliberately: the bundled `devcontainer.json` is also what
- * `devc init` copies into a project, so an anchor comment there would leave every scaffolded
- * repo carrying a marker (and the paragraph explaining it) for a Feature its author may never
- * opt into. The `mounts` array is anchor enough — `writeBlocks` finds it, or creates it — and
- * the fence's own header explains itself in the one config that actually has the mount.
- *
- * A string mount, and `readonly` is why all of this exists: the devc.json overlay cannot carry
- * it (overlay mounts become `devcontainer up --mount` args, which reject the field and re-serialize
- * without it — see `MOUNT_SPEC_RE`), and a Feature cannot declare it either (the Feature schema's
- * `Mount` has no such field). A `mounts` array in a `devcontainer.json` is the only place a
- * read-only bind can be expressed, which is what makes injecting here the only route rather than
- * merely the tidiest.
- *
- * Fence splicing rather than parse-and-serialize, matching how `devc config` writes the overlay:
- * the config is JSONC, may be a user's own template, and its comments and formatting are worth
- * keeping byte-for-byte.
- */
-function injectBridgeMount(text: string, configPath: string): string {
-  // A user template that already declares it wins — two of the same target is Docker's
-  // `Duplicate mount point`, a hard create failure.
-  if (text.includes(BRIDGE_MOUNT_TARGET)) return text;
-
-  try {
-    return writeBlocks(text, 'mounts', [{
-      id: BRIDGE_FENCE,
-      lines: [
-        '// Added because a devc.json opts into the devc-bridge Feature. Read-only:',
-        '// a writable token mount lets a container pin the host token for the next start.',
-        JSON.stringify(BRIDGE_MOUNT),
-      ],
-    }]);
-  } catch (err) {
-    // Only reachable when a user template replaced devcontainer.json with something this
-    // cannot edit (not an object, an unterminated fence). Warn rather than fail: their config
-    // is theirs, but a silently absent mount would surface much later as an unexplained
-    // `cannot read token` from inside the container.
-    logWarning(
-      `devc: could not add the devc-bridge token mount to ${configPath} (${
-        err instanceof Error ? err.message : err
-      }) — add this to its "mounts" array yourself:\n  "${BRIDGE_MOUNT}"`,
-    );
-    return text;
-  }
+  return declaresFeatureNamed(features, 'devc-bridge');
 }
 
 /**
@@ -676,55 +598,72 @@ export function substituteVars(
   });
 }
 
-interface DevcontainerJson {
-  remoteEnv?: Record<string, unknown>;
+/**
+ * Parse the devcontainer config at `configPath` as JSONC, throwing an error naming the file when
+ * it cannot be read or is not a JSON object.
+ *
+ * **Deliberately unforgiving**, unlike the forgiving reads this replaced. The result is a layer
+ * of the merge that produces the effective config (see `merged_config.ts`), and a config devc
+ * failed to read is a container built from something other than what the project asked for —
+ * worse than refusing to start. `jsonc-parser` accepts comments and trailing commas, so a failure
+ * here is malformed JSON that `devcontainer up` would reject seconds later anyway.
+ */
+export async function loadConfigStrict(
+  configPath: string,
+): Promise<Record<string, unknown>> {
+  let text: string;
+  try {
+    text = await readFile(configPath, 'utf8');
+  } catch (err) {
+    throw new Error(
+      `${configPath}: could not be read (${
+        err instanceof Error ? err.message : err
+      })`,
+    );
+  }
+
+  const errors: ParseError[] = [];
+  const parsed = parseJsoncLoose(text, errors, { allowTrailingComma: true });
+  if (errors.length > 0) {
+    const [first] = errors;
+    throw new Error(
+      `${configPath}: could not parse as JSONC (error ${first.error} at offset ${first.offset})`,
+    );
+  }
+  // An empty file parses to `undefined`; a config has to be an object to merge at all.
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${configPath}: expected a JSON object at the top level`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 /**
- * Reads `remoteEnv` from the devcontainer config at `configPath` and resolves the variables
- * {@link substituteVars} handles in each value. Returns `{}` if the config defines no
- * `remoteEnv`.
+ * `config`'s `remoteEnv`, with the variables {@link substituteVars} handles resolved in each
+ * value. Returns `{}` when it declares none.
  *
- * This is what makes `remoteEnv` reach `devc exec`/`attach`: those run via `docker exec`,
- * which applies the container's `containerEnv` but never `remoteEnv` — `remoteEnv` is applied
- * by the *client* per connection (VS Code to its terminals, `devcontainer exec` to its child)
- * and is not stored on the container for anyone to inherit. So devc re-derives it.
+ * This is what makes `remoteEnv` reach `devc exec`/`attach`: those run via `docker exec`, which
+ * applies the container's `containerEnv` but never `remoteEnv` — `remoteEnv` is applied by the
+ * *client* per connection (VS Code to its terminals, `devcontainer exec` to its child) and is not
+ * stored on the container for anyone to inherit. So devc re-derives it.
  *
- * `configPath` is whichever config is in play: the project's own in project mode, the
- * materialized bundled default in the zero-config path. Because it may therefore be a file a
- * user hand-wrote, parsing is deliberately forgiving — JSONC (comments, trailing commas) is
- * parsed properly, and a config this cannot read degrades to `{}` with a warning rather than
- * throwing, so a malformed or exotic config costs env vars instead of breaking `devc exec`
- * outright. Non-string values are skipped for the same reason (the spec says strings).
+ * `config` is the **merged** config — the one `devcontainer up` was actually given — so the
+ * overlay's own `remoteEnv` is already folded in and there is no second layer to apply here.
+ * Non-string values are skipped (the spec says strings).
+ *
+ * This is the one place devc still substitutes `${…}` itself, because these values are handed to
+ * `docker exec` rather than to the devcontainer CLI, which never sees them.
  */
-export async function loadResolvedRemoteEnv(
-  configPath: string,
+export function resolveRemoteEnv(
+  config: Record<string, unknown>,
   containerWorkspaceFolder: string,
   localWorkspaceFolder?: string,
-): Promise<Record<string, string>> {
-  let config: DevcontainerJson | null;
-  try {
-    const text = await readFile(configPath, 'utf8');
-    const errors: ParseError[] = [];
-    config = parseJsoncLoose(text, errors, { allowTrailingComma: true }) as
-      | DevcontainerJson
-      | null;
-    if (errors.length > 0) {
-      const [first] = errors;
-      throw new SyntaxError(
-        `JSONC parse error ${first.error} at offset ${first.offset}`,
-      );
-    }
-  } catch (err) {
-    logWarning(
-      `devc: could not read remoteEnv from ${configPath} (${
-        err instanceof Error ? err.message : err
-      }) — continuing without it`,
-    );
+): Record<string, string> {
+  const baseEnv = config.remoteEnv;
+  if (
+    typeof baseEnv !== 'object' || baseEnv === null || Array.isArray(baseEnv)
+  ) {
     return {};
   }
-
-  const baseEnv = config?.remoteEnv ?? {};
   return Object.fromEntries(
     Object.entries(baseEnv)
       .filter((entry): entry is [string, string] =>
@@ -735,48 +674,4 @@ export async function loadResolvedRemoteEnv(
         substituteVars(v, containerWorkspaceFolder, localWorkspaceFolder),
       ]),
   );
-}
-
-interface DevcontainerFeaturesJson {
-  features?: Record<string, unknown>;
-}
-
-/**
- * Ids in the `features` object of the devcontainer config at `configPath` — the raw keys, with
- * no name normalization and no substitution.
- *
- * Mirrors {@link loadResolvedRemoteEnv}'s treatment of a config that may be a user's own,
- * hand-written file: forgiving JSONC parse (comments, trailing commas), and a config this
- * cannot read degrades to **`[]`**, "nothing declared", with a `logWarning` rather than
- * throwing. That default is deliberate, not merely convenient: skipping baseline injection
- * whenever a config is unreadable would silently withhold devc's contributions from anyone with
- * an exotic config, which is worse than the alternative's cost — a double-run for someone who
- * both has a config this cannot parse *and* declares the Feature themselves.
- */
-export async function loadDeclaredFeatureIds(
-  configPath: string,
-): Promise<string[]> {
-  let config: DevcontainerFeaturesJson | null;
-  try {
-    const text = await readFile(configPath, 'utf8');
-    const errors: ParseError[] = [];
-    config = parseJsoncLoose(text, errors, { allowTrailingComma: true }) as
-      | DevcontainerFeaturesJson
-      | null;
-    if (errors.length > 0) {
-      const [first] = errors;
-      throw new SyntaxError(
-        `JSONC parse error ${first.error} at offset ${first.offset}`,
-      );
-    }
-  } catch (err) {
-    logWarning(
-      `devc: could not read features from ${configPath} (${
-        err instanceof Error ? err.message : err
-      }) — continuing without it`,
-    );
-    return [];
-  }
-
-  return Object.keys(config?.features ?? {});
 }

@@ -146,8 +146,9 @@ export const COMMAND_HELP: Record<string, string> = {
     '  [PATH]  Path to the project (default: current directory)',
     '',
     'Options:',
-    '      --json   Output container status as JSON',
-    '  -h, --help   Print help',
+    '      --print-config   Print the effective devcontainer.json and exit',
+    '      --json           Output container status as JSON',
+    '  -h, --help           Print help',
   ].join('\n'),
 
   build: [

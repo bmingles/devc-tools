@@ -1,16 +1,17 @@
 import process from 'node:process';
 import { statSync } from 'node:fs';
 import { normalizePath as _normalizePath } from './paths.ts';
-import { basenamePosix, dirnamePosix, resolvePosix } from './posix.ts';
+import { resolvePosix } from './posix.ts';
 import {
   CLAUDE_SEED_HOST_DIR,
-  declaresBridgeFeature,
   ensureClaudeSeedDir,
-  ensureDefaultConfig,
-  findOwnDevcontainerConfig,
-  loadDeclaredFeatureIds,
-  loadResolvedRemoteEnv,
+  resolveRemoteEnv,
 } from './default_config.ts';
+import {
+  type ConfigMode,
+  ensureMergedConfig,
+  projectKey,
+} from './merged_config.ts';
 import { displayPath } from './config.ts';
 import {
   type DevcontainerRunner,
@@ -18,14 +19,6 @@ import {
 } from './devcontainer.ts';
 import { output, status } from './exec.ts';
 import { logNotice, logWarning } from './log.ts';
-import {
-  type DevcOverlay,
-  isEmptyOverlay,
-  loadMergedOverlay,
-  overlayArgs,
-  resolveOverlayRemoteEnv,
-  withBaselineFeatures,
-} from './overlay.ts';
 
 export type ContainerStatus = 'running' | 'stopped' | 'missing';
 
@@ -298,28 +291,15 @@ async function isGitWorktree(localFolder: string): Promise<boolean> {
     new TextDecoder().decode(gitDir.stdout).trim();
 }
 
-async function runGitRevParse(
-  cwd: string,
-  flag: string,
-): Promise<string | null> {
-  const { code, stdout } = await output('git', {
-    args: ['-C', cwd, 'rev-parse', flag],
-    stdout: 'piped',
-    stderr: 'null',
-  });
-  if (code !== 0) return null;
-  return new TextDecoder().decode(stdout).trim();
-}
-
 /**
  * Resolves a user-supplied path argument to an absolute, slash-normalized path
  * against `cwd` (default: the process cwd). A bare relative path such as `.` must
  * become absolute before it reaches container naming
- * (`containerNameForLocalFolder`), `computeContainerWorkspaceFolder`, or the
- * `devcontainer.local_folder` label match in `findContainer` — otherwise `.`
- * yields the invalid image tag `devc-.-<hash>` and a `/workspaces/.` workspace
- * folder, and fails to match the absolute path the `devcontainer` CLI records in
- * the label (so `status`/`stop`/`down`/`mounts` can't find the container). An
+ * (`containerNameForLocalFolder`), the per-project cache key
+ * (`projectKey`), or the `devcontainer.local_folder` label match in
+ * `findContainer` — otherwise `.` yields the invalid image tag `devc-.-<hash>`
+ * and fails to match the absolute path the `devcontainer` CLI records in the
+ * label (so `status`/`stop`/`down`/`mounts` can't find the container). An
  * already-absolute argument is returned normalized as-is. Mirrors how
  * `devcontainer up` resolves `--workspace-folder` internally.
  */
@@ -328,55 +308,6 @@ export function resolveLocalFolder(
   cwd: string = process.cwd(),
 ): string {
   return resolvePosix(_normalizePath(cwd), _normalizePath(pathArg ?? '.'));
-}
-
-/**
- * Computes the absolute container-side path where `devcontainer up` will mount
- * `localFolder`, replicating the `devcontainer` CLI's algorithm (verified against
- * 0.87.0) for both plain directories and git worktrees mounted with
- * `--mount-git-worktree-common-dir`.
- *
- * - Non-git directories and non-worktree repos: `/workspaces/<basename(localFolder)>`.
- * - Git worktrees: walks up from `localFolder` to the common ancestor of
- *   `localFolder` and the main repo's `.git` directory (from
- *   `git rev-parse --git-common-dir`), then returns
- *   `/workspaces/<relative path from that ancestor to localFolder>`.
- */
-export async function computeContainerWorkspaceFolder(
-  localFolder: string,
-): Promise<string> {
-  const normalizedLocal = _normalizePath(localFolder);
-
-  const cdup = await runGitRevParse(localFolder, '--show-cdup');
-  const gitRoot = cdup === null || cdup === ''
-    ? normalizedLocal
-    : resolvePosix(normalizedLocal, cdup);
-
-  const [commonDir, gitDir] = await Promise.all([
-    runGitRevParse(gitRoot, '--git-common-dir'),
-    runGitRevParse(gitRoot, '--git-dir'),
-  ]);
-
-  if (commonDir === null || gitDir === null || commonDir === gitDir) {
-    return `/workspaces/${basenamePosix(gitRoot)}`;
-  }
-
-  const commonGitDir = resolvePosix(gitRoot, commonDir);
-  const target = dirnamePosix(commonGitDir);
-
-  const segments: string[] = [];
-  let f = gitRoot;
-  while (
-    normalizePath(target) !== normalizePath(f) &&
-    !normalizePath(target).startsWith(`${normalizePath(f)}/`)
-  ) {
-    segments.unshift(basenamePosix(f));
-    const parent = dirnamePosix(f);
-    if (parent === f) break;
-    f = parent;
-  }
-
-  return `/workspaces/${segments.join('/')}`;
 }
 
 /**
@@ -391,22 +322,15 @@ export async function computeContainerWorkspaceFolder(
  * basename (e.g. `localFolder === "/"`) falls back to `"workspace"`. The `devc-` prefix
  * guarantees the result starts with an alphanumeric character (Docker container name
  * requirement) even if the basename starts with `.` or `-`.
+ *
+ * The `<basename>-<hash>` half is {@link import("./merged_config.ts").projectKey}, which also
+ * names that project's merged-config cache directory — the container and its config are meant to
+ * be recognizably about the same project.
  */
 export async function containerNameForLocalFolder(
   localFolder: string,
 ): Promise<string> {
-  const normalized = normalizePath(localFolder);
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(normalized),
-  );
-  const hash = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 8);
-  const base = basenamePosix(normalized).replace(/[^a-zA-Z0-9_.-]/g, '-') ||
-    'workspace';
-  return `devc-${base}-${hash}`;
+  return `devc-${await projectKey(localFolder)}`;
 }
 
 async function dockerInspect(
@@ -638,37 +562,41 @@ export interface StartOptions {
  * Builds the full `devcontainer up` argv. Pure/exported for unit testing, in the same spirit as
  * {@link buildExecArgs}.
  *
- * devc's own args come first — `--workspace-folder`, then the worktree/rebuild/no-cache flags,
- * then `--config` when (and only when) the out-of-tree bundled default is in play — and the
- * overlay's args are appended after them.
+ * There are no per-mount, per-env or per-Feature args any more: everything the overlay
+ * contributes is already inside the merged config at `mergedConfigPath` (see
+ * {@link import("./merged_config.ts").ensureMergedConfig}), which is the whole point of merging
+ * rather than translating to flags.
  *
- * `containerWorkspaceFolder` must be the *pre*-`up` value from
- * {@link computeContainerWorkspaceFolder}: `--mount` and `--remote-env` have to be built before
- * `devcontainer up` runs, so the authoritative `remoteWorkspaceFolder` the CLI reports back does
- * not exist yet. The post-`up` derivation in {@link startContainer} keeps using that
- * authoritative value instead — the two are not interchangeable.
+ * How that file is delivered is the one thing `mode` decides, and the difference matters:
+ *
+ * - **`project`** → `--override-config`. The CLI takes the config's *content* from this file but
+ *   still records the project's own `.devcontainer/devcontainer.json` as `configFilePath`, so
+ *   relative `build.dockerfile`/`context`/`dockerComposeFile` and local Features resolve where
+ *   the project meant them to, `.devcontainer-lock.json` is still found beside it, and the
+ *   container keeps the identity labels it has always had (so VS Code still matches it).
+ * - **`zero-config`** → `--config`. There is no project config to anchor to, and the merged file
+ *   is the config path for every purpose. Deliberately *not* `--override-config` here: that
+ *   would record `<project>/.devcontainer/devcontainer.json` — the same identity a later
+ *   `devc init` produces — so devc would silently reuse this container for a project that had
+ *   since gained its own config.
  */
 export function buildUpArgs(input: {
   localFolder: string;
   worktree: boolean;
   rebuild: boolean;
   noCache: boolean;
-  /** Config path to pass as `--config`, or `null` when the CLI finds the project's own. */
-  configArg: string | null;
-  overlay: DevcOverlay;
-  containerWorkspaceFolder: string;
+  /** The merged effective config to run. */
+  mergedConfigPath: string;
+  /** Which flag carries it — see above. */
+  mode: ConfigMode;
 }): string[] {
   const args = ['up', '--workspace-folder', input.localFolder];
   if (input.worktree) args.push('--mount-git-worktree-common-dir');
   if (input.rebuild) args.push('--remove-existing-container');
   if (input.noCache) args.push('--build-no-cache');
-  if (input.configArg !== null) args.push('--config', input.configArg);
   args.push(
-    ...overlayArgs(
-      input.overlay,
-      input.containerWorkspaceFolder,
-      input.localFolder,
-    ),
+    input.mode === 'project' ? '--override-config' : '--config',
+    input.mergedConfigPath,
   );
   return args;
 }
@@ -698,55 +626,21 @@ export async function startContainer(
 
   const worktree = await isGitWorktree(localFolder);
 
-  // The `devc.json` overlay applies in *both* modes — a project with its own config is exactly
-  // the case where a dev most often wants a local, gitignored mount. It is translated to CLI
-  // args and never written back, so the project's `.devcontainer/` stays standalone.
-  //
-  // Loaded before the config is materialized because zero-config materialization depends on it:
-  // opting into the devc-bridge Feature adds a token mount that only a `devcontainer.json`
-  // `mounts` array can express as read-only.
-  const overlay = await loadMergedOverlay(localFolder);
-
-  // The config `devcontainer up` will actually use. A project's own config is found by the
-  // CLI on its own; only the out-of-tree bundled default needs `--config` to be found at all.
-  //
-  // Project mode gets no bridge injection: devc does not write into a project's
-  // `.devcontainer/`. Those users declare the mount themselves, like any non-devc project.
-  const ownConfig = await findOwnDevcontainerConfig(localFolder);
-  //
-  // `ensureDefaultConfig`, not `materializeDefaultConfig`: the content-addressed cache is what
-  // keeps this process from rewriting a directory another `devcontainer up` may be reading, and
-  // what keeps a per-project `bridge` flag from flip-flopping one shared config. See its own doc.
-  const configPath = ownConfig ??
-    await ensureDefaultConfig(undefined, undefined, {
-      bridge: declaresBridgeFeature(overlay.additionalFeatures),
-    });
-
-  // Devc's own baseline Features (devc-config today), added under whatever the overlay and
-  // the in-play config already declare. Read after the config exists — in the zero-config path
-  // it was just materialized above — since a Feature the config declares itself must suppress
-  // devc's injected one.
-  const declaredFeatureIds = await loadDeclaredFeatureIds(configPath);
-  const effectiveOverlay = withBaselineFeatures(overlay, declaredFeatureIds);
-
-  // `isEmptyOverlay(overlay)`, deliberately NOT `effectiveOverlay`: after baseline injection the
-  // overlay is (almost) never empty, so testing the effective one would make this branch dead
-  // and every `up` — and every `devc exec`, which goes through `startContainer` — would pay for
-  // `computeContainerWorkspaceFolder`'s git subprocesses forever. See `isEmptyOverlay`'s own doc
-  // comment. Only pay for those subprocesses when the *user's* overlay has something to
-  // substitute.
-  const containerWorkspaceFolder = isEmptyOverlay(overlay)
-    ? ''
-    : await computeContainerWorkspaceFolder(localFolder);
+  // The effective config: the base config (the project's own, or the materialized bundled
+  // default) with devc's own layer and both `devc.json` overlays merged in, written to this
+  // project's cache directory. The `devc.json` overlay applies in *both* modes — a project with
+  // its own config is exactly the case where a dev most often wants a local, gitignored mount —
+  // and nothing is ever written into the project itself, so its `.devcontainer/` stays
+  // standalone.
+  const merged = await ensureMergedConfig(localFolder);
 
   const args = buildUpArgs({
     localFolder,
     worktree,
     rebuild,
     noCache: opts.noCache === true,
-    configArg: ownConfig === null ? configPath : null,
-    overlay: effectiveOverlay,
-    containerWorkspaceFolder,
+    mergedConfigPath: merged.path,
+    mode: merged.mode,
   });
 
   // The devcontainer CLI is a `DevcontainerRunner`, not resolved from PATH — see
@@ -787,27 +681,15 @@ export async function startContainer(
   await renameContainerIfNeeded(result.containerId, name, localFolder);
   await tagImageIfNeeded(result.containerId, name);
 
-  // Re-derive `remoteEnv` from the in-play config, for *both* modes — `docker exec` (how
-  // exec/attach run) never sees it otherwise. Done after the `up` so `${containerWorkspaceFolder}`
-  // resolves against the CLI's own `remoteWorkspaceFolder` rather than a local reimplementation
-  // of how it computes that path.
-  //
-  // The overlay's own `remoteEnv` goes on top, matching what `--remote-env` did to the container:
-  // base config < user `devc.json` < project `devc.json` (the last two already merged into
-  // `overlay`).
-  const baseRemoteEnv = await loadResolvedRemoteEnv(
-    configPath,
+  // Re-derive `remoteEnv` from the merged config — `docker exec` (how exec/attach run) never
+  // sees it otherwise. One call over one object: the overlay's own `remoteEnv` is already folded
+  // into it, so there is no second layer to apply. Done after the `up` so
+  // `${containerWorkspaceFolder}` resolves against the CLI's own `remoteWorkspaceFolder`.
+  const remoteEnv = resolveRemoteEnv(
+    merged.config,
     result.remoteWorkspaceFolder,
     localFolder,
   );
-  const remoteEnv = {
-    ...baseRemoteEnv,
-    ...resolveOverlayRemoteEnv(
-      overlay,
-      result.remoteWorkspaceFolder,
-      localFolder,
-    ),
-  };
 
   return {
     containerId: result.containerId,

@@ -48,10 +48,11 @@ await downContainer('/path/to/project');
 
 Everything importable is re-exported from the package root (`mod.ts` /
 `dist/mod.js`) — see that file for the full surface, grouped by module:
-`container.ts` (lifecycle), `overlay.ts` (`devc.json`), `config.ts` (global
-user config), `worktree.ts` + `mounts.ts` + `wizard_apply.ts` (the config
-wizard's pure helpers), `init.ts` (scaffold the bundled default
-`.devcontainer/`), `default_config.ts` (the bundled default and
+`container.ts` (lifecycle), `overlay.ts` (`devc.json`), `merge.ts` +
+`merged_config.ts` (the layer merge and the effective config it produces),
+`config.ts` (global user config), `worktree.ts` + `mounts.ts` +
+`wizard_apply.ts` (the config wizard's pure helpers), `init.ts` (scaffold the
+bundled default `.devcontainer/`), `default_config.ts` (the bundled default and
 `devcontainer.json` variable substitution), and `jsonc_edit.ts` / `posix.ts` /
 `paths.ts` (small primitives the rest is built on).
 
@@ -121,28 +122,39 @@ across three modules, several inside otherwise-pure helpers that no options
 object reaches. There is one core instance per process and one consumer driving
 it.
 
-### The zero-config cache
+### Two caches under `~/.cache/devc/`
 
-With no `.devcontainer/` in the project, core materializes its bundled default
-config into `~/.cache/devc/default-<key>/` and points `devcontainer up --config`
-at it. The key is a 12-hex-char `sha256` over the bundled `default/` tree, the
-user's `~/.config/devc/templates` overlay, and the per-project bridge flag, so:
+**`projects/<key>/devcontainer.json`** is the _effective_ config for one project
+— the base config with devc's own layer and both `devc.json` overlays merged in
+(`ensureMergedConfig`). It is what `devcontainer up` is actually given, and it is
+written on every start, atomically, at `0600`. Its path is keyed on the project
+and never on content, deliberately: the devcontainer CLI keys a container on
+`devcontainer.local_folder` + `devcontainer.config_file` and will not reuse one
+whose `config_file` differs — without removing it, even under
+`--remove-existing-container` — so a path that moved would strand a container per
+move.
+
+Nothing is written into the project. A generated config inside a git worktree is
+also a file inside a Docker build context, it shows up in `git status` for a repo
+that need not know devc exists, and it would carry the user-level overlay's
+contents into a committable location.
+
+**`default-<key>/`** is the bundled default, materialized for the zero-config
+path (`ensureDefaultConfig`). The key is a 12-hex-char `sha256` over the bundled
+`default/` tree and the user's `~/.config/devc/templates` overlay, so:
 
 - identical inputs reuse the directory and **write nothing** — a second start is
   a hash and a `stat`;
-- different inputs (a different `devc` version, an edited template, a project
-  that opts into devc-bridge) get a _different_ directory, so two copies of core
-  on one machine never rewrite each other's config and never cause a rebuild
-  from nothing the user did;
+- different inputs (a different `devc` version, an edited template) get a
+  _different_ directory, so two copies of core on one machine never rewrite each
+  other's config and never cause a rebuild from nothing the user did;
 - a miss stages into a sibling `.tmp-…/` and `rename`s it into place, so a
-  concurrent `devcontainer up` reading that config never sees a half-written
-  tree.
+  concurrent read never sees a half-written tree.
 
-`ensureDefaultConfig` is that cache and is what the lifecycle calls.
 `materializeDefaultConfig` — which writes unconditionally to the directory it is
-handed — is the layer underneath it, kept separate because it is what the tests
-drive; calling it from production code reintroduces the shared-mutable-path bug
-the cache exists to fix.
+handed — is the layer underneath `ensureDefaultConfig`, kept separate because it
+is what the tests drive; calling it from production code reintroduces the
+shared-mutable-path bug the cache exists to fix.
 
 ## What's deliberately not here
 

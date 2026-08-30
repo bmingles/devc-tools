@@ -4,21 +4,17 @@ import {
   assertStringIncludes,
 } from 'jsr:@std/assert@^1';
 import {
+  BRIDGE_MOUNT,
   DEVC_CONFIG_FEATURE,
+  devcContributions,
   emptyOverlay,
   findProjectOverlayPath,
   findUserOverlayPath,
-  isEmptyOverlay,
-  loadMergedOverlay,
   loadOverlayFile,
-  mergeOverlays,
-  MOUNT_SPEC_RE,
-  overlayArgs,
-  resolveOverlayRemoteEnv,
+  loadOverlays,
   resolveProjectOverlayTarget,
-  withBaselineFeatures,
 } from '../overlay.ts';
-import { loadResolvedRemoteEnv } from '../default_config.ts';
+import { mergeConfigs } from '../merge.ts';
 import { fixture, withTemp } from './helpers.ts';
 
 /** Write `text` to `path`, creating parent directories. */
@@ -40,7 +36,10 @@ async function captureStderr(fn: () => Promise<void>): Promise<string[]> {
   return lines;
 }
 
-const HOME = Deno.env.get('HOME') ?? Deno.env.get('USERPROFILE') ?? '.';
+/** The `remoteEnv` the overlay layers merge to — the shorthand the precedence tests want. */
+function mergedRemoteEnv(overlays: { layers: Record<string, unknown>[] }) {
+  return mergeConfigs(overlays.layers).remoteEnv;
+}
 
 // ── discovery ───────────────────────────────────────────────────────────────────────────────
 
@@ -65,7 +64,7 @@ Deno.test('project overlay precedence: .devc/devc.jsonc wins over the other thre
       '{"remoteEnv":{"ONLY_D":"d"}}',
     );
     assertEquals(await findProjectOverlayPath(dir), `${dir}/.devc/devc.jsonc`);
-    assertEquals((await loadMergedOverlay(dir, `${dir}/nouser`)).remoteEnv, {
+    assertEquals(mergedRemoteEnv(await loadOverlays(dir, `${dir}/nouser`)), {
       WINNER: 'a',
     });
   });
@@ -83,7 +82,7 @@ Deno.test('project overlay precedence: .devc/devc.json wins over both .devcontai
       '{"remoteEnv":{"ONLY_D":"d"}}',
     );
     assertEquals(await findProjectOverlayPath(dir), `${dir}/.devc/devc.json`);
-    assertEquals((await loadMergedOverlay(dir, `${dir}/nouser`)).remoteEnv, {
+    assertEquals(mergedRemoteEnv(await loadOverlays(dir, `${dir}/nouser`)), {
       WINNER: 'b',
     });
   });
@@ -103,7 +102,7 @@ Deno.test('project overlay precedence: .devcontainer/devc.jsonc wins over .devco
       await findProjectOverlayPath(dir),
       `${dir}/.devcontainer/devc.jsonc`,
     );
-    assertEquals((await loadMergedOverlay(dir, `${dir}/nouser`)).remoteEnv, {
+    assertEquals(mergedRemoteEnv(await loadOverlays(dir, `${dir}/nouser`)), {
       WINNER: 'c',
     });
   });
@@ -121,7 +120,7 @@ Deno.test('user overlay precedence: devc.jsonc wins over devc.json', async () =>
       `${dir}/config/devc.jsonc`,
     );
     assertEquals(
-      (await loadMergedOverlay(`${dir}/project`, `${dir}/config`)).remoteEnv,
+      mergedRemoteEnv(await loadOverlays(`${dir}/project`, `${dir}/config`)),
       { WINNER: 'jsonc' },
     );
   });
@@ -142,98 +141,127 @@ Deno.test('the overlay is read even when the project has its own devcontainer.js
       `${dir}/.devc/devc.json`,
       '{"mounts":["type=bind,source=/a,target=/b"]}',
     );
-    const overlay = await loadMergedOverlay(dir, `${dir}/nouser`);
-    assertEquals(
-      overlayArgs(overlay, '/workspaces/p', dir),
-      ['--mount', 'type=bind,source=/a,target=/b'],
-    );
+    const { layers } = await loadOverlays(dir, `${dir}/nouser`);
+    assertEquals(layers, [{}, {
+      mounts: ['type=bind,source=/a,target=/b'],
+    }]);
   });
 });
 
 // ── parsing ─────────────────────────────────────────────────────────────────────────────────
 
-Deno.test('loadMergedOverlay returns an empty overlay when nothing exists anywhere', async () => {
+Deno.test('loadOverlays returns empty layers when nothing exists anywhere', async () => {
   await withTemp(async (dir) => {
-    const overlay = await loadMergedOverlay(`${dir}/project`, `${dir}/config`);
-    assertEquals(overlay, emptyOverlay());
-    assertEquals(isEmptyOverlay(overlay), true);
-    assertEquals(overlayArgs(overlay, '/workspaces/p', dir), []);
+    const overlays = await loadOverlays(`${dir}/project`, `${dir}/config`);
+    assertEquals(overlays, { layers: [{}, {}], baselineFeatures: true });
+    assertEquals(mergeConfigs(overlays.layers), {});
   });
 });
 
-Deno.test('loadOverlayFile parses real JSONC: comments and trailing commas', async () => {
+Deno.test('loadOverlayFile parses real JSONC, keeping every key as written', async () => {
   await withTemp(async (dir) => {
-    await write(
-      `${dir}/devc.json`,
-      `{
-  /* block
-     comment */
-  "mounts": [
-    "type=bind,source=/a,target=/b", // an end-of-line note
-  ],
-  "remoteEnv": { "FOO": "bar", },
-}`,
-    );
-    assertEquals(await loadOverlayFile(`${dir}/devc.json`), {
-      mounts: ['type=bind,source=/a,target=/b'],
-      additionalFeatures: {},
-      remoteEnv: { FOO: 'bar' },
-      baselineFeatures: true,
+    const path = `${dir}/devc.jsonc`;
+    await write(path, await fixture('devc_overlay.jsonc'));
+    const overlay = await loadOverlayFile(path);
+
+    // Nothing is substituted at load: the tokens reach the merged config verbatim and the
+    // devcontainer CLI resolves them.
+    assertEquals(overlay.config, {
+      mounts: [
+        'type=bind,source=${localEnv:HOME}/notes,target=${containerWorkspaceFolder}/../notes',
+        'type=bind,source=${localWorkspaceFolder}/.cache,target=/cache/${localWorkspaceFolderBasename}',
+        'type=bind,source=${localEnv:HOME}/reference,target=/reference,readonly',
+      ],
+      features: {
+        'ghcr.io/devcontainers/features/rust:1': { version: 'latest' },
+      },
+      remoteEnv: { NOTES_DIR: '${containerWorkspaceFolder}/../notes' },
     });
+    assertEquals(overlay.baselineFeatures, true);
   });
 });
 
-// The overlay exists only for devc and is small and hand-written: silently starting a container
-// missing the user's mounts is worse than a hard error.
+// The headline capability of the merge: a `readonly` mount, which the flag-era overlay rejected
+// at load because `devcontainer up --mount` has no such field.
+Deno.test('a readonly mount loads and survives the merge verbatim', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/devc.json`;
+    await write(
+      path,
+      '{"mounts":["type=bind,source=/host/ref,target=/reference,readonly"]}',
+    );
+    const overlay = await loadOverlayFile(path);
+    assertEquals(mergeConfigs([{}, overlay.config]).mounts, [
+      'type=bind,source=/host/ref,target=/reference,readonly',
+    ]);
+  });
+});
+
+// Any devcontainer.json key is legal now, not just the old four.
+Deno.test('keys the flag-era overlay had no arg for load like any other', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/devc.json`;
+    await write(
+      path,
+      JSON.stringify({
+        runArgs: ['--cap-add', 'SYS_PTRACE'],
+        containerEnv: { TZ: 'UTC' },
+        forwardPorts: [3000],
+        remoteUser: 'root',
+        postCreateCommand: 'echo hi',
+        customizations: { vscode: { extensions: ['ms-python.python'] } },
+      }),
+    );
+    const overlay = await loadOverlayFile(path);
+    assertEquals(overlay.config.runArgs, ['--cap-add', 'SYS_PTRACE']);
+    assertEquals(overlay.config.remoteUser, 'root');
+    assertEquals(overlay.config.forwardPorts, [3000]);
+  });
+});
+
 Deno.test('loadOverlayFile throws naming the file path when it cannot be parsed', async () => {
   await withTemp(async (dir) => {
-    const path = `${dir}/.devc/devc.json`;
-    await write(path, '{ "mounts": [ oops');
+    const path = `${dir}/devc.json`;
+    await write(path, '{ this is not json');
     const err = await assertRejects(() => loadOverlayFile(path), Error);
     assertStringIncludes(err.message, path);
   });
 });
 
-Deno.test('loadMergedOverlay propagates the parse failure with the path', async () => {
+Deno.test('loadOverlays propagates the parse failure with the path', async () => {
   await withTemp(async (dir) => {
-    await write(`${dir}/.devcontainer/devc.jsonc`, 'not json');
+    const path = `${dir}/.devc/devc.json`;
+    await write(path, '{ nope');
     const err = await assertRejects(
-      () => loadMergedOverlay(dir, `${dir}/nouser`),
+      () => loadOverlays(dir, `${dir}/nouser`),
       Error,
     );
-    assertStringIncludes(err.message, `${dir}/.devcontainer/devc.jsonc`);
+    assertStringIncludes(err.message, path);
   });
 });
 
-// `parseJsonc` yields `null` for an empty file, not `{}` — a naive property access would throw.
 Deno.test('an empty overlay file is no overlay, not an error', async () => {
   await withTemp(async (dir) => {
-    await write(`${dir}/.devc/devc.json`, '');
-    assertEquals(
-      await loadMergedOverlay(dir, `${dir}/nouser`),
-      emptyOverlay(),
-    );
+    const path = `${dir}/devc.json`;
+    await write(path, '   \n');
+    assertEquals(await loadOverlayFile(path), emptyOverlay());
   });
 });
 
 Deno.test('a comment-only overlay file is no overlay, not an error', async () => {
   await withTemp(async (dir) => {
-    await write(`${dir}/.devc/devc.json`, '// nothing here yet\n');
-    assertEquals(
-      await loadMergedOverlay(dir, `${dir}/nouser`),
-      emptyOverlay(),
-    );
+    const path = `${dir}/devc.jsonc`;
+    await write(path, '// nothing yet\n/* still nothing */\n');
+    assertEquals(await loadOverlayFile(path), emptyOverlay());
   });
 });
 
-// A typo like `"mount"` must not silently do nothing — but it must not fail the command either.
-Deno.test('an unknown top-level key warns naming the key and is otherwise ignored', async () => {
+// The typo guard the four-key schema used to give for free. `mount` is not a devcontainer.json
+// key, so it would silently do nothing.
+Deno.test('a key that is not a devcontainer.json key warns, naming it', async () => {
   await withTemp(async (dir) => {
-    const path = `${dir}/.devc/devc.json`;
-    await write(
-      path,
-      '{"mount":["type=bind,source=/a,target=/b"],"remoteEnv":{"FOO":"bar"}}',
-    );
+    const path = `${dir}/devc.json`;
+    await write(path, '{"mount":["type=bind,source=/a,target=/b"]}');
     let overlay = emptyOverlay();
     const warnings = await captureStderr(async () => {
       overlay = await loadOverlayFile(path);
@@ -241,13 +269,79 @@ Deno.test('an unknown top-level key warns naming the key and is otherwise ignore
     assertEquals(warnings.length, 1);
     assertStringIncludes(warnings[0], '"mount"');
     assertStringIncludes(warnings[0], path);
-    // The recognized key still applied, and the unknown one contributed nothing.
-    assertEquals(overlay.mounts, []);
-    assertEquals(overlay.remoteEnv, { FOO: 'bar' });
+    // Warned about, not dropped: the CLI ignores what it does not know.
+    assertEquals(overlay.config.mount, ['type=bind,source=/a,target=/b']);
   });
 });
 
-Deno.test('loadOverlayFile rejects a wrongly-typed known key, naming the file and key', async () => {
+// `additionalFeatures` was the flag-era name for `features`. It is not aliased — the key is
+// `features` now — so it lands in the same warning as any other unknown key, which names it.
+Deno.test('the retired additionalFeatures key warns like any other unknown key', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/devc.json`;
+    await write(path, '{"additionalFeatures":{"ghcr.io/x/rust:1":{}}}');
+    const warnings = await captureStderr(async () => {
+      await loadOverlayFile(path);
+    });
+    assertEquals(warnings.length, 1);
+    assertStringIncludes(warnings[0], '"additionalFeatures"');
+  });
+});
+
+Deno.test('every known devcontainer.json key loads without a warning', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/devc.json`;
+    await write(
+      path,
+      JSON.stringify({
+        name: 'x',
+        image: 'y',
+        mounts: ['type=bind,source=/a,target=/b'],
+        features: {},
+        remoteEnv: {},
+        containerEnv: {},
+        runArgs: [],
+        capAdd: [],
+        securityOpt: [],
+        forwardPorts: [],
+        initializeCommand: 'true',
+        postCreateCommand: 'true',
+        customizations: {},
+        hostRequirements: {},
+        workspaceMount: 'x',
+        workspaceFolder: '/w',
+        remoteUser: 'me',
+        updateRemoteUserUID: true,
+        waitFor: 'postCreateCommand',
+        baselineFeatures: true,
+        $replace: ['mounts'],
+      }),
+    );
+    assertEquals(
+      await captureStderr(async () => {
+        await loadOverlayFile(path);
+      }),
+      [],
+    );
+  });
+});
+
+// ── mount shape checking ────────────────────────────────────────────────────────────────────
+
+// All that is left of the old `MOUNT_SPEC_RE` validation: enough of a check to give a better
+// error than Docker's, and nothing that constrains the vocabulary.
+Deno.test('a mounts entry with no target fails, naming the file and the index', async () => {
+  await withTemp(async (dir) => {
+    const path = `${dir}/devc.json`;
+    await write(path, '{"mounts":["type=bind,source=/a"]}');
+    const err = await assertRejects(() => loadOverlayFile(path), Error);
+    assertStringIncludes(err.message, path);
+    assertStringIncludes(err.message, '"mounts"[0]');
+    assertStringIncludes(err.message, 'no mount target');
+  });
+});
+
+Deno.test('a non-array mounts fails, naming the file', async () => {
   await withTemp(async (dir) => {
     const path = `${dir}/devc.json`;
     await write(path, '{"mounts":"type=bind,source=/a,target=/b"}');
@@ -257,471 +351,184 @@ Deno.test('loadOverlayFile rejects a wrongly-typed known key, naming the file an
   });
 });
 
-// ── merge ───────────────────────────────────────────────────────────────────────────────────
-
-Deno.test("user + project: mounts concatenate user-first, remoteEnv resolves to the project's", async () => {
+Deno.test('object-form mounts are accepted, string and object alike', async () => {
   await withTemp(async (dir) => {
+    const path = `${dir}/devc.json`;
     await write(
-      `${dir}/config/devc.json`,
+      path,
       JSON.stringify({
-        mounts: ['type=bind,source=/user,target=/u'],
-        remoteEnv: { SHARED: 'from-user', USER_ONLY: 'kept' },
+        mounts: [
+          { type: 'bind', source: '/a', target: '/b' },
+          'type=volume,source=v,target=/v',
+        ],
       }),
     );
-    await write(
-      `${dir}/project/.devc/devc.json`,
-      JSON.stringify({
-        mounts: ['type=bind,source=/project,target=/p'],
-        remoteEnv: { SHARED: 'from-project' },
-      }),
-    );
-
-    const overlay = await loadMergedOverlay(`${dir}/project`, `${dir}/config`);
-    assertEquals(overlay.mounts, [
-      'type=bind,source=/user,target=/u',
-      'type=bind,source=/project,target=/p',
-    ]);
-    assertEquals(overlay.remoteEnv, {
-      SHARED: 'from-project',
-      USER_ONLY: 'kept',
-    });
+    const overlay = await loadOverlayFile(path);
+    assertEquals((overlay.config.mounts as unknown[]).length, 2);
   });
 });
 
-Deno.test('additionalFeatures merge per feature id, whole-value replace (no deep merge)', async () => {
+// Fields the flag grammar rejected outright are ordinary now — this is the regression guard for
+// the retired `RETIRED_MOUNT_FIELDS` complaint.
+Deno.test('consistency and any field order load without complaint', async () => {
   await withTemp(async (dir) => {
+    const path = `${dir}/devc.json`;
     await write(
-      `${dir}/config/devc.json`,
+      path,
       JSON.stringify({
-        additionalFeatures: {
-          'ghcr.io/x/rust:1': { version: '1.70', profile: 'minimal' },
-          'ghcr.io/x/go:1': { version: '1.22' },
-        },
+        mounts: [
+          'target=/b,source=/a,type=bind',
+          'type=bind,source=/c,target=/d,consistency=cached',
+        ],
       }),
     );
-    await write(
-      `${dir}/project/.devc/devc.json`,
-      JSON.stringify({
-        additionalFeatures: { 'ghcr.io/x/rust:1': { version: 'latest' } },
+    assertEquals(
+      await captureStderr(async () => {
+        await loadOverlayFile(path);
       }),
+      [],
     );
-
-    const overlay = await loadMergedOverlay(`${dir}/project`, `${dir}/config`);
-    assertEquals(overlay.additionalFeatures, {
-      // The project's whole value replaced the user's — `profile` is gone, not blended.
-      'ghcr.io/x/rust:1': { version: 'latest' },
-      'ghcr.io/x/go:1': { version: '1.22' },
-    });
   });
-});
-
-Deno.test('mergeOverlays leaves both inputs untouched', () => {
-  const user = {
-    mounts: ['u'],
-    additionalFeatures: { f: 1 },
-    remoteEnv: { A: 'u' },
-    baselineFeatures: true,
-  };
-  const project = {
-    mounts: ['p'],
-    additionalFeatures: { f: 2 },
-    remoteEnv: { A: 'p' },
-    baselineFeatures: true,
-  };
-  mergeOverlays(user, project);
-  assertEquals(user.mounts, ['u']);
-  assertEquals(project.remoteEnv, { A: 'p' });
 });
 
 // ── baselineFeatures ────────────────────────────────────────────────────────────────────────
 
 Deno.test('baselineFeatures defaults true when the key is omitted', async () => {
   await withTemp(async (dir) => {
-    const path = `${dir}/.devc/devc.json`;
-    await write(path, '{"remoteEnv":{"A":"1"}}');
+    const path = `${dir}/devc.json`;
+    await write(path, '{"mounts":[]}');
     assertEquals((await loadOverlayFile(path)).baselineFeatures, true);
   });
 });
 
-Deno.test('baselineFeatures: false is read back as false', async () => {
+Deno.test('baselineFeatures: false is read back as false, and never reaches the config', async () => {
   await withTemp(async (dir) => {
-    const path = `${dir}/.devc/devc.json`;
+    const path = `${dir}/devc.json`;
     await write(path, '{"baselineFeatures":false}');
-    assertEquals((await loadOverlayFile(path)).baselineFeatures, false);
+    const overlay = await loadOverlayFile(path);
+    assertEquals(overlay.baselineFeatures, false);
+    assertEquals(overlay.config, {});
   });
 });
 
-// Unlike every other known key, a malformed baselineFeatures warns and falls back to the
-// default rather than failing the load — there is no container-missing-your-mounts asymmetry
-// to justify a hard error either way.
 Deno.test('a non-boolean baselineFeatures warns and defaults to true, without failing the load', async () => {
   await withTemp(async (dir) => {
-    const path = `${dir}/.devc/devc.json`;
-    await write(path, '{"baselineFeatures":"nope"}');
+    const path = `${dir}/devc.json`;
+    await write(path, '{"baselineFeatures":"yes"}');
     let overlay = emptyOverlay();
     const warnings = await captureStderr(async () => {
       overlay = await loadOverlayFile(path);
     });
+    assertEquals(overlay.baselineFeatures, true);
     assertEquals(warnings.length, 1);
     assertStringIncludes(warnings[0], 'baselineFeatures');
-    assertStringIncludes(warnings[0], path);
-    assertEquals(overlay.baselineFeatures, true);
   });
 });
 
-// The one overlay key where the user does not lose to the project: a user-level `false` is a
-// veto no project-level `true` can undo.
-Deno.test('mergeOverlays: baselineFeatures is a user-side veto, not project-wins', () => {
-  const on = {
-    mounts: [],
-    additionalFeatures: {},
-    remoteEnv: {},
-    baselineFeatures: true,
-  };
-  const off = {
-    mounts: [],
-    additionalFeatures: {},
-    remoteEnv: {},
-    baselineFeatures: false,
-  };
-
-  // User off, project on: still off.
-  assertEquals(mergeOverlays(off, on).baselineFeatures, false);
-  // User on, project off: a project can still opt itself out.
-  assertEquals(mergeOverlays(on, off).baselineFeatures, false);
-  // Both on: on.
-  assertEquals(mergeOverlays(on, on).baselineFeatures, true);
-  // Both off: off.
-  assertEquals(mergeOverlays(off, off).baselineFeatures, false);
-});
-
-Deno.test('loadMergedOverlay: a user-level baselineFeatures:false survives even when the project says true', async () => {
+// The one key where the project does not win: a machine owner's `false` cannot be talked back
+// on by a repo's devc.json.
+Deno.test('baselineFeatures is a user-side veto, not project-wins', async () => {
   await withTemp(async (dir) => {
     await write(`${dir}/config/devc.json`, '{"baselineFeatures":false}');
-    await write(
-      `${dir}/project/.devc/devc.json`,
-      '{"baselineFeatures":true}',
-    );
-    const overlay = await loadMergedOverlay(`${dir}/project`, `${dir}/config`);
-    assertEquals(overlay.baselineFeatures, false);
+    await write(`${dir}/p/.devc/devc.json`, '{"baselineFeatures":true}');
+    const overlays = await loadOverlays(`${dir}/p`, `${dir}/config`);
+    assertEquals(overlays.baselineFeatures, false);
   });
 });
 
-// ── withBaselineFeatures ────────────────────────────────────────────────────────────────────
-
-Deno.test("withBaselineFeatures: adds the baseline Feature under the overlay's own additionalFeatures", () => {
-  const overlay = {
-    mounts: [],
-    additionalFeatures: { 'ghcr.io/x/rust:1': { version: 'latest' } },
-    remoteEnv: {},
-    baselineFeatures: true,
-  };
-  const effective = withBaselineFeatures(overlay, []);
-  assertEquals(effective.additionalFeatures, {
-    [DEVC_CONFIG_FEATURE]: {},
-    'ghcr.io/x/rust:1': { version: 'latest' },
-  });
-  // Never mutates its argument.
-  assertEquals(overlay.additionalFeatures, {
-    'ghcr.io/x/rust:1': { version: 'latest' },
+Deno.test('a project can still turn baselineFeatures off on its own', async () => {
+  await withTemp(async (dir) => {
+    await write(`${dir}/p/.devc/devc.json`, '{"baselineFeatures":false}');
+    const overlays = await loadOverlays(`${dir}/p`, `${dir}/nouser`);
+    assertEquals(overlays.baselineFeatures, false);
   });
 });
 
-Deno.test('withBaselineFeatures: baselineFeatures:false skips injection entirely', () => {
-  const overlay = {
-    mounts: [],
-    additionalFeatures: {},
-    remoteEnv: {},
-    baselineFeatures: false,
-  };
-  assertEquals(withBaselineFeatures(overlay, []), overlay);
+// ── devc's own layer ────────────────────────────────────────────────────────────────────────
+
+Deno.test('devcContributions adds the baseline Feature when nothing else declares it', () => {
+  assertEquals(devcContributions({}, true), {
+    features: { [DEVC_CONFIG_FEATURE]: {} },
+  });
 });
 
-// Rule 2: a user entry named devc-config at *any* tag suppresses devc's, and only one survives.
-Deno.test('withBaselineFeatures: an overlay entry named devc-config at any tag suppresses the injected one', () => {
+Deno.test('devcContributions: baselineFeatures false contributes no Feature', () => {
+  assertEquals(devcContributions({}, false), {});
+});
+
+// By *name*, not by id: two ids for one Feature are two Features to the CLI, so the hook would
+// run twice.
+Deno.test('a devc-config Feature at any tag or registry suppresses the injected one', () => {
   for (
     const id of [
       'ghcr.io/bmingles/devc-tools/devc-config',
       'ghcr.io/bmingles/devc-tools/devc-config:0',
-      'ghcr.io/bmingles/devc-tools/devc-config:0.2.0',
-      'ghcr.io/someone-else/devc-config:1',
+      'ghcr.io/bmingles/devc-tools/devc-config:0.1.0',
       './features/devc-config',
+      'ghcr.io/someone-else/devc-config:2',
     ]
   ) {
-    const overlay = {
-      mounts: [],
-      additionalFeatures: { [id]: {} },
-      remoteEnv: {},
-      baselineFeatures: true,
-    };
-    const effective = withBaselineFeatures(overlay, []);
-    assertEquals(effective, overlay, `should not inject alongside ${id}`);
-    assertEquals(Object.keys(effective.additionalFeatures), [id]);
+    assertEquals(
+      devcContributions({ features: { [id]: {} } }, true),
+      {},
+      `not suppressed by ${id}`,
+    );
   }
 });
 
-// Rule 3: the in-play devcontainer.json's own `features` suppresses it too — this is what
-// covers the "devc init output runs without devc" invariant: the bundled config declares
-// devc-config itself, so injection must step aside for it.
-Deno.test('withBaselineFeatures: a Feature already declared in the in-play config suppresses injection', () => {
-  const overlay = {
-    mounts: [],
-    additionalFeatures: {},
-    remoteEnv: {},
-    baselineFeatures: true,
-  };
-  const effective = withBaselineFeatures(overlay, [
-    'ghcr.io/bmingles/devc-tools/devc-config:0.1.0',
-  ]);
-  assertEquals(effective, overlay);
-});
-
-Deno.test('withBaselineFeatures: an unrelated declared Feature does not suppress injection', () => {
-  const overlay = {
-    mounts: [],
-    additionalFeatures: {},
-    remoteEnv: {},
-    baselineFeatures: true,
-  };
-  const effective = withBaselineFeatures(overlay, ['ghcr.io/x/rust:1']);
-  assertEquals(effective.additionalFeatures, { [DEVC_CONFIG_FEATURE]: {} });
-});
-
-Deno.test('withBaselineFeatures: returns a new object, never mutates the argument', () => {
-  const overlay = {
-    mounts: [],
-    additionalFeatures: {},
-    remoteEnv: {},
-    baselineFeatures: true,
-  };
-  const effective = withBaselineFeatures(overlay, []);
-  assertEquals(effective === overlay, false);
-  assertEquals(overlay.additionalFeatures, {});
-});
-
-// ── emitted args ────────────────────────────────────────────────────────────────────────────
-
-Deno.test('overlayArgs emits --mount, --additional-features, --remote-env in that order', () => {
-  const args = overlayArgs(
-    {
-      mounts: ['m1', 'm2'],
-      additionalFeatures: { 'ghcr.io/x/rust:1': { version: 'latest' } },
-      remoteEnv: { A: '1', B: '2' },
-      baselineFeatures: true,
-    },
-    '/workspaces/p',
-    '/home/me/p',
-  );
-  assertEquals(args, [
-    '--mount',
-    'm1',
-    '--mount',
-    'm2',
-    '--additional-features',
-    '{"ghcr.io/x/rust:1":{"version":"latest"}}',
-    '--remote-env',
-    'A=1',
-    '--remote-env',
-    'B=2',
-  ]);
-});
-
-Deno.test('an empty merged additionalFeatures emits no --additional-features arg', () => {
-  const args = overlayArgs(
-    {
-      mounts: ['m1'],
-      additionalFeatures: {},
-      remoteEnv: {},
-      baselineFeatures: true,
-    },
-    '/workspaces/p',
-    '/home/me/p',
-  );
-  assertEquals(args, ['--mount', 'm1']);
-});
-
-// `--mount` values reach Docker without passing through the devcontainer CLI's substitution, so
-// devc has to resolve every form it can itself. The reference resolved only the first two.
-Deno.test('a mount spec resolves all four substitutable variable forms', async () => {
-  await withTemp(async (dir) => {
-    const path = `${dir}/.devc/devc.jsonc`;
-    await write(path, await fixture('devc_overlay.jsonc'));
-    const overlay = await loadOverlayFile(path);
-    const args = overlayArgs(
-      overlay,
-      '/workspaces/p',
-      '/home/me/src/myproject',
-    );
-    assertEquals(args.slice(0, 4), [
-      '--mount',
-      `type=bind,source=${HOME}/notes,target=/workspaces/p/../notes`,
-      '--mount',
-      'type=bind,source=/home/me/src/myproject/.cache,target=/cache/myproject',
-    ]);
-    // ...and the fixture's remoteEnv value is substituted too, while its feature options are not.
-    assertEquals(args.slice(4), [
-      '--additional-features',
-      '{"ghcr.io/devcontainers/features/rust:1":{"version":"latest"}}',
-      '--remote-env',
-      'NOTES_DIR=/workspaces/p/../notes',
-    ]);
-  });
-});
-
-// The reference passed `--remote-env` values through unsubstituted while its own exec path
-// substituted them, so the same variable resolved in `devc exec` and stayed literal in the
-// container.
-Deno.test('a ${containerWorkspaceFolder} in overlay remoteEnv is substituted in --remote-env', () => {
+Deno.test('an unrelated declared Feature does not suppress the baseline', () => {
   assertEquals(
-    overlayArgs(
-      {
-        mounts: [],
-        additionalFeatures: {},
-        remoteEnv: { NOTES: '${containerWorkspaceFolder}/../notes' },
-        baselineFeatures: true,
-      },
-      '/workspaces/p',
-      '/home/me/p',
-    ),
-    ['--remote-env', 'NOTES=/workspaces/p/../notes'],
+    devcContributions({ features: { 'ghcr.io/x/rust:1': {} } }, true),
+    { features: { [DEVC_CONFIG_FEATURE]: {} } },
   );
 });
 
-// That JSON is merged into the config by the CLI and goes through *its* substitution pipeline;
-// pre-resolving here would double-resolve.
-Deno.test('additionalFeatures values are not substituted', () => {
-  const args = overlayArgs(
-    {
-      mounts: [],
-      additionalFeatures: {
-        'ghcr.io/x/f:1': { dir: '${containerWorkspaceFolder}/x' },
-      },
-      remoteEnv: {},
-      baselineFeatures: true,
-    },
-    '/workspaces/p',
-    '/home/me/p',
+// The bridge token mount used to be spliced into the materialized cache config, which meant it
+// reached zero-config containers only. As a merge layer it reaches project mode too, and devc
+// still writes nothing into the project.
+Deno.test('opting into devc-bridge contributes the read-only token mount', () => {
+  const layer = devcContributions({
+    features: { 'ghcr.io/bmingles/devc-tools/devc-bridge:0': {} },
+  }, true);
+  assertEquals(layer.mounts, [BRIDGE_MOUNT]);
+
+  // A *string*, and read-only. Both halves matter: an object mount cannot express `readonly`,
+  // and without it a container can pin the host's token for the next restart.
+  assertEquals(BRIDGE_MOUNT.split(',').includes('readonly'), true);
+  assertEquals(BRIDGE_MOUNT.startsWith('type=bind,'), true);
+  assertEquals(
+    BRIDGE_MOUNT.includes('source=${localEnv:HOME}/.config/devc-bridge/run'),
+    true,
   );
-  assertEquals(args, [
-    '--additional-features',
-    '{"ghcr.io/x/f:1":{"dir":"${containerWorkspaceFolder}/x"}}',
+});
+
+Deno.test('no bridge opt-in, no token mount', () => {
+  assertEquals(devcContributions({ features: {} }, true).mounts, undefined);
+});
+
+// devc's layer is merged *under* everything else, so a mount someone wrote themselves on the
+// same target replaces it through the merge's own target dedupe — no special case needed.
+Deno.test("a hand-written /run/devc-bridge mount wins over devc's", () => {
+  const own = 'type=bind,source=/custom/run,target=/run/devc-bridge';
+  const provisional = {
+    features: { 'ghcr.io/bmingles/devc-tools/devc-bridge:0': {} },
+    mounts: [own],
+  };
+  const merged = mergeConfigs([
+    devcContributions(provisional, true),
+    provisional,
   ]);
+  assertEquals(merged.mounts, [own]);
 });
 
-// ── remoteEnv for exec/attach ───────────────────────────────────────────────────────────────
-
-// `docker exec` never sees `remoteEnv`, so devc re-derives it. Same composition startContainer
-// does after the `up`, with the authoritative remoteWorkspaceFolder.
-Deno.test('effective exec remoteEnv orders base config < user overlay < project overlay', async () => {
-  await withTemp(async (dir) => {
-    await write(
-      `${dir}/project/.devcontainer/devcontainer.json`,
-      JSON.stringify({
-        remoteEnv: {
-          FROM_BASE: 'base',
-          BEATEN_BY_USER: 'base',
-          BEATEN_BY_PROJECT: 'base',
-        },
-      }),
-    );
-    await write(
-      `${dir}/config/devc.json`,
-      JSON.stringify({
-        remoteEnv: {
-          BEATEN_BY_USER: 'user',
-          BEATEN_BY_PROJECT: 'user',
-          FROM_USER: 'user',
-        },
-      }),
-    );
-    await write(
-      `${dir}/project/.devc/devc.json`,
-      JSON.stringify({
-        remoteEnv: {
-          BEATEN_BY_PROJECT: 'project',
-          FROM_PROJECT: '${containerWorkspaceFolder}/p',
-        },
-      }),
-    );
-
-    const base = await loadResolvedRemoteEnv(
-      `${dir}/project/.devcontainer/devcontainer.json`,
-      '/workspaces/p',
-      `${dir}/project`,
-    );
-    const overlay = await loadMergedOverlay(`${dir}/project`, `${dir}/config`);
-    const effective = {
-      ...base,
-      ...resolveOverlayRemoteEnv(overlay, '/workspaces/p', `${dir}/project`),
-    };
-
-    assertEquals(effective, {
-      FROM_BASE: 'base',
-      BEATEN_BY_USER: 'user',
-      BEATEN_BY_PROJECT: 'project',
-      FROM_USER: 'user',
-      FROM_PROJECT: '/workspaces/p/p',
-    });
-  });
+Deno.test('devcContributions never mutates the config it inspects', () => {
+  const config = { features: { 'ghcr.io/x/rust:1': {} } };
+  const snapshot = JSON.stringify(config);
+  devcContributions(config, true);
+  assertEquals(JSON.stringify(config), snapshot);
 });
 
-// ── mount spec validation ───────────────────────────────────────────────────────────────────
-
-// devc validates against the CLI's own regex so the failure names the file and the entry,
-// instead of `devcontainer up` reporting a context-free "Unmatched argument format".
-Deno.test('MOUNT_SPEC_RE matches the devcontainer CLI arg validation exactly', () => {
-  for (
-    const ok of [
-      'type=bind,source=/a,target=/b',
-      'type=volume,source=vol,target=/b',
-      'type=bind,source=${localEnv:HOME}/x,target=${containerWorkspaceFolder}/x',
-      'type=bind,source=/a,target=/b,external=true',
-    ]
-  ) assertEquals(MOUNT_SPEC_RE.test(ok), true, `should accept: ${ok}`);
-
-  for (
-    const bad of [
-      'type=bind,source=/a,target=/b,readonly',
-      'type=bind,source=/a,target=/b,consistency=cached',
-      'type=bind,source=/a,target=/b,consistency=cached,readonly',
-      'source=/a,target=/b,type=bind', // field order is fixed
-      'type=bind,source=/a,b,target=/c', // no commas in paths
-      'type=tmpfs,source=/a,target=/b',
-    ]
-  ) assertEquals(MOUNT_SPEC_RE.test(bad), false, `should reject: ${bad}`);
-});
-
-Deno.test('a readonly mount fails the load, naming the file and saying why', async () => {
-  await withTemp(async (dir) => {
-    const path = `${dir}/.devc/devc.jsonc`;
-    await write(
-      path,
-      JSON.stringify({
-        mounts: ['type=bind,source=/a,target=/b,consistency=cached,readonly'],
-      }),
-    );
-    const err = await assertRejects(() => loadOverlayFile(path), Error);
-    assertStringIncludes(err.message, path);
-    assertStringIncludes(err.message, '"mounts"[0]');
-    assertStringIncludes(err.message, '"consistency" and "readonly"');
-    assertStringIncludes(
-      err.message,
-      'read-only overlay mount is not possible',
-    );
-  });
-});
-
-Deno.test('a malformed mount spec fails with the expected format', async () => {
-  await withTemp(async (dir) => {
-    const path = `${dir}/.devc/devc.jsonc`;
-    await write(path, JSON.stringify({ mounts: ['source=/a,target=/b'] }));
-    const err = await assertRejects(() => loadOverlayFile(path), Error);
-    assertStringIncludes(err.message, 'type=<bind|volume>');
-    assertStringIncludes(err.message, 'in that field order');
-  });
-});
-
-// ── write-target resolution ─────────────────────────────────────────────────────────────────
+// ── where `devc config` writes ──────────────────────────────────────────────────────────────
 
 Deno.test('resolveProjectOverlayTarget: an existing overlay always wins', async () => {
   for (
@@ -797,16 +604,14 @@ Deno.test('the overlay read path leaves the project devcontainer.json byte-ident
       `${dir}/.devcontainer/devc.json`,
       JSON.stringify({
         mounts: ['type=bind,source=${localEnv:HOME}/notes,target=/notes'],
-        additionalFeatures: { 'ghcr.io/x/rust:1': {} },
+        features: { 'ghcr.io/x/rust:1': {} },
         remoteEnv: { A: '${containerWorkspaceFolder}' },
       }),
     );
     const before = await Deno.stat(configPath);
 
-    const overlay = await loadMergedOverlay(dir, `${dir}/nouser`);
-    overlayArgs(overlay, '/workspaces/p', dir);
-    await loadResolvedRemoteEnv(configPath, '/workspaces/p', dir);
-    resolveOverlayRemoteEnv(overlay, '/workspaces/p', dir);
+    const overlays = await loadOverlays(dir, `${dir}/nouser`);
+    mergeConfigs(overlays.layers);
 
     assertEquals(await Deno.readTextFile(configPath), original);
     // Not even the mtime moved — the file was never opened for writing.

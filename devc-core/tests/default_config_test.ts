@@ -10,9 +10,9 @@ import {
   ensureClaudeSeedDir,
   findOwnDevcontainerConfig,
   installBundledAssets,
-  loadDeclaredFeatureIds,
-  loadResolvedRemoteEnv,
+  loadConfigStrict,
   materializeDefaultConfig,
+  resolveRemoteEnv,
   substituteVars,
 } from '../default_config.ts';
 
@@ -124,62 +124,68 @@ Deno.test('substituteVars resolves both variables in one value', () => {
   );
 });
 
-Deno.test('loadResolvedRemoteEnv returns remoteEnv from config with ${containerWorkspaceFolder} resolved', async () => {
-  await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(
-      `${tmp}/devcontainer.json`,
-      JSON.stringify({
+Deno.test('resolveRemoteEnv resolves ${containerWorkspaceFolder}', () => {
+  assertEquals(
+    resolveRemoteEnv({
+      remoteEnv: {
+        PROJECT_PATH: '${containerWorkspaceFolder}',
+        TZ: 'America/Chicago',
+      },
+    }, '/workspaces/myproject'),
+    { PROJECT_PATH: '/workspaces/myproject', TZ: 'America/Chicago' },
+  );
+});
+
+Deno.test('resolveRemoteEnv returns {} when the config has no remoteEnv', () => {
+  assertEquals(resolveRemoteEnv({}, '/workspaces/x'), {});
+  assertEquals(
+    resolveRemoteEnv({ remoteEnv: 'nonsense' }, '/workspaces/x'),
+    {},
+  );
+  assertEquals(resolveRemoteEnv({ remoteEnv: ['a'] }, '/workspaces/x'), {});
+});
+
+Deno.test('resolveRemoteEnv skips non-string remoteEnv values', () => {
+  assertEquals(
+    resolveRemoteEnv(
+      { remoteEnv: { OK: 'yes', N: 1, B: true, O: {} } },
+      '/workspaces/x',
+    ),
+    { OK: 'yes' },
+  );
+});
+
+Deno.test('resolveRemoteEnv resolves ${localWorkspaceFolder} and its basename when given the local folder', () => {
+  assertEquals(
+    resolveRemoteEnv(
+      {
         remoteEnv: {
-          PROJECT_PATH: '${containerWorkspaceFolder}',
-          TZ: 'America/Chicago',
+          LOCAL: '${localWorkspaceFolder}',
+          BASE: '${localWorkspaceFolderBasename}',
         },
-      }),
-    );
-    assertEquals(
-      await loadResolvedRemoteEnv(
-        `${tmp}/devcontainer.json`,
-        '/workspaces/myproject',
-      ),
-      { PROJECT_PATH: '/workspaces/myproject', TZ: 'America/Chicago' },
-    );
-  });
+      },
+      '/workspaces/myproject',
+      '/home/me/src/myproject',
+    ),
+    { LOCAL: '/home/me/src/myproject', BASE: 'myproject' },
+  );
 });
 
-Deno.test('loadResolvedRemoteEnv returns {} when config has no remoteEnv', async () => {
-  await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(`${tmp}/devcontainer.json`, '{}');
-    assertEquals(
-      await loadResolvedRemoteEnv(
-        `${tmp}/devcontainer.json`,
-        '/workspaces/x',
-      ),
-      {},
-    );
-  });
+// The overlay's own remoteEnv is merged into the config before this ever runs, so there is no
+// second layer to apply here — which is the simplification the merge bought.
+Deno.test('resolveRemoteEnv reads one merged object, not a base plus an overlay', () => {
+  assertEquals(
+    resolveRemoteEnv(
+      { remoteEnv: { FROM_BASE: 'a', OVERRIDDEN: 'from-overlay' } },
+      '/workspaces/x',
+    ),
+    { FROM_BASE: 'a', OVERRIDDEN: 'from-overlay' },
+  );
 });
 
-Deno.test('loadResolvedRemoteEnv strips // line comments from config before parsing', async () => {
-  await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(
-      `${tmp}/devcontainer.json`,
-      `{
-  // a comment
-  "remoteEnv": { "FOO": "bar" }
-}`,
-    );
-    assertEquals(
-      await loadResolvedRemoteEnv(
-        `${tmp}/devcontainer.json`,
-        '/workspaces/x',
-      ),
-      { FOO: 'bar' },
-    );
-  });
-});
-
-// A project's own devcontainer.json is hand-written, so the reader has to survive real JSONC
-// (not just whole-line `//`) and has to fail soft: losing env vars beats breaking `devc exec`.
-Deno.test('loadResolvedRemoteEnv parses trailing commas, block comments, and end-of-line comments', async () => {
+// A project's own devcontainer.json is hand-written, so the reader has to survive real JSONC —
+// not just whole-line `//`.
+Deno.test('loadConfigStrict parses trailing commas, block comments, and end-of-line comments', async () => {
   await withTempDir(async (tmp) => {
     await Deno.writeTextFile(
       `${tmp}/devcontainer.json`,
@@ -192,64 +198,38 @@ Deno.test('loadResolvedRemoteEnv parses trailing commas, block comments, and end
   },
 }`,
     );
-    assertEquals(
-      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, '/workspaces/x'),
-      { FOO: 'bar', BAZ: 'qux' },
-    );
+    assertEquals(await loadConfigStrict(`${tmp}/devcontainer.json`), {
+      remoteEnv: { FOO: 'bar', BAZ: 'qux' },
+    });
   });
 });
 
-Deno.test('loadResolvedRemoteEnv returns {} for an unparseable config instead of throwing', async () => {
+// Unforgiving, deliberately: this config is a layer of the merge that decides what container
+// comes up, so a config devc could not read must fail loudly rather than degrade to `{}`.
+Deno.test('loadConfigStrict throws naming the file when the config is unparseable', async () => {
   await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(`${tmp}/devcontainer.json`, '{ not json at all');
-    assertEquals(
-      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, '/workspaces/x'),
-      {},
-    );
+    const path = `${tmp}/devcontainer.json`;
+    await Deno.writeTextFile(path, '{ not json at all');
+    const err = await assertRejects(() => loadConfigStrict(path), Error);
+    assertStringIncludes(err.message, path);
+    assertStringIncludes(err.message, 'could not parse as JSONC');
   });
 });
 
-Deno.test('loadResolvedRemoteEnv returns {} for a missing config instead of throwing', async () => {
+Deno.test('loadConfigStrict throws naming the file when the config is missing', async () => {
   await withTempDir(async (tmp) => {
-    assertEquals(
-      await loadResolvedRemoteEnv(`${tmp}/nope.json`, '/workspaces/x'),
-      {},
-    );
+    const path = `${tmp}/nope.json`;
+    const err = await assertRejects(() => loadConfigStrict(path), Error);
+    assertStringIncludes(err.message, path);
   });
 });
 
-Deno.test('loadResolvedRemoteEnv skips non-string remoteEnv values', async () => {
+Deno.test('loadConfigStrict throws when the config is not a JSON object', async () => {
   await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(
-      `${tmp}/devcontainer.json`,
-      JSON.stringify({ remoteEnv: { OK: 'yes', N: 1, B: true, O: {} } }),
-    );
-    assertEquals(
-      await loadResolvedRemoteEnv(`${tmp}/devcontainer.json`, '/workspaces/x'),
-      { OK: 'yes' },
-    );
-  });
-});
-
-Deno.test('loadResolvedRemoteEnv resolves ${localWorkspaceFolder} and its basename when given the local folder', async () => {
-  await withTempDir(async (tmp) => {
-    await Deno.writeTextFile(
-      `${tmp}/devcontainer.json`,
-      JSON.stringify({
-        remoteEnv: {
-          LOCAL: '${localWorkspaceFolder}',
-          BASE: '${localWorkspaceFolderBasename}',
-        },
-      }),
-    );
-    assertEquals(
-      await loadResolvedRemoteEnv(
-        `${tmp}/devcontainer.json`,
-        '/workspaces/myproject',
-        '/home/me/src/myproject',
-      ),
-      { LOCAL: '/home/me/src/myproject', BASE: 'myproject' },
-    );
+    const path = `${tmp}/devcontainer.json`;
+    await Deno.writeTextFile(path, '[1, 2, 3]');
+    const err = await assertRejects(() => loadConfigStrict(path), Error);
+    assertStringIncludes(err.message, 'expected a JSON object');
   });
 });
 
@@ -952,227 +932,3 @@ Deno.test('declaresFeatureNamed matches by name, whatever the tag or registry', 
 //
 // The baseline-injection half of the contract: withBaselineFeatures needs the raw ids the
 // in-play config already declares, so it can skip injecting a Feature the config names itself.
-
-Deno.test("loadDeclaredFeatureIds returns the config's raw feature ids", async () => {
-  await withTempDir(async (dir) => {
-    const path = `${dir}/devcontainer.json`;
-    await Deno.writeTextFile(
-      path,
-      JSON.stringify({
-        features: {
-          'ghcr.io/x/rust:1': { version: 'latest' },
-          'ghcr.io/bmingles/devc-tools/devc-config:0.1.0': {},
-        },
-      }),
-    );
-    assertEquals(await loadDeclaredFeatureIds(path), [
-      'ghcr.io/x/rust:1',
-      'ghcr.io/bmingles/devc-tools/devc-config:0.1.0',
-    ]);
-  });
-});
-
-Deno.test('loadDeclaredFeatureIds returns [] when the config declares no features', async () => {
-  await withTempDir(async (dir) => {
-    const path = `${dir}/devcontainer.json`;
-    await Deno.writeTextFile(path, JSON.stringify({ image: 'x' }));
-    assertEquals(await loadDeclaredFeatureIds(path), []);
-  });
-});
-
-Deno.test('loadDeclaredFeatureIds parses real JSONC: comments and trailing commas', async () => {
-  await withTempDir(async (dir) => {
-    const path = `${dir}/devcontainer.json`;
-    await Deno.writeTextFile(
-      path,
-      `{
-  // a hand-written config
-  "features": {
-    "ghcr.io/x/rust:1": {}, // trailing comma below
-  },
-}`,
-    );
-    assertEquals(await loadDeclaredFeatureIds(path), ['ghcr.io/x/rust:1']);
-  });
-});
-
-// Degrades to [] ("nothing declared") rather than throwing — deliberately, so devc still
-// injects the baseline rather than silently withholding it from a config it cannot parse. See
-// loadDeclaredFeatureIds's own doc comment for why this is the safer default than the reverse.
-Deno.test('loadDeclaredFeatureIds degrades to [] with a warning when the config cannot be read', async () => {
-  await withTempDir(async (dir) => {
-    const path = `${dir}/devcontainer.json`;
-    await Deno.writeTextFile(path, '{ not json');
-    const warnings: string[] = [];
-    const original = console.error;
-    console.error = (...args: unknown[]) => warnings.push(args.join(' '));
-    try {
-      assertEquals(await loadDeclaredFeatureIds(path), []);
-    } finally {
-      console.error = original;
-    }
-    assertEquals(warnings.length, 1);
-    assertStringIncludes(warnings[0], path);
-  });
-});
-
-Deno.test('loadDeclaredFeatureIds degrades to [] with a warning when the file does not exist', async () => {
-  await withTempDir(async (dir) => {
-    const path = `${dir}/nope/devcontainer.json`;
-    const warnings: string[] = [];
-    const original = console.error;
-    console.error = (...args: unknown[]) => warnings.push(args.join(' '));
-    try {
-      assertEquals(await loadDeclaredFeatureIds(path), []);
-    } finally {
-      console.error = original;
-    }
-    assertEquals(warnings.length, 1);
-  });
-});
-
-Deno.test('materializeDefaultConfig injects the bridge mount only when opted in', async () => {
-  await withTempDir(async (cacheDir) => {
-    await materializeDefaultConfig(cacheDir, NO_TEMPLATES, { bridge: true });
-    const withBridge = JSON.parse(
-      stripLineComments(
-        await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
-      ),
-    );
-    const mounts: string[] = withBridge.mounts;
-    const mount = mounts.filter((m) => m.includes('/run/devc-bridge'));
-    assertEquals(mount.length, 1, 'want exactly one bridge mount');
-
-    // A *string*, and read-only. Both halves matter: an object mount cannot express
-    // `readonly` (the CLI re-serializes it as type=/src=/dst=), and without `readonly` a
-    // container can pin the host's token for the next restart. Do not "normalize" this.
-    assertEquals(typeof mount[0], 'string');
-    assertEquals(mount[0].startsWith('type=bind,'), true);
-    assertEquals(mount[0].split(',').includes('readonly'), true);
-    assertEquals(
-      mount[0].includes('source=${localEnv:HOME}/.config/devc-bridge/run'),
-      true,
-    );
-  });
-
-  await withTempDir(async (cacheDir) => {
-    await materializeDefaultConfig(cacheDir, NO_TEMPLATES, { bridge: false });
-    const without = JSON.parse(
-      stripLineComments(
-        await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
-      ),
-    );
-    assertEquals(
-      (without.mounts as string[]).filter((m) =>
-        m.includes('/.config/devc-bridge/')
-      ),
-      [],
-      'no opt-in means no bridge mount',
-    );
-  });
-
-  // The default is off — a caller that forgets the option must not silently mount.
-  await withTempDir(async (cacheDir) => {
-    await materializeDefaultConfig(cacheDir, NO_TEMPLATES);
-    const dc = JSON.parse(
-      stripLineComments(
-        await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
-      ),
-    );
-    assertEquals(
-      (dc.mounts as string[]).filter((m) =>
-        m.includes('/.config/devc-bridge/')
-      ),
-      [],
-    );
-  });
-});
-
-Deno.test('the injected bridge mount leaves the rest of the config intact', async () => {
-  // Text insertion into JSONC: the risk is a broken array or lost comments, neither of which a
-  // parse of the mounts array alone would catch.
-  await withTempDir(async (cacheDir) => {
-    await materializeDefaultConfig(cacheDir, NO_TEMPLATES, { bridge: true });
-    const text = await Deno.readTextFile(`${cacheDir}/devcontainer.json`);
-    const dc = JSON.parse(stripLineComments(text));
-
-    assertEquals(
-      typeof dc.image === 'string' || typeof dc.build === 'object',
-      true,
-    );
-    assertEquals(Array.isArray(dc.mounts), true);
-    // The comments survive — this is JSONC on purpose — and the mount arrives fenced, so the
-    // one config that has it also says who put it there.
-    assertEquals(text.includes('// >>> devc:bridge-mount'), true);
-    assertEquals(text.includes('// <<< devc:bridge-mount'), true);
-    assertEquals(text.includes('// ~/.claude folder'), true);
-    // And the other mounts are still there, unduplicated.
-    const claudeSeed = (dc.mounts as string[]).filter((m) =>
-      m.includes('claude-seed')
-    );
-    assertEquals(claudeSeed.length, 1);
-  });
-});
-
-Deno.test('bridge injection is skipped when the config already declares the mount', async () => {
-  // A user template that wrote the mount itself wins: two mounts on the same target is
-  // Docker's `Duplicate mount point`, a hard create failure.
-  await withTempDir(async (tmp) => {
-    const templates = `${tmp}/templates`;
-    const cacheDir = `${tmp}/cache`;
-    await mkdir(templates);
-    await Deno.writeTextFile(
-      `${templates}/devcontainer.json`,
-      JSON.stringify(
-        {
-          name: 'mine',
-          image: 'ubuntu',
-          mounts: [
-            'type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly',
-          ],
-        },
-        null,
-        2,
-      ),
-    );
-
-    await materializeDefaultConfig(cacheDir, templates, { bridge: true });
-    const dc = JSON.parse(
-      stripLineComments(
-        await Deno.readTextFile(`${cacheDir}/devcontainer.json`),
-      ),
-    );
-    assertEquals(
-      (dc.mounts as string[]).filter((m) => m.includes('/run/devc-bridge'))
-        .length,
-      1,
-      'must not double up on the same mount target',
-    );
-  });
-});
-
-Deno.test('a user template with no mounts array still gets the bridge mount', async () => {
-  // The injection needs no marker in the config it edits — that is what lets the bundled
-  // default (and every project `devc init` scaffolds from it) stay free of bridge references.
-  // A hand-written template that never declared `mounts` gets the array created for it, rather
-  // than the mount being silently dropped for want of an anchor.
-  await withTempDir(async (tmp) => {
-    const templates = `${tmp}/templates`;
-    const cacheDir = `${tmp}/cache`;
-    await mkdir(templates);
-    await Deno.writeTextFile(
-      `${templates}/devcontainer.json`,
-      '{\n  // hand-written\n  "name": "mine",\n  "image": "ubuntu"\n}\n',
-    );
-
-    await materializeDefaultConfig(cacheDir, templates, { bridge: true });
-    const text = await Deno.readTextFile(`${cacheDir}/devcontainer.json`);
-    const dc = JSON.parse(stripLineComments(text));
-    assertEquals(dc.mounts, [
-      'type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly',
-    ]);
-    // Their own file survives intact, comment included.
-    assertEquals(dc.image, 'ubuntu');
-    assertEquals(text.includes('// hand-written'), true);
-  });
-});

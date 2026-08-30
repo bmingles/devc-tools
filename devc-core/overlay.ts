@@ -1,12 +1,12 @@
-// The `devc.json` overlay: an optional, devc-only file contributing `mounts`,
-// `additionalFeatures`, `remoteEnv` and `baselineFeatures` on top of whichever
-// `devcontainer.json` is in play.
+// The `devc.json` overlay: an optional, devc-only file contributing `devcontainer.json` keys on
+// top of whichever `devcontainer.json` is in play.
 //
-// The governing invariant: **whatever lands in `.devcontainer/` must run without `devc`
-// installed at all.** That is why the overlay is applied as `devcontainer up` CLI args and never
-// as a file rewrite — nothing in this module writes to a project's `devcontainer.json`. A
-// checkout without `devc` still builds and runs from the standard config; it just does not get
-// the overlay's extra mounts, features and env. Un-augmented, not broken.
+// The governing invariant: **whatever lands in `.devcontainer/` must run without `devc` installed
+// at all.** Nothing in this module writes to a project's `devcontainer.json`; the overlay is
+// merged into an effective config materialized under `~/.cache/devc/` (see `merged_config.ts`)
+// and the project's own files are never touched. A checkout without `devc` still builds and runs
+// from the standard config; it just does not get the overlay's contributions. Un-augmented, not
+// broken.
 //
 // The overlay serves two equally valid shapes, and neither is canonical:
 //
@@ -17,13 +17,10 @@
 
 import { readFile, stat } from 'node:fs/promises';
 import { parse as parseJsoncLoose, type ParseError } from 'jsonc-parser';
-import {
-  CONFIG_DIR,
-  declaresFeatureNamed,
-  substituteVars,
-} from './default_config.ts';
+import { CONFIG_DIR, declaresFeatureNamed } from './default_config.ts';
 import { isNotADirectory, isNotFound } from './errors.ts';
 import { logWarning } from './log.ts';
+import { type ConfigObject, mountTarget, REPLACE_KEY } from './merge.ts';
 
 /**
  * Parse JSONC (comments and trailing commas both allowed), throwing when `jsonc-parser`
@@ -43,39 +40,84 @@ function parseJsonc(text: string): unknown {
   return value;
 }
 
-/** The merged, validated contents of the overlay layer. Every field is always present. */
+/** One loaded overlay file: its config layer, and the one devc-only key. */
 export interface DevcOverlay {
-  /** Docker `--mount` specs, in merged order (user entries first). */
-  mounts: string[];
   /**
-   * Feature id → options, the ones *you* ask for — merged per feature id (whole-value replace,
-   * no deep merge). See {@link DevcOverlay.baselineFeatures} for the ones devc adds on its own;
-   * the two are adjacent and opposite: this one is a map that adds, that one is a boolean that
-   * withholds.
+   * The `devcontainer.json` keys this file contributes, as written — no substitution, no
+   * normalization. Merged as one layer by {@link import("./merge.ts").mergeConfigs}, so it may
+   * also carry that module's `$replace` directive.
    */
-  additionalFeatures: Record<string, unknown>;
-  /** Container env, merged per key. */
-  remoteEnv: Record<string, string>;
+  config: ConfigObject;
   /**
-   * False disables every Feature devc contributes on its own (see
-   * {@link DevcOverlay.additionalFeatures} for the ones you ask for yourself). Default `true`.
+   * False disables every Feature devc contributes on its own (see {@link devcContributions}).
+   * Default `true`. The one overlay key that is *not* a `devcontainer.json` key and never
+   * reaches the merged config.
    *
-   * The one overlay key where {@link mergeOverlays} does **not** let the project win: it is
-   * `user.baselineFeatures && project.baselineFeatures` — a **veto**, not "more specific wins".
-   * The user-level file belongs to the machine's owner, and a repo talking a machine back into
-   * running devc's baseline after the owner turned it off is not a thing anyone asked for. A
-   * project *can* turn it off even when the user left it on, same as any other opt-out.
+   * Also the one key where the project does **not** win: the effective value is
+   * `user && project` — a **veto**, not "more specific wins". The user-level file belongs to the
+   * machine's owner, and a repo talking a machine back into running devc's baseline after the
+   * owner turned it off is not a thing anyone asked for. A project *can* turn it off even when
+   * the user left it on, same as any other opt-out.
    */
   baselineFeatures: boolean;
 }
 
-/** The only four keys the overlay understands. Anything else warns and is ignored. */
-const OVERLAY_KEYS = [
+/** The devc-only keys an overlay may carry. Everything else must be a `devcontainer.json` key. */
+const DEVC_ONLY_KEYS = ['baselineFeatures', REPLACE_KEY] as const;
+
+/**
+ * Every key a `devcontainer.json` may carry, including the three deprecated top-level VS Code
+ * ones the CLI still migrates (`extensions`, `settings`, `devPort`).
+ *
+ * This is a **typo guard, not a schema**: an unknown key warns and is passed through to the
+ * merged config, where the CLI ignores it. It exists because the overlay went from four known
+ * keys to the whole spec, and losing "you wrote `mount`, not `mounts`" with it would have been a
+ * real cost.
+ */
+const KNOWN_CONFIG_KEYS: readonly string[] = [
+  'name',
+  'image',
+  'build',
+  'dockerFile',
+  'context',
+  'dockerComposeFile',
+  'service',
+  'runServices',
+  'workspaceFolder',
+  'workspaceMount',
+  'runArgs',
+  'overrideCommand',
+  'shutdownAction',
+  'init',
+  'privileged',
+  'capAdd',
+  'securityOpt',
   'mounts',
-  'additionalFeatures',
+  'features',
+  'overrideFeatureInstallOrder',
+  'containerEnv',
   'remoteEnv',
-  'baselineFeatures',
-] as const;
+  'containerUser',
+  'remoteUser',
+  'updateRemoteUserUID',
+  'userEnvProbe',
+  'forwardPorts',
+  'portsAttributes',
+  'otherPortsAttributes',
+  'appPort',
+  'initializeCommand',
+  'onCreateCommand',
+  'updateContentCommand',
+  'postCreateCommand',
+  'postStartCommand',
+  'postAttachCommand',
+  'waitFor',
+  'customizations',
+  'hostRequirements',
+  'extensions',
+  'settings',
+  'devPort',
+];
 
 /**
  * Project-level overlay locations, relative to the project folder, in first-hit-wins order.
@@ -94,51 +136,9 @@ const PROJECT_CANDIDATES = [
 /** User-level overlay filenames, relative to the global config dir, in first-hit-wins order. */
 const USER_CANDIDATES = ['devc.jsonc', 'devc.json'] as const;
 
-/**
- * The devcontainer CLI's own `--mount` arg validation, copied verbatim from
- * `devContainersSpecCLI.ts`. It is the whole vocabulary a mount spec has here: field order is
- * fixed, and `source`/`target` cannot contain a comma.
- *
- * Anything else — `consistency=cached`, `readonly`, a reordered spec — is rejected by the CLI
- * with a context-free `Unmatched argument format: mount must match …` that names neither the
- * file nor the entry. devc validates against the same regex at load so the error can.
- *
- * There is no way to express a read-only mount through this flag. The CLI re-serializes the
- * parsed spec as `type=…,src=…,dst=…` before it reaches `docker run`, so even a smuggled field
- * would be dropped; only *string* mounts inside a `devcontainer.json` `mounts` array are passed
- * through verbatim (which is how the infra `claude-seed` mount stays `readonly`).
- */
-export const MOUNT_SPEC_RE =
-  /^type=(bind|volume),source=([^,]+),target=([^,]+)(?:,external=(true|false))?$/;
-
-/** Fields devc used to emit, named individually because they are the likely reason for a failure. */
-const RETIRED_MOUNT_FIELDS = ['consistency', 'readonly'] as const;
-
-/** An overlay contributing nothing. `baselineFeatures` defaults `true`, same as a file that omits it. */
+/** An overlay contributing nothing. `baselineFeatures` defaults `true`, as a file omitting it does. */
 export function emptyOverlay(): DevcOverlay {
-  return {
-    mounts: [],
-    additionalFeatures: {},
-    remoteEnv: {},
-    baselineFeatures: true,
-  };
-}
-
-/**
- * True when `overlay` would emit no `devcontainer up` args at all.
- *
- * Deliberately does **not** consider `baselineFeatures`: that field never emits an arg by
- * itself (it is consulted by {@link withBaselineFeatures}, upstream of this call, to decide
- * what to *add* to `additionalFeatures`) — so a `baselineFeatures: false` overlay that declares
- * nothing else really is empty, and a caller that tests the *effective* overlay after
- * injection instead of the user's own would wrongly treat every overlay as non-empty and pay
- * for {@link import("./container.ts").computeContainerWorkspaceFolder}'s git subprocesses on
- * every `up`. Test the overlay before injection here, not after.
- */
-export function isEmptyOverlay(overlay: DevcOverlay): boolean {
-  return overlay.mounts.length === 0 &&
-    Object.keys(overlay.additionalFeatures).length === 0 &&
-    Object.keys(overlay.remoteEnv).length === 0;
+  return { config: {}, baselineFeatures: true };
 }
 
 async function firstExisting(paths: readonly string[]): Promise<string | null> {
@@ -239,76 +239,42 @@ function isTokenFree(text: string): boolean {
 }
 
 /**
- * Why `spec` was rejected, phrased for someone looking at their own file. The retired-field
- * case is called out by name because it is the one a devc upgrade causes: those fields were
- * emitted into `devcontainer.json` fences, where they were legal, and are not legal here.
+ * Shape-check `mounts`, whose only job is a better error than Docker's.
+ *
+ * Deliberately *loose*: overlay mounts land in the merged config's `mounts` array, where the
+ * full `devcontainer.json` vocabulary applies — `readonly`, `consistency`, object form, any
+ * field order. (They used to become `devcontainer up --mount` args, whose grammar is a strict
+ * subset, and devc validated against the CLI's own regex so a rejected spec could name the file.
+ * That constraint is gone with the flag.) So this checks only that an entry could name a mount
+ * at all; everything past that is Docker's to complain about, in Docker's own vocabulary.
  */
-function mountSpecComplaint(spec: string): string {
-  const offenders = RETIRED_MOUNT_FIELDS.filter((f) =>
-    new RegExp(`(^|,)\\s*${f}\\b`).test(spec)
-  );
-  if (offenders.length > 0) {
-    return `${
-      offenders.map((f) => `"${f}"`).join(' and ')
-    } cannot be used here — \`devcontainer up --mount\` accepts only ` +
-      'type, source, target and external, so a read-only overlay mount is not possible';
-  }
-  return 'must be type=<bind|volume>,source=<source>,target=<target>[,external=<true|false>] ' +
-    '— in that field order, with no commas in the paths';
-}
-
-function readMounts(path: string, value: unknown): string[] {
+function checkMounts(path: string, value: unknown): void {
   if (!Array.isArray(value)) {
-    throw typeError(path, '"mounts" must be an array of mount-spec strings');
+    throw typeError(path, '"mounts" must be an array of mount specs');
   }
-  return value.map((entry, i) => {
-    if (typeof entry !== 'string') {
-      throw typeError(path, `"mounts"[${i}] must be a string`);
+  value.forEach((entry, i) => {
+    if (
+      typeof entry !== 'string' && (typeof entry !== 'object' || entry === null)
+    ) {
+      throw typeError(path, `"mounts"[${i}] must be a string or an object`);
     }
-    // Validated raw, before substitution: none of the `${…}` tokens can contain a comma, so
-    // the check is equivalent and the error can quote what the user actually wrote.
-    if (!MOUNT_SPEC_RE.test(entry)) {
+    if (mountTarget(entry) === null) {
       throw typeError(
         path,
-        `"mounts"[${i}] (${entry}): ${mountSpecComplaint(entry)}`,
+        `"mounts"[${i}] (${
+          typeof entry === 'string' ? entry : JSON.stringify(entry)
+        }): no mount target — a string spec needs a "target=" field, an object form a "target" property`,
       );
     }
-    return entry;
   });
 }
 
-function readObject(
-  path: string,
-  key: string,
-  value: unknown,
-): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw typeError(path, `"${key}" must be an object`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function readRemoteEnv(
-  path: string,
-  value: unknown,
-): Record<string, string> {
-  const obj = readObject(path, 'remoteEnv', value);
-  return Object.fromEntries(
-    Object.entries(obj).map(([k, v]) => {
-      if (typeof v !== 'string') {
-        throw typeError(path, `"remoteEnv"."${k}" must be a string`);
-      }
-      return [k, v];
-    }),
-  );
-}
-
 /**
- * Unlike every other known key, a malformed `baselineFeatures` **warns and is ignored**
- * (falling back to the default `true`) rather than failing the load. The other keys are hard
- * errors because silently starting a container missing a mount is worse than refusing to
- * start; a mistyped `baselineFeatures` has no such asymmetry — either value is a container that
- * comes up, so there is nothing here worth failing over.
+ * Unlike a malformed `mounts`, a malformed `baselineFeatures` **warns and is ignored** (falling
+ * back to the default `true`) rather than failing the load. `mounts` is a hard error because
+ * silently starting a container missing a mount is worse than refusing to start; a mistyped
+ * `baselineFeatures` has no such asymmetry — either value is a container that comes up, so there
+ * is nothing here worth failing over.
  */
 function readBaselineFeatures(path: string, value: unknown): boolean {
   if (typeof value !== 'boolean') {
@@ -324,12 +290,11 @@ function readBaselineFeatures(path: string, value: unknown): boolean {
  * Parse one overlay file, whatever its extension: both `.json` and `.jsonc` go through
  * `parseJsonc`, so the suffix is naming convention only.
  *
- * Parsing is deliberately *unforgiving*, the opposite of {@link
- * import("./default_config.ts").loadResolvedRemoteEnv}'s treatment of a project's own
- * `devcontainer.json`. This file exists only for `devc`, is small and hand-written, and its
- * whole purpose is to add mounts: silently starting a container without them is worse than a
- * hard error naming the file. Unknown top-level keys are the one exception — those warn and are
- * ignored, so a typo like `"mount"` is visible without being fatal.
+ * Parsing is deliberately *unforgiving*. This file exists only for `devc`, is small and
+ * hand-written, and its whole purpose is to change how a container comes up: silently starting
+ * one without its contributions is worse than a hard error naming the file. Unknown top-level
+ * keys are the one exception — those warn and are passed through, so a typo like `"mount"` is
+ * visible without being fatal.
  *
  * A file with no JSON tokens at all — empty, whitespace, or only comments, i.e. one a user has
  * created but not filled in — counts as no overlay rather than an error. It has to be caught
@@ -356,70 +321,54 @@ export async function loadOverlayFile(path: string): Promise<DevcOverlay> {
     throw typeError(path, 'expected a JSON object at the top level');
   }
 
-  const raw = parsed as Record<string, unknown>;
+  const raw = parsed as ConfigObject;
   for (const key of Object.keys(raw)) {
-    if (!(OVERLAY_KEYS as readonly string[]).includes(key)) {
+    if (
+      !KNOWN_CONFIG_KEYS.includes(key) &&
+      !(DEVC_ONLY_KEYS as readonly string[]).includes(key)
+    ) {
       logWarning(
-        `devc: ignoring unknown key "${key}" in ${path} (known keys: ${
-          OVERLAY_KEYS.join(', ')
-        })`,
+        `devc: unknown key "${key}" in ${path} — not a devcontainer.json key, so it will have no effect`,
       );
     }
   }
+  if (raw.mounts !== undefined) checkMounts(path, raw.mounts);
 
+  const { baselineFeatures, ...config } = raw;
   return {
-    mounts: raw.mounts === undefined ? [] : readMounts(path, raw.mounts),
-    additionalFeatures: raw.additionalFeatures === undefined
-      ? {}
-      : readObject(path, 'additionalFeatures', raw.additionalFeatures),
-    remoteEnv: raw.remoteEnv === undefined
-      ? {}
-      : readRemoteEnv(path, raw.remoteEnv),
-    baselineFeatures: raw.baselineFeatures === undefined
+    config,
+    baselineFeatures: baselineFeatures === undefined
       ? true
-      : readBaselineFeatures(path, raw.baselineFeatures),
+      : readBaselineFeatures(path, baselineFeatures),
   };
 }
 
-/**
- * Merge the user overlay under the project overlay. The project wins because it is the more
- * specific statement about *this* repo:
- *
- * - `mounts` concatenate, user entries first — a mount is additive, so there is nothing to win.
- * - `remoteEnv` overrides per key.
- * - `additionalFeatures` merges per feature id, whole-value replace. A feature's options object
- *   is *not* deep-merged: half a project's options silently blended with half the user's would
- *   be far harder to reason about than "the project's entry replaces the user's".
- *
- * `baselineFeatures` is the one exception to "project wins" — see its own doc comment on
- * {@link DevcOverlay.baselineFeatures} for why disabling it is a veto instead.
- */
-export function mergeOverlays(
-  user: DevcOverlay,
-  project: DevcOverlay,
-): DevcOverlay {
-  return {
-    mounts: [...user.mounts, ...project.mounts],
-    additionalFeatures: {
-      ...user.additionalFeatures,
-      ...project.additionalFeatures,
-    },
-    remoteEnv: { ...user.remoteEnv, ...project.remoteEnv },
-    baselineFeatures: user.baselineFeatures && project.baselineFeatures,
-  };
+/** The overlay layers for one project, plus the effective `baselineFeatures`. */
+export interface DevcOverlays {
+  /**
+   * Config layers to merge, **lowest first**: the user-level file, then the project one.
+   *
+   * They stay separate rather than being pre-merged because the merge is not associative in
+   * the way that would need: a project's `$replace` must replace what the base config *and* the
+   * user overlay said, which only holds if the base is already in the fold when the project
+   * layer lands.
+   */
+  layers: ConfigObject[];
+  /** `user && project` — see {@link DevcOverlay.baselineFeatures} for why this one is a veto. */
+  baselineFeatures: boolean;
 }
 
 /**
- * The effective overlay for `localFolder`: the user-level file merged under the project-level
- * one. Applies in *both* modes — a project with its own `devcontainer.json` gets the overlay
- * just as the zero-config path does.
+ * The overlay layers for `localFolder`: the user-level file, then the project-level one. Applies
+ * in *both* modes — a project with its own `devcontainer.json` gets the overlay just as the
+ * zero-config path does.
  *
  * `configDir` defaults to the real `~/.config/devc` and only needs overriding in tests.
  */
-export async function loadMergedOverlay(
+export async function loadOverlays(
   localFolder: string,
   configDir: string = CONFIG_DIR,
-): Promise<DevcOverlay> {
+): Promise<DevcOverlays> {
   const [userPath, projectPath] = await Promise.all([
     findUserOverlayPath(configDir),
     findProjectOverlayPath(localFolder),
@@ -428,12 +377,15 @@ export async function loadMergedOverlay(
     userPath === null ? emptyOverlay() : loadOverlayFile(userPath),
     projectPath === null ? emptyOverlay() : loadOverlayFile(projectPath),
   ]);
-  return mergeOverlays(user, project);
+  return {
+    layers: [user.config, project.config],
+    baselineFeatures: user.baselineFeatures && project.baselineFeatures,
+  };
 }
 
 /**
  * The `devc-config` Feature devc contributes to every container it starts — dynamically, via
- * {@link withBaselineFeatures} only. Deliberately **not** also declared in the bundled
+ * {@link devcContributions} only. Deliberately **not** also declared in the bundled
  * `devcontainer.json` (`devc-core/default/devcontainer.json`): what this Feature does (running a
  * `devc-post-create.sh` a project committed for devc's own convention) is devc-specific, so
  * unlike the other bundled Features it is fine for a `devc init`-scaffolded project to lose it
@@ -459,110 +411,60 @@ const BASELINE_FEATURES: readonly { id: string; name: string }[] = [
 ];
 
 /**
- * `overlay` plus the Features devc contributes itself, added *under* whatever the overlay
- * already declares.
+ * The token bind mount the devc-bridge Feature needs, contributed whenever something opts into
+ * that Feature.
  *
- * For each baseline Feature, it is skipped when **any** of:
+ * Read-only, and that is why it has to be a config `mounts` entry: a Feature cannot declare it
+ * (the Feature schema's `Mount` has no such field), and it could not ride the overlay back when
+ * overlay mounts became `devcontainer up --mount` args, whose grammar has no `readonly` either.
+ * A writable token mount would let a container pin the host token for the next start.
  *
- * 1. `overlay.baselineFeatures` is false;
- * 2. `overlay.additionalFeatures` already declares a Feature of that name (by any spelling —
- *    {@link declaresFeatureNamed});
- * 3. `declaredInConfig` (the in-play `devcontainer.json`'s own `features`) contains a Feature of
- *    that name.
- *
- * Skipping on 2 and 3 — rather than letting the CLI's own merge sort it out — matters because
- * the pinned `@devcontainers/cli` dedupes `--additional-features` against a config's `features`
- * by **exact id string**, not by name: a consumer who pins `…/devc-config:0.2.0` while devc
- * injects `:0.1.0` would get **both installed and the hook run twice**, not one overriding the
- * other. Measured against `@devcontainers/cli` 0.88.0.
- *
- * Returns a new object; never mutates `overlay`.
+ * It used to be spliced into the *materialized cache config* as a JSONC fence, which meant it
+ * reached zero-config containers only — devc will not write into a project's `.devcontainer/`,
+ * so project-mode users copied the line in by hand. As a merge layer it reaches both, and devc
+ * still writes nothing into the project.
  */
-export function withBaselineFeatures(
-  overlay: DevcOverlay,
-  declaredInConfig: readonly string[],
-): DevcOverlay {
-  if (!overlay.baselineFeatures) return overlay;
-
-  const declaredInConfigAsFeatures = Object.fromEntries(
-    declaredInConfig.map((id) => [id, {}]),
-  );
-
-  const additions: Record<string, unknown> = {};
-  for (const feature of BASELINE_FEATURES) {
-    if (declaresFeatureNamed(overlay.additionalFeatures, feature.name)) {
-      continue;
-    }
-    if (declaresFeatureNamed(declaredInConfigAsFeatures, feature.name)) {
-      continue;
-    }
-    additions[feature.id] = {};
-  }
-  if (Object.keys(additions).length === 0) return overlay;
-
-  return {
-    ...overlay,
-    additionalFeatures: { ...additions, ...overlay.additionalFeatures },
-  };
-}
+export const BRIDGE_MOUNT =
+  'type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly';
 
 /**
- * The `devcontainer up` args `overlay` implies, appended after devc's own args:
+ * devc's own layer for `config` — the merged result of the base config and both overlays, which
+ * is what decides whether devc still has anything to add.
  *
- * 1. `--mount <spec>`, one per merged mount entry, in merged order — these *append* to the base
- *    config's `mounts[]`.
- * 2. `--additional-features <json>`, a single arg; the devcontainer CLI merges it into the base
- *    config's `features`. Omitted entirely when the merged object is empty.
- * 3. `--remote-env KEY=value`, one per entry — these *override* the base's `remoteEnv` per key.
+ * Returned as a layer to merge **under** everything else, so a config or overlay declaring any
+ * of this itself simply wins. Two contributions:
  *
- * Mount specs and `remoteEnv` values are substituted here because both reach Docker without
- * passing through the CLI's own substitution. `additionalFeatures` is deliberately *not*
- * substituted: that JSON is merged into the config by the CLI and goes through its substitution
- * pipeline, so pre-resolving would double-resolve.
- *
- * `containerWorkspaceFolder` must be the pre-`up` value from
- * `computeContainerWorkspaceFolder` — these args have to exist before `devcontainer up` runs, so
- * the authoritative `remoteWorkspaceFolder` it reports back is not available yet.
+ * - **Baseline Features.** Skipped when `baselineFeatures` is false, or when `config` already
+ *   declares a Feature of that name by *any* spelling ({@link declaresFeatureNamed}). Matching
+ *   by name rather than id is what stops a consumer's `…/devc-config:0` and devc's
+ *   `…/devc-config:0.2.0` from both installing — two ids are two Features to the CLI, and the
+ *   hook would run twice.
+ * - **The bridge token mount**, when the merged Features opt into a Feature named `devc-bridge`.
+ *   A mount the user declared on the same target wins through the merge's own target dedupe, so
+ *   there is nothing to check for here.
  */
-export function overlayArgs(
-  overlay: DevcOverlay,
-  containerWorkspaceFolder: string,
-  localWorkspaceFolder?: string,
-): string[] {
-  const sub = (v: string) =>
-    substituteVars(v, containerWorkspaceFolder, localWorkspaceFolder);
+export function devcContributions(
+  config: ConfigObject,
+  baselineFeatures: boolean,
+): ConfigObject {
+  const layer: ConfigObject = {};
+  const declared = (typeof config.features === 'object' &&
+      config.features !== null && !Array.isArray(config.features))
+    ? config.features as ConfigObject
+    : {};
 
-  const args: string[] = [];
-  for (const mount of overlay.mounts) args.push('--mount', sub(mount));
-  if (Object.keys(overlay.additionalFeatures).length > 0) {
-    args.push(
-      '--additional-features',
-      JSON.stringify(overlay.additionalFeatures),
-    );
+  if (baselineFeatures) {
+    const features: ConfigObject = {};
+    for (const feature of BASELINE_FEATURES) {
+      if (declaresFeatureNamed(declared, feature.name)) continue;
+      features[feature.id] = {};
+    }
+    if (Object.keys(features).length > 0) layer.features = features;
   }
-  for (const [key, value] of Object.entries(overlay.remoteEnv)) {
-    args.push('--remote-env', `${key}=${sub(value)}`);
-  }
-  return args;
-}
 
-/**
- * `overlay.remoteEnv` with its values substituted — the layer `devc exec`/`attach` apply on top
- * of the base config's own `remoteEnv`, since `docker exec` never sees `remoteEnv` at all.
- *
- * Unlike {@link overlayArgs}, this runs *after* `devcontainer up`, so
- * `containerWorkspaceFolder` should be the authoritative `remoteWorkspaceFolder` the CLI
- * reported.
- */
-export function resolveOverlayRemoteEnv(
-  overlay: DevcOverlay,
-  containerWorkspaceFolder: string,
-  localWorkspaceFolder?: string,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(overlay.remoteEnv).map(([k, v]) => [
-      k,
-      substituteVars(v, containerWorkspaceFolder, localWorkspaceFolder),
-    ]),
-  );
+  if (declaresFeatureNamed(declared, 'devc-bridge')) {
+    layer.mounts = [BRIDGE_MOUNT];
+  }
+
+  return layer;
 }
