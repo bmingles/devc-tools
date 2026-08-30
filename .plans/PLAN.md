@@ -11,7 +11,22 @@
 
 ### Pending
 
-Nothing pending right now.
+- [devc-merged-config](devc-merged-config.md) — 📝 Proposal, not started, and
+  not yet agreed: replace the `devcontainer up` flag translation of the
+  `devc.json` overlay with a **literal JSON merge** into one effective
+  `devcontainer.json`, materialized per project under `~/.cache/devc/` and
+  handed to the CLI via `--override-config`.
+
+  That unlocks `readonly` overlay mounts, every `devcontainer.json` key, and
+  replacement/removal of what the base config says, and it deletes devc's
+  hand-port of the CLI's variable substitution and worktree path algorithm.
+  The plan argues **against** the shape it was proposed in — a
+  `.devcontainer.tmp/` written into the project and deleted after the run —
+  because `--override-config` keeps relative paths and both container-identity
+  labels anchored to the project's own config without putting a generated file
+  in a git worktree and a Docker build context. See its Open questions before
+  starting: merge semantics, how much power an overlay should have, and the
+  one-time zero-config container migration are all undecided.
 
 ### Standing rules for Feature work
 
