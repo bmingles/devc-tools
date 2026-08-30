@@ -96,13 +96,13 @@ Every skip path exits `0`. A `postCreateCommand` that fails aborts container
 creation, and none of these skips (an empty seed, ownership already correct) is
 worth an unbootable container.
 
-| Option              | Default | Meaning                                                                                                                                                                                        |
-| ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `installClaudeCli`  | `true`  | Install the Claude Code CLI at build time, as the remote user.                                                                                                                                    |
-| `installCopilotCli` | `false` | Install the GitHub Copilot CLI too. Defaults false — see [below](#why-installcopilotcli-defaults-false).                                                                                          |
-| `installPiCli`      | `false` | Install the pi coding agent CLI too. Defaults false, same reasoning as `installCopilotCli`. **Requires Node.js in the image** — see [below](#why-pi-needs-nodejs).                               |
-| `installHerdr`      | `false` | Install the Herdr terminal multiplexer too. Defaults false, same reasoning as `installCopilotCli`. Ships a static binary — no extra prerequisite.                                                |
-| `piPackages`        | `""`    | Comma-separated pi package sources to install at build time. **Requires `installPiCli: true`** — see [below](#why-pipackagesherdrplugins-run-at-build-time).                                     |
+| Option              | Default | Meaning                                                                                                                                                                                              |
+| ------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `installClaudeCli`  | `true`  | Install the Claude Code CLI at build time, as the remote user.                                                                                                                                       |
+| `installCopilotCli` | `false` | Install the GitHub Copilot CLI too. Defaults false — see [below](#why-installcopilotcli-defaults-false).                                                                                             |
+| `installPiCli`      | `false` | Install the pi coding agent CLI too. Defaults false, same reasoning as `installCopilotCli`. **Requires Node.js in the image** — see [below](#why-pi-needs-nodejs).                                   |
+| `installHerdr`      | `false` | Install the Herdr terminal multiplexer too. Defaults false, same reasoning as `installCopilotCli`. Ships a static binary — no extra prerequisite.                                                    |
+| `piPackages`        | `""`    | Comma-separated pi package sources to install at build time. **Requires `installPiCli: true`** — see [below](#why-pipackagesherdrplugins-run-at-build-time).                                         |
 | `herdrPlugins`      | `""`    | Comma-separated Herdr plugins to install at build time, in GitHub shorthand (`owner/repo[/subdir]`). **Requires `installHerdr: true`** — see [below](#why-pipackagesherdrplugins-run-at-build-time). |
 
 That is the whole option surface.
