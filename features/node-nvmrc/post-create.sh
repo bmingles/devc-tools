@@ -127,6 +127,21 @@ nvm install
 # directory outright — so no version string is ever extracted here.
 [ -n "${NVM_BIN:-}" ] || die 'nvm install succeeded but NVM_BIN is unset'
 
+# Ownership repair, belt-and-braces — same reasoning as bash-config/post-create.sh: install.sh
+# chowns $SHARE_DIR/pin to $_REMOTE_USER at *build* time, but the devcontainer CLI's default UID
+# remap — on, in practice, any Linux host whose UID differs from the image's baked-in one —
+# renumbers the remote user's UID *after* the image is built, and chowns only $HOME doing it
+# (see @devcontainers/cli's updateUID.Dockerfile). That orphans $SHARE_DIR/pin from the
+# renumbered user, and the ln -sfn below would fail with a permission error.
+#
+# sudo -n, matching the node_modules repair above: an image whose sudo wants a password must not
+# hang create on a prompt nobody can answer.
+owner="$(stat -c '%U' "$SHARE_DIR/pin" 2> /dev/null || true)"
+if [ -n "$owner" ] && [ "$owner" != "$(id -un)" ] && command -v sudo > /dev/null 2>&1; then
+  sudo -n chown "$(id -un)" "$SHARE_DIR/pin" 2> /dev/null ||
+    echo "node-nvmrc: $SHARE_DIR/pin is owned by $owner and could not be repaired" >&2
+fi
+
 # -n is required, not stylistic: without it a second run resolves the existing
 # symlink-to-a-directory and creates pin/bin/bin instead of replacing pin/bin.
 ln -sfn "$NVM_BIN" "$SHARE_DIR/pin/bin"

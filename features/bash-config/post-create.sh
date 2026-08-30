@@ -45,6 +45,24 @@ fi
 
 mkdir -p "$DIRS"
 
+# --- ownership repair -----------------------------------------------------------------------
+# Belt-and-braces, same pattern as agents/post-create.sh: install.sh already chowns $DIRS to
+# $_REMOTE_USER at *build* time, but the devcontainer CLI's default UID remap — on, in practice,
+# any Linux host whose UID differs from the image's baked-in one — renumbers the remote user's
+# UID *after* the image is built, and chowns only $HOME_FOLDER doing it (see @devcontainers/cli's
+# updateUID.Dockerfile). That orphans $DIRS from the renumbered user, and the `ln -sfn` below
+# fails with a permission error.
+#
+# Non-recursive: dirs/user may already carry a host bind mount, which must not be chowned.
+owner="$(stat -c '%U' "$DIRS" 2> /dev/null || true)"
+if [ -n "$owner" ] && [ "$owner" != "$(id -un)" ]; then
+  if command -v sudo > /dev/null 2>&1; then
+    sudo chown "$(id -un)" "$DIRS" || echo "bash-config: could not chown $DIRS" >&2
+  else
+    echo "bash-config: $DIRS is owned by $owner and no sudo is available to fix it" >&2
+  fi
+fi
+
 # --- dirs/project ---------------------------------------------------------------------------
 
 case "$PROJECT_DIR" in
