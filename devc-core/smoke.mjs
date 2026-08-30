@@ -15,7 +15,6 @@ import {
   buildExecArgs,
   buildUpArgs,
   downContainer,
-  emptyOverlay,
   execInContainer,
   initProject,
   nodeDevcontainerRunner,
@@ -42,11 +41,17 @@ assert.deepEqual(
     worktree: false,
     rebuild: false,
     noCache: false,
-    configArg: null,
-    overlay: emptyOverlay(),
-    containerWorkspaceFolder: '',
+    mergedConfigPath:
+      '/home/me/.cache/devc/projects/p-0badf00d/devcontainer.json',
+    mode: 'zero-config',
   }),
-  ['up', '--workspace-folder', '/home/me/src/p'],
+  [
+    'up',
+    '--workspace-folder',
+    '/home/me/src/p',
+    '--config',
+    '/home/me/.cache/devc/projects/p-0badf00d/devcontainer.json',
+  ],
 );
 console.log('ok: buildUpArgs (pure)');
 
