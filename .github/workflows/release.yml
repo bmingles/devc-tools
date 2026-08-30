@@ -103,6 +103,19 @@ jobs:
           deno task check
           deno task test
 
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+
+      # devc-core colocates package.json next to deno.json, which switches Deno's npm-specifier
+      # resolution from the global cache to a local node_modules/ it expects to already be
+      # populated (`deno check`/`deno test` below load overlay.ts's `import ... from
+      # 'jsonc-parser'`) — unlike devc/, which has no package.json and resolves npm: imports
+      # from the global cache with no install step at all. Must run before either task.
+      - name: devc-core — install npm deps
+        working-directory: devc-core
+        run: npm ci
+
       # @devc-tools/core (see .plans/devc-core-npm-library.md) — the library `devc` compiles
       # from source and that also ships to npm. Checked under Deno first, same as devc itself.
       - name: devc-core — check + test
@@ -118,19 +131,14 @@ jobs:
         working-directory: devc-core
         run: npm run portability-check
 
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: '22'
-
       # The other half of the portability claim: build the npm package, pack it, install the
       # tarball into a scratch project, and drive it with plain `node` — no Deno, no
       # `devcontainer`, no `devc` anywhere on PATH. See smoke.sh/smoke.mjs and the plan's
-      # Validation section ("npm pack the library ... Node only").
+      # Validation section ("npm pack the library ... Node only"). Deps are already installed
+      # above; nothing here needs a fresh `npm ci`.
       - name: devc-core — npm build + pack + node smoke test
         working-directory: devc-core
-        run: |
-          npm ci
-          npm run smoke
+        run: npm run smoke
 
       - name: devc-bridge host — check + test
         working-directory: devc-bridge/host

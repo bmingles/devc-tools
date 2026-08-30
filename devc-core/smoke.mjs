@@ -56,7 +56,9 @@ try {
   const result = await initProject(dir);
   assert.ok(result.configPath.endsWith('/.devcontainer/devcontainer.json'));
   const written = await readdir(`${dir}/.devcontainer`);
-  for (const name of ['devcontainer.json', 'Dockerfile', 'scripts']) {
+  for (
+    const name of ['devcontainer.json', 'Dockerfile', 'initialize-command.sh']
+  ) {
     assert.ok(written.includes(name), `missing ${name}`);
   }
   console.log(
