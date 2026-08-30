@@ -555,13 +555,33 @@ Set up two projects: `$PROJ` with its own `.devcontainer/devcontainer.json`, and
 `$ZERO` with none. `devc up --print-config <path>` prints the merged config
 without starting anything — use it to see what each check is actually running.
 
-- [ ] **The load-bearing one: `--override-config` does not churn identity.**
+- [ ] **The load-bearing one: what `--override-config` records as the config
+      path.** Every other claim in this section rests on it, and it was read out
+      of the minified bundle rather than observed: the CLI is supposed to take
+      the config's _content_ from the file you point at while still recording
+      the project's own `.devcontainer/devcontainer.json` as `configFilePath`.
+
       Start `$PROJ` on `main`, note `docker inspect --format '{{index
       .Config.Labels "devcontainer.config_file"}}' <container>`. Then start it
-      on this branch. **Pass:** the _same_ container is reused (no rebuild), and
-      the label still points at `$PROJ/.devcontainer/devcontainer.json` — not at
-      anything under `~/.cache/devc/`. A rebuild here means the whole
-      no-migration decision was wrong and every user strands a container.
+      on this branch. **Pass:** the label is unchanged — it points at
+      `$PROJ/.devcontainer/devcontainer.json`, not at anything under
+      `~/.cache/devc/` — and the _same_ container is reused.
+
+      The reuse is a symptom, not the point (one rebuild would cost nothing).
+      `configFilePath` is also what the CLI resolves `build.dockerfile`,
+      `build.context`, `dockerComposeFile` and local `./features/…` against, so
+      if the label is the cache path instead, then: an ordinary project with a
+      relative `"dockerfile": "Dockerfile"` resolves it into
+      `~/.cache/devc/projects/<key>/` and **fails to build** (the next check);
+      VS Code stops sharing the container, since it looks the container up by
+      this exact label; and the project/zero-config split in `buildUpArgs` is
+      pointless — `--override-config` would just be `--config` spelled
+      differently, and project mode would need its paths absolutized too.
+
+      Also confirm the overlay actually took effect (`docker inspect` shows its
+      mounts). If the CLI ignored the override file's content and re-read the
+      project's own config, the label would look right while the overlay
+      silently did nothing.
 - [ ] **Relative paths still resolve against the project.** Give `$PROJ` a
       `"build": { "dockerfile": "Dockerfile", "context": ".." }` — context at
       the project root, the common shape — and confirm it builds. The merged
