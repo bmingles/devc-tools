@@ -44,6 +44,14 @@ Notes:
   anyway.
 - Gatekeeper: `curl` does not set `com.apple.quarantine`, so an installed macOS
   binary runs. One downloaded through a browser would not.
+- **The macOS binaries (`devc`, the `devc-bridge` host CLI) are unsigned.**
+  `release.yml` builds them by cross-compiling from a Linux runner rather than
+  a real Mac — GitHub's macOS-hosted runners kept becoming unavailable out
+  from under this repo (a retired label, then a deprecation window, in the
+  same week) for two binaries that are the only reason this pipeline needed
+  macOS runners at all — so there is no `codesign` step and no native
+  execution to verify against. If Gatekeeper still complains for your setup,
+  `xattr -d com.apple.quarantine <path>` clears it.
 - **Windows is out of scope**, and the `devc-bridge` **host** CLI is macOS-only
   — every command it ships is macOS (`caffeinate`). Its container client and
   `devc` itself are fine on Linux.

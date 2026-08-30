@@ -158,15 +158,25 @@ jobs:
       - name: workflow publish guards
         run: bash tests/workflow_guards_test.sh
 
-  # One job per architecture, each building only its own target's assets and *running*
-  # them (decision 4). Cross-compiling would work for most of this, but a native runner
-  # can execute what it just built, so "does this run on Apple Silicon" is a CI assertion
-  # instead of a stranger's bug report.
+  # One job per target. The two Linux legs build and *run* what they just built (decision
+  # 4 in release-and-installer.md — a native runner can execute what it compiled, so "does
+  # this run on Apple Silicon" is a CI assertion instead of a stranger's bug report). The
+  # two macOS targets no longer get that: this repo spent real time stuck on
+  # macOS-hosted-runner unavailability twice in one week (macos-13 fully retired by
+  # GitHub in December 2025 — a job requesting it just queues forever rather than
+  # failing outright — and macos-14, its replacement, already mid-deprecation as of
+  # August 2026), for two binaries that are the whole reason `devc`/`devc-bridge host`
+  # need macOS at all. `deno compile --target` cross-compiles the two darwin targets
+  # from a Linux runner just fine — proven back in release-and-installer.md's own Risks
+  # section — so they build here too, just without native execution or code signing to
+  # back them: no `codesign` on Linux, and Deno's own ad-hoc signing behavior differs by
+  # architecture on a REAL Mac (the ad-hoc sign step this replaced existed only to paper
+  # over that). Both mac binaries therefore ship unsigned; see README.md.
   #
-  # If `ubuntu-24.04-arm` is ever unavailable to this repo, the contained fallback is to
-  # drop that row and cross-build aarch64-unknown-linux-gnu from ubuntu-24.04 — already
-  # proven, and how the client has been built since devc-bridge-client-mount — losing
-  # only the smoke test for those two assets.
+  # If ubuntu-24.04-arm is ever unavailable to this repo, the contained fallback is to
+  # drop that row and cross-build aarch64-unknown-linux-gnu from ubuntu-24.04 too — losing
+  # native execution for that one asset, the same trade this comment already accepts for
+  # both darwin ones.
   build:
     needs: gate
     strategy:
@@ -177,17 +187,9 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-          # macos-13 (Intel) and macos-14 (Apple Silicon) — the original pair the decision
-          # above was written against — are gone: macos-13 was fully retired by GitHub in
-          # December 2025 (a job requesting it just queues forever, never failing outright),
-          # and macos-14 is mid-deprecation as of August 2026 (unsupported by November 2026).
-          # macos-15 is the current pair, on the same reasoning: matching major versions
-          # across architectures rather than picking whatever the newest of each happens to
-          # be independently. When macos-15 starts down the same path, bump both together
-          # rather than letting one lag — see actions/runner-images for the current labels.
-          - runner: macos-15-intel
+          - runner: ubuntu-24.04
             target: x86_64-apple-darwin
-          - runner: macos-15
+          - runner: ubuntu-24.04
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
     env:
@@ -201,40 +203,35 @@ jobs:
 
       # The compile flags live in the repo's own tasks, never inlined here: permission
       # flags drifting between a local build and a released binary is the failure that
-      # avoids. `--target` and the dist/ output path come through $DEVC_TARGET.
+      # avoids. `--target` and the dist/ output path come through $DEVC_TARGET, cross-
+      # compiling the two darwin targets same as the two Linux ones.
       - name: Build devc
         working-directory: devc
         run: deno task build:release
 
-      # macOS only — every command the bridge ships is macOS (`caffeinate`), so a Linux
-      # host asset would have nothing to run.
+      # macOS-target only (by $DEVC_TARGET, not runner.os — every leg here runs on Linux
+      # now). Every command the bridge host ships is macOS (`caffeinate`), so a Linux
+      # asset would have nothing to run.
       - name: Build devc-bridge host
-        if: runner.os == 'macOS'
+        if: contains(matrix.target, 'apple-darwin')
         working-directory: devc-bridge/host
         run: deno task build:release
 
-      # Linux only, and it is the *container* client: an arm64 Mac gets the aarch64 Linux
-      # one, built here on the arm64 Linux runner.
+      # Linux-target only, and it is the *container* client: an arm64 Mac gets the
+      # aarch64 Linux one, built here on the arm64 Linux runner.
       - name: Build devc-bridge client
-        if: runner.os == 'Linux'
+        if: contains(matrix.target, 'linux-gnu')
         working-directory: devc-bridge/client
         run: deno task build:release
 
-      # Ad-hoc sign rather than relying on Deno's own behavior — it signs arm64 output
-      # and not x86_64, which is defensible but is not a contract this repo should depend
-      # on. Signing before the smoke test means the smoke test covers the signed binary.
-      - name: Ad-hoc sign (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          set -euo pipefail
-          for f in dist/*/devc dist/*/devc-bridge; do
-            [ -f "$f" ] || continue
-            codesign --force --sign - "$f"
-            codesign -dv "$f" 2>&1 | sed 's/^/  /'
-          done
-
-      # The point of building natively: run what was just built. This is also what makes
-      # the version flags load-bearing rather than cosmetic.
+      # Native runner, native binary: this is the real proof decision 4 wants, for both
+      # Linux legs — running the compiled binary and checking its --version output.
+      #
+      # The two darwin legs cannot do that from here (wrong OS to execute a Mach-O
+      # binary), so they get the weaker check the "no macOS runners" trade costs: `file`
+      # confirms the output is actually a Mach-O binary for the right architecture, not
+      # that it runs. That gap is exactly why they ship unsigned and undocumented as
+      # "verified" — see the comment on the `build` job above and README.md.
       - name: Smoke test
         run: |
           set -euo pipefail
@@ -250,12 +247,30 @@ jobs:
               echo "::error::$1 printed '$got', expected '$2'"; fail=1
             fi
           }
-          smoke dist/devc/devc "devc $VERSION"
-          if [ "$RUNNER_OS" = 'macOS' ]; then
-            smoke dist/devc-bridge-host/devc-bridge "devc-bridge $VERSION"
-          else
-            smoke dist/devc-bridge-client/devc-bridge "devc-bridge $VERSION"
-          fi
+          smoke_file() { # smoke_file <binary> <expected `file -b` substring>
+            if [ ! -f "$1" ]; then
+              echo "::error::$1 was not built"; fail=1; return
+            fi
+            got="$(file -b "$1")"
+            case "$got" in
+              *"$2"*) echo "  ok   $1 -> $got" ;;
+              *) echo "::error::$1 is '$got', expected to contain '$2'"; fail=1 ;;
+            esac
+          }
+          case "$DEVC_TARGET" in
+            *-apple-darwin)
+              case "$DEVC_TARGET" in
+                x86_64-*) macho='x86_64' ;;
+                aarch64-*) macho='arm64' ;;
+              esac
+              smoke_file dist/devc/devc "Mach-O 64-bit executable $macho"
+              smoke_file dist/devc-bridge-host/devc-bridge "Mach-O 64-bit executable $macho"
+              ;;
+            *)
+              smoke dist/devc/devc "devc $VERSION"
+              smoke dist/devc-bridge-client/devc-bridge "devc-bridge $VERSION"
+              ;;
+          esac
           exit "$fail"
 
       # <tool>-<version>-<triple>.tar.gz, the shape GoReleaser and most Rust/Go releases
