@@ -177,9 +177,17 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-          - runner: macos-13
+          # macos-13 (Intel) and macos-14 (Apple Silicon) — the original pair the decision
+          # above was written against — are gone: macos-13 was fully retired by GitHub in
+          # December 2025 (a job requesting it just queues forever, never failing outright),
+          # and macos-14 is mid-deprecation as of August 2026 (unsupported by November 2026).
+          # macos-15 is the current pair, on the same reasoning: matching major versions
+          # across architectures rather than picking whatever the newest of each happens to
+          # be independently. When macos-15 starts down the same path, bump both together
+          # rather than letting one lag — see actions/runner-images for the current labels.
+          - runner: macos-15-intel
             target: x86_64-apple-darwin
-          - runner: macos-14
+          - runner: macos-15
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
     env:
