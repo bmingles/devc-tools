@@ -263,8 +263,8 @@ jobs:
                 x86_64-*) macho='x86_64' ;;
                 aarch64-*) macho='arm64' ;;
               esac
-              smoke_file dist/devc/devc "Mach-O 64-bit executable $macho"
-              smoke_file dist/devc-bridge-host/devc-bridge "Mach-O 64-bit executable $macho"
+              smoke_file dist/devc/devc "Mach-O 64-bit $macho executable"
+              smoke_file dist/devc-bridge-host/devc-bridge "Mach-O 64-bit $macho executable"
               ;;
             *)
               smoke dist/devc/devc "devc $VERSION"
