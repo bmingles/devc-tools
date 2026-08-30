@@ -1,5 +1,5 @@
 import { assertEquals } from 'jsr:@std/assert@^1';
-import { parseAttachArgs, parseBuildArgs } from '../args.ts';
+import { parseAttachArgs, parseBuildArgs, parseUpArgs } from '../args.ts';
 
 Deno.test('parseAttachArgs leaves target undefined when no path is given', () => {
   assertEquals(parseAttachArgs([]), {
@@ -70,6 +70,32 @@ Deno.test('parseBuildArgs parses a path and both flags in any order', () => {
   assertEquals(parseBuildArgs(['/some/path', '--json', '--no-cache']), {
     target: '/some/path',
     noCache: true,
+    json: true,
+  });
+});
+
+Deno.test('parseUpArgs defaults to cwd with no flags', () => {
+  assertEquals(parseUpArgs([]), {
+    target: undefined,
+    printConfig: false,
+    json: false,
+  });
+});
+
+Deno.test('parseUpArgs parses a path and both flags in any order', () => {
+  assertEquals(parseUpArgs(['/some/path']), {
+    target: '/some/path',
+    printConfig: false,
+    json: false,
+  });
+  assertEquals(parseUpArgs(['--print-config', '/some/path']), {
+    target: '/some/path',
+    printConfig: true,
+    json: false,
+  });
+  assertEquals(parseUpArgs(['/some/path', '--json', '--print-config']), {
+    target: '/some/path',
+    printConfig: true,
     json: true,
   });
 });

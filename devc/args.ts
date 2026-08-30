@@ -14,6 +14,28 @@ export function parseAttachArgs(args: string[]): AttachArgs {
   return { target, rebuild, noClear };
 }
 
+export interface UpArgs {
+  /** The path argument, if given. Callers should default to `Deno.cwd()` when absent. */
+  target?: string;
+  /**
+   * Print the merged effective config and exit, starting nothing.
+   *
+   * The effective config is generated into `~/.cache/devc/projects/<key>/`, not the project, so
+   * this is how you read what devc will actually run — before the first `up`, and without
+   * hunting for a cache path.
+   */
+  printConfig: boolean;
+  json: boolean;
+}
+
+/** Parses `devc up` arguments. */
+export function parseUpArgs(args: string[]): UpArgs {
+  const printConfig = args.includes('--print-config');
+  const json = args.includes('--json');
+  const target = args.find((a) => !a.startsWith('--'));
+  return { target, printConfig, json };
+}
+
 export interface BuildArgs {
   /** The path argument, if given. Callers should default to `Deno.cwd()` when absent. */
   target?: string;

@@ -13,7 +13,7 @@ import {
   SKILLS_CONTAINER_ROOT,
   SOURCE_CONTAINER_ROOT,
 } from '../mounts.ts';
-import { MOUNT_SPEC_RE } from '../overlay.ts';
+import { mountTarget } from '../merge.ts';
 
 Deno.test('serializeMount: one form for both steps, no readonly/consistency', () => {
   assertEquals(
@@ -29,9 +29,10 @@ Deno.test('serializeMount: one form for both steps, no readonly/consistency', ()
   );
 });
 
-// The whole point of the format change: what the wizard writes has to survive the
-// devcontainer CLI's own `--mount` arg validation, which rejects anything else outright.
-Deno.test('serializeMount output is accepted by the CLI mount regex', () => {
+// What the wizard writes reaches the merged config's `mounts` array, where the merge dedupes by
+// target — so every spec it emits has to be one the target parser can read. (This used to assert
+// against the devcontainer CLI's `--mount` arg regex, back when overlay mounts became flags.)
+Deno.test('serializeMount output has a target the merge can parse', () => {
   const rows: MountRow[] = [
     { source: '/host/p', target: '/workspaces/p' },
     {
@@ -46,7 +47,7 @@ Deno.test('serializeMount output is accepted by the CLI mount regex', () => {
   ];
   for (const row of rows) {
     const spec = serializeMount(row);
-    assertEquals(MOUNT_SPEC_RE.test(spec), true, `rejected: ${spec}`);
+    assertEquals(mountTarget(spec), row.target, `unparseable target: ${spec}`);
   }
 });
 

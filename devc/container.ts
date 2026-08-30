@@ -19,7 +19,6 @@ export {
   assertLocalFolderExists,
   buildExecArgs,
   buildUpArgs,
-  computeContainerWorkspaceFolder,
   type ContainerInfo,
   type ContainerMount,
   containerNameForLocalFolder,

@@ -19,8 +19,12 @@ export * from './errors.ts';
 // Global user config (`~/.config/devc/config.json`): code/skills roots.
 export * from './config.ts';
 
-// The `devc.json` overlay: mounts/features/env merged on top of a project's devcontainer.json.
+// The `devc.json` overlay: the devc-only layer merged on top of a project's devcontainer.json.
 export * from './overlay.ts';
+
+// The layer merge that produces the effective config, and the materialized result of running it.
+export * from './merge.ts';
+export * from './merged_config.ts';
 
 // Worktree resolution for the mount picker (used by `devc config`, exposed for other UIs).
 export * from './worktree.ts';

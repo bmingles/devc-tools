@@ -10,7 +10,7 @@ import {
   startContainer,
   stopContainer,
 } from './container.ts';
-import { parseAttachArgs, parseBuildArgs } from './args.ts';
+import { parseAttachArgs, parseBuildArgs, parseUpArgs } from './args.ts';
 import {
   DEVCONTAINER_SUBCOMMAND,
   runEmbeddedDevcontainerCli,
@@ -21,6 +21,7 @@ import {
   herdrMode,
   runHerdrSidecarBody,
 } from './herdr.ts';
+import { ensureMergedConfig } from '@devc-tools/core/merged_config.ts';
 import { initProject } from '@devc-tools/core/init.ts';
 import {
   globalConfigExists,
@@ -220,9 +221,20 @@ if (subcommand === 'status') {
 }
 
 if (subcommand === 'up') {
-  const rest = Deno.args.slice(1);
-  const json = rest.includes('--json');
-  const target = resolveLocalFolder(rest.find((a) => !a.startsWith('--')));
+  const { target: rawTarget, printConfig, json } = parseUpArgs(
+    Deno.args.slice(1),
+  );
+  const target = resolveLocalFolder(rawTarget);
+
+  // `--print-config` starts nothing: the effective config is merged into a cache directory
+  // rather than left in the project, so this is what makes it readable — including before the
+  // project has ever been started.
+  if (printConfig) {
+    const merged = await ensureMergedConfig(target).catch(fail);
+    console.log(JSON.stringify(merged.config, null, 2));
+    Deno.exit(0);
+  }
+
   const info = await startContainer(target, false).catch(fail);
   if (json) {
     console.log(JSON.stringify(info));

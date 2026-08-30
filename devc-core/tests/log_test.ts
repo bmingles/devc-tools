@@ -90,10 +90,7 @@ Deno.test('a real call site — an unknown overlay key — reaches the logger, n
     assertEquals(seen, []);
     assertEquals(lines.length, 1);
     assertEquals(lines[0][0], 'warning');
-    assert(
-      lines[0][1].includes('ignoring unknown key "nonsense"'),
-      lines[0][1],
-    );
+    assert(lines[0][1].includes('unknown key "nonsense"'), lines[0][1]);
   });
 });
 

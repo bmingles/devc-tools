@@ -1,7 +1,7 @@
 # Merged effective config: one `devcontainer.json` instead of `devcontainer up` flags
 
-Status: **ready to implement.** Every decision below is settled; nothing here is
-waiting on an answer.
+Status: **✅ implemented.** Every decision below is settled; the checklist and
+validation sections record what was actually done.
 
 **No backward compatibility is required.** Existing containers, the whole of
 `~/.cache/devc/`, and hand-written `devc.json` files may all be discarded or
@@ -330,12 +330,12 @@ end with all of these gone:
 Ordered so the tree is checkable at each step. `deno fmt`, `deno task check` and
 `deno task test` in both `devc/` and `devc-core/` after each.
 
-- [ ] **1. `devc-core/merge.ts`** — new, pure, no I/O.
+- [x] **1. `devc-core/merge.ts`** — new, pure, no I/O.
       `mergeConfigs(layers: readonly Record<string, unknown>[]): Record<string, unknown>`
       implementing rules 1–5 plus the three post-passes and the two warning
       cases. Export the helpers a test wants to reach directly
       (`mountTarget(spec: string | Record<string, unknown>): string | null`).
-- [ ] **2. `devc-core/overlay.ts`** — the overlay becomes a raw
+- [x] **2. `devc-core/overlay.ts`** — the overlay becomes a raw
       `Record<string, unknown>` plus `baselineFeatures`:
       `interface DevcOverlay { config: Record<string, unknown>; baselineFeatures: boolean }`.
       `loadOverlayFile` validates the shape check on `mounts`, warns on unknown
@@ -344,11 +344,11 @@ Ordered so the tree is checkable at each step. `deno fmt`, `deno task check` and
       it in `config` and let `mergeConfigs` consume and strip it). `mergeOverlays`
       keeps only the `baselineFeatures` veto; layer merging is `mergeConfigs`'
       job. Delete everything in the table above that lives in this file.
-- [ ] **3. `devc-core/default_config.ts`** — drop the `bridge` option and
+- [x] **3. `devc-core/default_config.ts`** — drop the `bridge` option and
       `injectBridgeMount` and friends; drop `loadDeclaredFeatureIds`; add
       `loadConfigStrict(path): Promise<Record<string, unknown>>` (JSONC, throws
       naming the file) for the base-config read.
-- [ ] **4. `devc-core/merged_config.ts`** — new.
+- [x] **4. `devc-core/merged_config.ts`** — new.
       `ensureMergedConfig(localFolder, configDir?): Promise<MergedConfig>` where
       `MergedConfig = { path: string; config: Record<string, unknown>; mode: 'project' | 'zero-config' }`.
       Resolves the base (`findOwnDevcontainerConfig` → `loadConfigStrict`, else
@@ -357,7 +357,7 @@ Ordered so the tree is checkable at each step. `deno fmt`, `deno task check` and
       and `build.context` in zero-config mode, and writes to
       `~/.cache/devc/projects/<basename>-<hash8>/devcontainer.json` via
       temp+`rename` at `0600`.
-- [ ] **5. `devc-core/container.ts`** — `buildUpArgs` takes
+- [x] **5. `devc-core/container.ts`** — `buildUpArgs` takes
       `{ mergedConfigPath, mode }` instead of `configArg`/`overlay`/
       `containerWorkspaceFolder`, and emits `--override-config` or `--config`
       per mode with no `--mount`/`--remote-env`/`--additional-features`.
@@ -365,15 +365,15 @@ Ordered so the tree is checkable at each step. `deno fmt`, `deno task check` and
       branch, and derives `remoteEnv` from the merged file alone. Delete
       `computeContainerWorkspaceFolder` and its re-export in
       `devc/container.ts`.
-- [ ] **6. `devc up --print-config`** — resolve and merge, print the merged JSON
+- [x] **6. `devc up --print-config`** — resolve and merge, print the merged JSON
       to stdout, start nothing. Add to `devc/help.ts` and `devc/args.ts`.
-- [ ] **7. Tests** — new `devc-core/tests/merge_test.ts` and
+- [x] **7. Tests** — new `devc-core/tests/merge_test.ts` and
       `merged_config_test.ts`; rewrite `overlay_test.ts` and `up_args_test.ts`;
       delete `container_workspace_folder_test.ts`; update
       `default_config_test.ts` / `default_config_cache_test.ts` for the dropped
       `bridge` option; update the `additionalFeatures` fixture
       (`tests/fixtures/devc_overlay.jsonc`) to `features`.
-- [ ] **8. Docs** — `devc/README.md`'s "Optional overlay" and "Mount specs"
+- [x] **8. Docs** — `devc/README.md`'s "Optional overlay" and "Mount specs"
       sections (both are rewritten: four keys → any key, and read-only is now
       possible), its devc-bridge section (project mode no longer needs the
       hand-written mount), `.plans/design/devc-design.md` (Configuration
@@ -381,25 +381,76 @@ Ordered so the tree is checkable at each step. `deno fmt`, `deno task check` and
       section's `--additional-features` paragraph), `devc-core/README.md` (the
       zero-config cache section), and `.plans/PLAN.md`.
 
+## Implementation notes
+
+Written after the fact. Four things worth knowing that the plan did not
+anticipate:
+
+- **`start_container_trap_test.ts` was deleted too**, beyond the file the plan
+  named. It existed solely to guard the `isEmptyOverlay` gate on
+  `computeContainerWorkspaceFolder` (it put a fake `git` on `PATH` to prove the
+  git subprocesses did not run for an empty overlay). Both the gate and the
+  function are gone, so the test had nothing left to assert.
+
+- **`loadResolvedRemoteEnv` became `resolveRemoteEnv`, pure.** The plan said to
+  keep deriving `remoteEnv` after `up`; with the merged config already parsed and
+  in hand, the file-reading and forgiving-parse half of that function had no
+  caller left. It now takes the merged object. `substituteVars` stays — that is
+  still the one place devc resolves `${…}` itself, because those values go to
+  `docker exec` rather than to the CLI.
+
+- **A `null` deletion must not fire the lifecycle warning.** The first run of the
+  new tests surfaced it: `"initializeCommand": null` warned that an overlay
+  "replaces the one below it", which is exactly wrong — a deletion discards
+  nothing in favour of anything. Both the lifecycle and shape-key checks now skip
+  `null`. Regression tests cover both.
+
+- **The unknown-key warning changed meaning, not just wording.** It used to say
+  "ignoring unknown key"; unknown keys are now _passed through_ to the merged
+  config (where the CLI ignores them), so it says so instead. `log_test.ts`
+  asserted the old string.
+
+### On the validation that could not run here
+
+This sandbox cannot reach `jsr.io` (403 from the egress policy), so
+`deno test`/`deno check` were run against local stand-ins for `@std/assert` and
+`@std/path` mapped in through a throwaway `deno.local.json`, with a
+GitHub-sourced Deno 2.9.6 (the repo's lockfile is v5, which the npm-distributed
+2.2.7 cannot read). Everything under Offline below is genuinely green that way:
+**275 core tests, 114 devc tests, both `check` tasks, `deno fmt --check` across
+the repo, `workflow_guards_test.sh`, and the portability check.**
+
+Three pre-existing `devc` tests still fail here and failed identically on the
+branch point: `devcontainer_selfexec_test.ts`'s two cases and the herdr sidecar
+EOF case. All three spawn a _child_ `deno run main.ts`, which resolves its own
+imports and hits the same blocked `jsr.io`. Nothing this change touches.
+
+`devc up --print-config` was exercised end to end in both modes against real
+temp projects — project mode showed the bridge mount contributed, the overlay
+mount replacing a base mount on the same target, a `readonly` mount surviving,
+and `${…}` tokens left unsubstituted; zero-config showed `build.dockerfile` and
+`build.context` absolutized into `default-<key>/`. The merged file was `0600`,
+in the cache, with the project directory untouched.
+
 ## Validation
 
 Offline, no Docker:
 
-- [ ] Merge: every rule, including `null` through two layers, `$replace`, the
+- [x] Merge: every rule, including `null` through two layers, `$replace`, the
       per-Feature whole-value replace, and each of the two warning cases.
-- [ ] `mounts` dedupe by target: string vs object form, `target=` vs `dst=`,
+- [x] `mounts` dedupe by target: string vs object form, `target=` vs `dst=`,
       an unparseable entry left alone, and position preserved on replace.
-- [ ] Layer order: devc's baseline Feature is skipped when any layer declares
+- [x] Layer order: devc's baseline Feature is skipped when any layer declares
       one of the same name by a different tag; the bridge mount appears exactly
       once when opted in, and a user-declared `/run/devc-bridge` mount wins.
-- [ ] `buildUpArgs` emits `--override-config` in project mode, `--config` in
+- [x] `buildUpArgs` emits `--override-config` in project mode, `--config` in
       zero-config, and never `--mount`/`--remote-env`/`--additional-features`.
-- [ ] Zero-config merged output carries absolute `build.dockerfile` and
+- [x] Zero-config merged output carries absolute `build.dockerfile` and
       `build.context` into `default-<key>/`; project mode leaves both untouched.
-- [ ] An unparseable base config fails, naming the file.
-- [ ] The merged file is `0600` and two concurrent `ensureMergedConfig` calls
+- [x] An unparseable base config fails, naming the file.
+- [x] The merged file is `0600` and two concurrent `ensureMergedConfig` calls
       leave a complete file.
-- [ ] `deno fmt --check`, both `deno task check`/`test` suites, and
+- [x] `deno fmt --check`, both `deno task check`/`test` suites, and
       `devc-core`'s `portability-check` (no `Deno.`/`jsr:` in core).
 
 Needs Docker — add to `docs/manual-verification.md`:

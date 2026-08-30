@@ -101,27 +101,6 @@ Deno.test('ensureDefaultConfig: a second call writes nothing and returns the sam
   });
 });
 
-Deno.test('ensureDefaultConfig: the two bridge flags get two directories that both survive', async () => {
-  await withTempDir(async (tmp) => {
-    const plain = await ensureDefaultConfig(tmp, NO_TEMPLATES, {
-      bridge: false,
-    });
-    const bridged = await ensureDefaultConfig(tmp, NO_TEMPLATES, {
-      bridge: true,
-    });
-
-    assertNotEquals(keyedDirName(plain), keyedDirName(bridged));
-    // The whole point: neither clobbered the other, so a bridge project and a non-bridge project
-    // can alternate without rewriting one shared config back and forth.
-    assert((await Deno.readTextFile(bridged)).includes('/run/devc-bridge'));
-    assert(!(await Deno.readTextFile(plain)).includes('/run/devc-bridge'));
-    assertEquals(
-      (await entriesOf(tmp)).filter((n) => n.startsWith('default-')).length,
-      2,
-    );
-  });
-});
-
 Deno.test('ensureDefaultConfig: a changed template file changes the key', async () => {
   await withTempDir(async (tmp) => {
     const templates = `${tmp}/templates`;

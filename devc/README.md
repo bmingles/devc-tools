@@ -89,47 +89,68 @@ Notes:
 - **Create / start** shells out to `devcontainer up --workspace-folder <PATH>`;
   the final line of its JSON output carries the `containerId`, `remoteUser`, and
   `remoteWorkspaceFolder`.
-- The bundled default config is materialized to a cache dir and passed as
-  `--config <dir>/devcontainer.json`. If the project has its own
-  `.devcontainer/devcontainer.json` (or `.devcontainer.json`), that is used
-  instead. Exactly one of them is handed to `devcontainer up` — they do not
-  merge, since a base config carries `build`/`image`.
-- That cache dir is **content-addressed**: `~/.cache/devc/default-<key>/`, where
-  the key is a hash of the bundled config tree, your
-  [`templates/`](#default-overrides-configdevctemplates) overlay, and whether
-  this project opts into [devc-bridge](#devc-bridge-the-opt-in-feature). Same
-  inputs, same directory, and nothing is rewritten — a repeat `up` costs a hash
-  and a `stat`. Different inputs get their own directory, so two `devc` versions
-  (or a `devc` and a program embedding the same library) cannot rewrite each
-  other's config out from under it. A first write for a given key is staged in a
-  sibling `.tmp-…/` and renamed into place, so a concurrent `devcontainer up`
-  reading that config never sees a half-written tree.
-- An optional [`devc.json` overlay](#optional-overlay-devcjson) contributes
-  extra `mounts`, `additionalFeatures` and `remoteEnv` on top of whichever base
-  config won, in both modes. It is translated to `devcontainer up` CLI flags and
-  never written into the project's config. This is also where `devc config`
-  writes the source/skills mounts it manages, so that flow never touches
-  `.devcontainer/` either.
-- Before those flags are built, devc adds its own baseline Features (the
-  [`devc-config` hook](#project-post-create-hook-devc-post-createsh) today) to
-  `additionalFeatures`, skipping any it, your overlay, or the winning config
-  already declares by name — so `:0` and a devc-pinned exact version never both
-  install. Turn all of it off with the overlay's `"baselineFeatures": false`.
+- **One effective config.** devc merges the layers into a single
+  `devcontainer.json`, writes it to `~/.cache/devc/projects/<key>/`, and hands
+  that to `devcontainer up`. The layers, lowest to highest, are
+  `devc → base config → user devc.json → project devc.json` — see
+  [the overlay](#optional-overlay-devcjson) for the merge rules. Nothing is ever
+  written into the project.
+- **The base config** is the project's own `.devcontainer/devcontainer.json` (or
+  `.devcontainer.json`) when it has one, else the bundled default. A config that
+  cannot be parsed fails the command naming the file, rather than building a
+  container from something other than what the project asked for.
+- **How the merged file is delivered** depends on which base won, and the
+  difference matters:
+  - **Project mode** → `--override-config`. The CLI reads the config's
+    _content_ from the merged file but still records the project's own config as
+    its path, so relative `build.dockerfile`/`context`/`dockerComposeFile` and
+    local Features resolve where the project meant them to, and the container
+    keeps the identity labels it has always had (VS Code still matches it).
+  - **Zero-config** → `--config`, and the merged file is the config path for
+    every purpose. `build.dockerfile` and `build.context` are rewritten to
+    absolute paths into the materialized default tree, since a relative value
+    would otherwise resolve into the cache directory beside the merged file.
+- The **bundled default** is still materialized to a **content-addressed** cache
+  dir, `~/.cache/devc/default-<key>/`, where the key is a hash of the bundled
+  config tree and your
+  [`templates/`](#default-overrides-configdevctemplates) overlay. Same inputs,
+  same directory, and nothing is rewritten. Different inputs get their own
+  directory, so two `devc` versions (or a `devc` and a program embedding the same
+  library) cannot rewrite each other's config out from under it. A first write
+  for a given key is staged in a sibling `.tmp-…/` and renamed into place, so a
+  concurrent `devcontainer up` reading that config never sees a half-written
+  tree.
+- **The merged file's path is stable per project**, and that is load-bearing
+  rather than tidy. The devcontainer CLI keys a container on
+  `devcontainer.local_folder` + `devcontainer.config_file` and will not reuse one
+  whose `config_file` differs — without removing it, even under
+  `--remove-existing-container`. A config path that moved would strand a
+  container per move, permanently.
+- devc adds its own baseline Features (the
+  [`devc-config` hook](#project-post-create-hook-devc-post-createsh) today) as
+  the lowest layer, skipping any that your overlay or the base config already
+  declares by name — so `:0` and a devc-pinned exact version never both install.
+  Turn all of it off with the overlay's `"baselineFeatures": false`.
+- **`devc up --print-config`** prints the merged config and starts nothing.
+  Since the effective config lives in a cache rather than in the project, this
+  is how you read what devc will actually run — including before the project has
+  ever been started.
 - **exec / attach** run via `docker exec` under `remoteUser` in
   `remoteWorkspaceFolder`. `remoteEnv` is not stored on the container — it is
   applied by the _client_ per connection (VS Code to its terminals,
   `devcontainer exec` to its child), so `docker exec` never sees it. `devc`
-  therefore re-derives it from whichever config is in play — the project's own
-  `devcontainer.json` in project mode, the materialized default in the
-  zero-config path — with the overlay's `remoteEnv` layered on top (base < user
-  `devc.json` < project `devc.json`), and passes `-e K=V` per entry. Values
+  therefore re-derives it from the merged config (one object; the overlay's own
+  `remoteEnv` is already folded in) and passes `-e K=V` per entry. Values
   resolve `${containerWorkspaceFolder}`, `${localWorkspaceFolder}`,
   `${localWorkspaceFolderBasename}` and `${localEnv:VAR}`; other variables can't
-  be resolved host-side and pass through literally. A config that can't be
-  parsed logs a warning and yields no `remoteEnv` rather than failing the
-  command.
-- **Git worktrees**: `up` passes `--mount-git-worktree-common-dir` and the
-  container-side workspace path is computed to match the CLI's own algorithm.
+  be resolved host-side and pass through literally. This is the one place devc
+  substitutes variables itself — inside the merged config they are the
+  devcontainer CLI's to resolve, which is why `${devcontainerId}` and
+  `${containerEnv:…}` work there.
+- **Git worktrees**: `up` passes `--mount-git-worktree-common-dir`. devc used to
+  reimplement the CLI's own container-workspace-path algorithm to substitute
+  `${containerWorkspaceFolder}` into `--mount` args; inside a config file the CLI
+  resolves it itself, so that port is gone.
 - After a successful `up`, the container is renamed to `devc-<basename>-<hash>`
   and its image is given a `<name>:latest` alias tag (both best-effort, never
   fatal).
@@ -216,30 +237,35 @@ Two consequences worth knowing:
 
 Whatever lands in `.devcontainer/` runs **without `devc` installed at all** —
 that is the rule the whole tool is built around. `devc.json` does not weaken it:
-the overlay is turned into `devcontainer up` flags at launch and is _never_
-written into the project's `devcontainer.json`. A checkout without `devc` still
-builds and runs from the standard config; it just does not get the overlay's
-extra mounts, features and env. Un-augmented, not broken.
+the overlay is merged into an effective config written to `~/.cache/devc/`, and
+_never_ into the project's own `devcontainer.json`. A checkout without `devc`
+still builds and runs from the standard config; it just does not get the
+overlay's contributions. Un-augmented, not broken.
 
-Four optional keys, in a file that is itself optional:
+**An overlay may set any `devcontainer.json` key**, plus one devc-only key:
 
 ```jsonc
 {
-  // → --mount, appended to the base config's own mounts
-  // Only type/source/target[/external] — see "Mount specs" below.
+  // Any devcontainer.json key. `mounts` takes the full spec vocabulary — including
+  // `readonly`, which the old flag-based overlay could not express.
   "mounts": [
-    "type=bind,source=${localEnv:HOME}/notes,target=${containerWorkspaceFolder}/../notes"
+    "type=bind,source=${localEnv:HOME}/notes,target=${containerWorkspaceFolder}/../notes",
+    "type=bind,source=${localEnv:HOME}/reference,target=/reference,readonly"
   ],
-  // → --additional-features, merged into the base config's `features` per feature id
-  "additionalFeatures": {
+  "features": {
     "ghcr.io/devcontainers/features/rust:1": { "version": "latest" }
   },
-  // → --remote-env, overriding the base config's `remoteEnv` per key
   "remoteEnv": { "MY_VAR": "value" },
-  // false disables every Feature devc contributes on its own (devc-config today — see
-  // "Project post-create hook" below). Default true. Unlike the other three keys, this one
-  // is a *veto*: a user-level `false` wins even when a project sets it back to `true` — see
-  // below.
+  "runArgs": ["--cap-add", "SYS_PTRACE"],
+  "forwardPorts": [3000],
+
+  // null deletes what the layers below set.
+  "initializeCommand": null,
+
+  // devc-only. false disables every Feature devc contributes on its own (devc-config
+  // today — see "Project post-create hook" below). Default true. Unlike everything
+  // else, this one is a *veto*: a user-level `false` wins even when a project sets it
+  // back to `true` — see below.
   "baselineFeatures": true
 }
 ```
@@ -267,83 +293,84 @@ Where it can live — **first hit wins per level, and the losers are not merged*
 - **Applies in both modes** — a project with its own
   `.devcontainer/devcontainer.json` gets the overlay just like the zero-config
   path does.
-- **User under project**: `mounts` concatenate (yours first), `remoteEnv`
-  overrides per key, and `additionalFeatures` merges per feature id —
-  whole-value replace, options objects are _not_ deep-merged.
-- **`baselineFeatures` is the one key where the project does not win.** The
-  other three follow "project is more specific, so it wins"; this one is
-  `user.baselineFeatures && project.baselineFeatures` — a machine owner's
-  `false` at the user level cannot be talked back on by a project's `devc.json`.
-  A project can still turn it off on its own even when the user left it on.
 - `.json` vs `.jsonc` is naming convention only; both are parsed as JSONC
   (comments, trailing commas).
-- **Substitution.** Mount specs and `remoteEnv` values resolve
-  `${containerWorkspaceFolder}`, `${localWorkspaceFolder}`,
-  `${localWorkspaceFolderBasename}` and `${localEnv:VAR}` — both reach Docker
-  without passing through the devcontainer CLI. `additionalFeatures` is
-  deliberately left alone: the CLI merges that JSON into the config and runs its
-  own substitution over it.
-- **Errors are loud, with one exception.** A `devc.json` that doesn't parse
-  fails the command, naming the file — this file exists only for `devc`, and
-  silently starting a container without your mounts is worse. An unrecognized
-  top-level key warns on stderr naming the key (so a typo like `"mount"` is
-  visible) and is otherwise ignored. An empty file is simply no overlay. The one
-  exception is a non-boolean `baselineFeatures`, which warns and falls back to
-  the default (`true`) rather than failing the command — there is no
-  container-missing-your-mounts asymmetry to justify a hard error either way.
-- Mounts take effect at container-create time, so run `devc build` after editing
-  one.
-- Only `mounts`, `additionalFeatures` and `remoteEnv` have a `devcontainer up`
-  flag of their own — `baselineFeatures` has none; it is consulted before those
-  flags are built, to decide what devc adds to `additionalFeatures` on your
-  behalf. A project needing `containerEnv`, `forwardPorts`, `runArgs` and
-  friends should run `devc init` and edit its own `devcontainer.json`. There is
-  no flag for a lifecycle command either — to run something at create time, use
-  the
-  [project post-create hook](#project-post-create-hook-devc-post-createsh), which
-  works without a `.devcontainer/` at all.
+- **`devc up --print-config`** prints the merged result, and starts nothing.
+  That is the answer to "what did my overlay actually do".
+- Container config is bound at create time, so run `devc build` after editing an
+  overlay.
 - `devc config` writes the `mounts` key's two managed fences here — see
   [which file it writes](#which-file-it-writes). The other keys are yours; the
   wizard never touches them.
-- An overlay mount whose target collides with a base mount is not detected or
-  deduped — Docker fails with `Duplicate mount point`, which says exactly what
-  happened.
 - `devc init` is unaffected and still requires a **missing or empty**
   `.devcontainer/`: a lone `devc.json` in there counts as content. Move it
   aside, run `init`, move it back.
 
-### Mount specs: what an overlay mount can say
+### How the layers merge
 
-Overlay mounts become `devcontainer up --mount` args, and that flag accepts a
-**strictly smaller** vocabulary than a `devcontainer.json` `mounts` entry does.
-The CLI validates each one against its own regex:
+Lowest to highest: **devc → base config → user `devc.json` → project
+`devc.json`**. Per key of each layer in turn:
 
-```text
-type=<bind|volume>,source=<source>,target=<target>[,external=<true|false>]
-```
+| Kind                                              | Rule                          |
+| ------------------------------------------------- | ----------------------------- |
+| `null`                                            | Deletes the key, at any depth |
+| A key named in that layer's `"$replace": ["key"]` | Set outright, no merging      |
+| Two objects                                       | Merge recursively, per key    |
+| Two arrays                                        | Append, lower layer first     |
+| Anything else                                     | The higher layer wins         |
 
-That is the whole grammar. Field order is fixed, and neither path may contain a
-comma. Anything else — including **`readonly`** and **`consistency=cached`** —
-is rejected outright, so:
+Then, once over the result: **`mounts` dedupe by target** — a later entry
+sharing an earlier one's target replaces it in place, so the base's ordering
+survives and the highest layer's value wins — and
+`customizations.vscode.extensions` dedupe by id.
 
-- **There is no read-only overlay mount.** The CLI re-serializes each parsed
-  spec as `type=…,src=…,dst=…` before it reaches `docker run`, so even a
-  smuggled field would be dropped. Only _string_ mounts written directly in a
-  `devcontainer.json` `mounts` array are passed through verbatim — which is how
-  the infra `claude-seed` bind keeps its `readonly`. Everything `devc config`
-  writes is read-write, including skills folders.
-- Restoring read-only would mean granting the container `SYS_ADMIN` (so it could
-  `mount -o remount,bind,ro` its own mounts). Docker's default seccomp profile
-  fixes the `mount` allowance at container-create time from the configured
-  capabilities, so even `docker exec --privileged` cannot do it after the fact.
-  Trading a container-escape-class capability for read-only skill folders is a
-  bad deal, so devc does not.
-- `consistency=cached` is no loss: it was an osxfs-era hint that modern Docker
-  Desktop ignores under VirtioFS/gRPC-FUSE.
+Two deliberate exceptions:
 
-devc validates every entry against the same regex when it loads the file, so a
-bad spec fails naming the file, the index and the offending field — rather than
-surfacing later as the CLI's context-free `Unmatched argument format`.
+- **A Feature's options object is replaced whole**, not deep-merged. Half a
+  project's options blended with half the user's would be far harder to reason
+  about than "the project's entry replaces the user's".
+- **`baselineFeatures` is a veto, not "project wins".** It is
+  `user && project`: a machine owner's `false` cannot be talked back on by a
+  repo's `devc.json`. A project can still turn it off on its own.
+
+Target dedupe is what turns "append" into "override": pointing an overlay mount
+at a target the base config already mounts replaces that mount rather than
+colliding with it (two entries on one target used to reach Docker and fail the
+create with `Duplicate mount point`). `$replace` is for the case none of that
+covers — "throw away everything the layers under me said about this key" — and
+is rarely the answer.
+
+**Nothing is substituted by devc on the way in.** `${localEnv:HOME}`,
+`${containerWorkspaceFolder}` and friends are written through verbatim and
+resolved by the devcontainer CLI, so `${devcontainerId}` and
+`${containerEnv:…}` work in an overlay value too.
+
+### What an overlay can and cannot get away with
+
+- **Errors are loud, with one exception.** A `devc.json` that doesn't parse
+  fails the command, naming the file — this file exists only for `devc`, and
+  silently starting a container without its contributions is worse. A key that
+  is not a `devcontainer.json` key warns on stderr naming the key (so a typo like
+  `"mount"` is visible) and is passed through, where the CLI ignores it. The one
+  exception is a non-boolean `baselineFeatures`, which warns and falls back to
+  the default (`true`) rather than failing the command — there is no
+  container-missing-your-mounts asymmetry to justify a hard error either way.
+- **`mounts` is shape-checked only.** An entry must be a string with a `target=`
+  (or `dst=`) field, or an object with a `target` property; that check exists to
+  give a better error than Docker's, not to constrain the vocabulary. Field
+  order, `readonly`, `consistency` and the object form are all fine.
+- **An overlay can replace the base config's shape.** Setting `image`, `build`
+  or `dockerComposeFile` drops the other two (they are mutually exclusive in the
+  spec) and warns naming what it replaced. So does replacing a lifecycle command
+  — those are single-valued, so only the highest layer's runs. To _add_ a
+  create-time step rather than replace one, use the
+  [project post-create hook](#project-post-create-hook-devc-post-createsh).
+- **`readonly` still does not survive on Docker Compose projects.** The CLI
+  rewrites `mounts` into its generated compose file and drops the field on the
+  way. That is a CLI limitation, not devc's.
+- **`additionalFeatures` is gone.** The key is `features`, merged into the base
+  config's own. An overlay still using the old name gets the unknown-key warning
+  above.
 
 ## Project post-create hook: `devc-post-create.sh`
 
@@ -362,9 +389,8 @@ same both-are-first-class rule as the overlay itself:
 
 It runs via the
 [`devc-config` Feature](https://github.com/bmingles/devc-tools/tree/main/features/devc-config),
-which devc contributes to **every** container it starts — `devc up` adds it to
-whatever `devcontainer.json` is in play via `--additional-features`, with no
-configuration from you. That reaches every project devc starts, including one
+which devc contributes to **every** container it starts — it is the lowest layer
+of the merge that produces the effective config, with no configuration from you. That reaches every project devc starts, including one
 with its own hand-written `.devcontainer/devcontainer.json` that devc has never
 touched. devc's own baseline (the `agents` and `git-container-config`
 Features) is ordered ahead of it via `installsAfter` in `devc-config`'s own
@@ -377,10 +403,10 @@ clear `~/.bashrc` block, appended right after the hook — so a genuinely
 project-owned `.devcontainer/devcontainer.json` gets that shell behavior too,
 not just a zero-config or `devc init` one.
 
-**The injection is dynamic only — devc's own bundled `devcontainer.json` does
-not declare this Feature.** That means it reaches `devc up` and the
-zero-config cache it materializes, but not a `devc init`-scaffolded project
-run later with `devc` uninstalled: what this Feature does (running a script
+**The contribution is dynamic only — devc's own bundled `devcontainer.json` does
+not declare this Feature.** That means it reaches every container `devc up`
+starts, but not a `devc init`-scaffolded project run later with `devc`
+uninstalled: what this Feature does (running a script
 you wrote specifically for devc's own convention) is devc-specific, so it is
 fine — deliberately — for that one case to lose it. Declare
 `"devc-config": {}` yourself if you want it without devc.
@@ -388,9 +414,9 @@ fine — deliberately — for that one case to lose it. Declare
 Turn it off with `"baselineFeatures": false` in a `devc.json` overlay — see
 [Optional overlay: `devc.json`](#optional-overlay-devcjson) — which also
 disables any other Feature devc contributes on its own. If your own
-`devcontainer.json` (or overlay `additionalFeatures`) already declares
-`devc-config` under any tag, devc's injection steps aside rather than
-installing a second copy.
+`devcontainer.json` (or an overlay's `features`) already declares `devc-config`
+under any tag, devc's contribution steps aside rather than installing a second
+copy.
 
 ```bash
 #!/bin/bash
@@ -625,7 +651,7 @@ Opt in for **every project** (user level, `~/.config/devc/devc.json`) or for
 
 ```jsonc
 {
-  "additionalFeatures": {
+  "features": {
     "ghcr.io/bmingles/devc-tools/devc-bridge:0": {}
   }
 }
@@ -640,48 +666,32 @@ it. Nothing is mounted for the client, and nothing is compiled in the container.
 See [the Feature's README](../features/devc-bridge/README.md) for what it does
 and why.
 
-### The token mount, and the one place devc does something for you
+### The token mount
 
 The bridge also needs the host's shared-secret token, which does have to cross as
 a bind mount — and it must be **read-only**, or a container can pin the host's
-token for the next restart. That is the whole reason this is not simply another
-`additionalFeatures` line:
-
-- A **Feature** cannot declare it. The Feature schema's `Mount` has no `readonly`
-  field, and the CLI re-serializes object mounts without one.
-- A **devc.json overlay** cannot declare it either. Overlay mounts become
-  `devcontainer up --mount` arguments, whose validation rejects `readonly` — see
-  [Mount specs](#mount-specs-what-an-overlay-mount-can-say) above.
-
-A `devcontainer.json` `mounts` array is the only place a read-only bind can be
-expressed at all. So the two modes differ, and this is the one asymmetry between
-a devc project and a non-devc one:
-
-| Mode                                              | Who declares the token mount                                                                            |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Zero-config** (no `.devcontainer/` of your own) | **devc**, into the config it materializes into its cache — automatically, when you opt into the Feature |
-| **Project mode** (you have a `devcontainer.json`) | **You**, in your own config — exactly like a non-devc project                                           |
-
-In project mode, add it yourself:
+token for the next restart. devc contributes that mount itself whenever anything
+opts into the Feature, in **both** modes:
 
 ```jsonc
-"mounts": [
-  "type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly"
-]
+"type=bind,source=${localEnv:HOME}/.config/devc-bridge/run,target=/run/devc-bridge,readonly"
 ```
 
-devc does not write into a project's `.devcontainer/` — not here, not anywhere.
-The zero-config injection touches only devc's own cached artifact, happens only
-when you opted in, and has no host-side side effects; that is what keeps it from
-being the kind of devc-only shortcut the Feature exists to avoid.
+A **Feature** cannot declare it — the Feature schema's `Mount` has no `readonly`
+field, and the CLI re-serializes object mounts without one — so a
+`devcontainer.json` `mounts` array is the only place a read-only bind can be
+expressed. It reaches one because devc contributes it as the lowest layer of the
+merge, and the merged config is written to devc's own cache. **devc still does
+not write into a project's `.devcontainer/` — not here, not anywhere.**
 
-The injected mount arrives as a `devc:bridge-mount` fence in the cached config,
-spliced into whatever `mounts` array is there (created if there is none). Nothing
-in the bundled `devcontainer.json` marks the spot, on purpose: that file is also
-what `devc init` copies into your project, and a project that never opts into the
-bridge should carry no trace of it. If you keep your own
-`~/.config/devc/templates/devcontainer.json`, it needs no marker either — but a
-token mount you wrote there yourself is left alone, and no fence is added.
+This used to be the one asymmetry between a devc project and a non-devc one: the
+mount was spliced into the config devc materialized for the zero-config path, so
+project-mode users had to copy the line into their own `devcontainer.json` by
+hand. As a merge layer it reaches both, and the hand-written line is no longer
+needed (one you already have is harmless — see below).
+
+A project that does not use devc at all still declares the reference and the
+mount in its own `devcontainer.json`, exactly as before.
 
 **Install the host bridge first.** A Feature cannot create its own mount sources
 — its lifecycle hooks all run inside the container, and `--mount type=bind`
@@ -692,12 +702,11 @@ not exist`. Running `devc-bridge start` once seeds that directory. devc does
 not carry directories for it. That prerequisite is identical for devc and
 non-devc projects; only who writes the mount line differs.
 
-**If you already wired the bridge yourself** — a `run` mount in `devc.json`, a
-client mount copied into `devcontainer.json`, or a `devc-post-create.sh` that
-builds the client — remove it before opting in. Mounts are not deduped across
-those layers, and Docker fails the create with `Duplicate mount point`. (A token
-mount already present in a project-mode `devcontainer.json` is the one safe case:
-zero-config injection skips a config that declares the target already.)
+**If you already wired the bridge yourself** — a `run` mount you wrote in
+`devc.json` or copied into `devcontainer.json` — you can leave it: the merge
+dedupes `mounts` by target, and since devc's contribution is the lowest layer,
+yours wins. A `devc-post-create.sh` that builds the client should still be
+removed before opting in, since the Feature installs its own.
 
 On **Docker Compose** devcontainers the CLI drops `readonly` when it rewrites
 mounts into the generated compose file, so the token mount ends up writable
@@ -737,7 +746,7 @@ bash tests/shell_dirs_test.sh ../features/shell-dirs/install.sh             # de
 
 # devc no longer carries its own copy of the devc-config block — devc contributes the
 # devc-config Feature to every container it starts instead (see devc-core/overlay.ts's
-# DEVC_CONFIG_FEATURE and withBaselineFeatures), so this is the only copy left to test:
+# DEVC_CONFIG_FEATURE and devcContributions), so this is the only copy left to test:
 bash tests/devc_config_test.sh ../features/devc-config/post-create.sh       # devc:devc-config
 
 # devc's own scripts/bashrc-additions.sh is gone too — its content moved into devc-config's
@@ -793,8 +802,7 @@ typing paths:
   tick one from its parent folder.
 - A **review** summary then a single `Apply?` confirm writes the two managed
   mount blocks (`devc:source`, `devc:skills`); everything else in the file —
-  hand-written mounts, `additionalFeatures`, `remoteEnv`, comments — is left
-  untouched.
+  hand-written mounts, `features`, `remoteEnv`, comments — is left untouched.
 - Afterwards, `devc config` compares what it wrote to what was already on disk
   and only then offers a rebuild, since mounts take effect at container-create
   time:

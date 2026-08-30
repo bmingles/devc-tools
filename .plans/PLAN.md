@@ -11,25 +11,7 @@
 
 ### Pending
 
-- [devc-merged-config](devc-merged-config.md) — 📋 Ready to implement.
-  Replace the `devcontainer up` flag translation of the `devc.json` overlay with
-  a **literal JSON merge** into one effective `devcontainer.json`, materialized
-  per project under `~/.cache/devc/projects/` and handed to the CLI via
-  `--override-config` (project mode) or `--config` (zero-config).
-
-  That unlocks `readonly` overlay mounts, every `devcontainer.json` key, and
-  replacement/removal of what the base config says. It also deletes a
-  surprising amount: `overlayArgs`, `MOUNT_SPEC_RE`, `isEmptyOverlay`,
-  `computeContainerWorkspaceFolder` (a hand-port of the CLI's worktree
-  algorithm), `resolveOverlayRemoteEnv`, `loadDeclaredFeatureIds` and the
-  bridge-mount fence splicing — the bridge mount becomes a merge layer, which
-  makes it work in project mode for the first time.
-
-  **No backward compatibility**: no migration for stranded containers, no
-  `additionalFeatures` alias (the key is `features`), no fallback to the flag
-  path. All eight design decisions are settled in the plan's Decisions table;
-  the Docker-dependent claims about `--override-config` are read out of the
-  pinned CLI bundle and listed under Validation.
+Nothing pending right now.
 
 ### Standing rules for Feature work
 
@@ -73,6 +55,41 @@ declare no `initializeCommand`, no read-only mount, and no string mount).
   take it too.
 
 ### Completed
+
+- [devc-merged-config](archived/devc-merged-config.md) — ✅ Done, code
+  complete and offline-tested; the nine Docker-needed items in
+  [docs/manual-verification.md §11](../docs/manual-verification.md) are unrun
+  (no Docker in this environment), same standing as other entries below.
+
+  The `devc.json` overlay is no longer translated into `devcontainer up` flags.
+  devc merges four layers — `devc → base config → user devc.json → project
+  devc.json` — into one effective `devcontainer.json`, writes it to
+  `~/.cache/devc/projects/<key>/`, and hands that to the CLI: as
+  `--override-config` in project mode (which keeps relative paths and both
+  container-identity labels anchored to the project's own config, so nothing
+  churns) and as `--config` in zero-config mode. Nothing is written into the
+  project; the standalone invariant is untouched.
+
+  New `devc-core/merge.ts` (objects recurse, arrays append, `mounts` dedupe by
+  target, `null` deletes, `$replace` opts out) and `devc-core/merged_config.ts`
+  (`ensureMergedConfig`, atomic `0600` write, per-project stable path). An
+  overlay may now set **any** `devcontainer.json` key, `readonly` mounts
+  included, and can replace or delete what the base config declares.
+
+  It deletes more than it adds: `overlayArgs`, `MOUNT_SPEC_RE`,
+  `isEmptyOverlay`, `computeContainerWorkspaceFolder` (a hand-port of the CLI's
+  worktree-path algorithm — the CLI resolves `${containerWorkspaceFolder}`
+  itself inside a config file), `resolveOverlayRemoteEnv`,
+  `loadDeclaredFeatureIds`, `injectBridgeMount` and its fence, and the
+  per-project `bridge` flag on the config cache key. The devc-bridge token mount
+  became a merge layer, which makes it work in **project mode** for the first
+  time — those users used to copy the line into their own `devcontainer.json`.
+
+  **No backward compatibility, by decision**: no migration for the one-time
+  zero-config container recreate, no `additionalFeatures` alias (the key is
+  `features`), no fallback when a base config cannot be parsed — that is a hard
+  error naming the file. `devc up --print-config` is new, and is how you read
+  the effective config now that it lives in a cache rather than in the project.
 
 - [herdr-agent-sidecar](archived/herdr-agent-sidecar.md) — ✅ Done, code
   complete and offline-tested; the six Docker+Herdr-needed items in the
