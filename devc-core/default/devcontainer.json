@@ -33,7 +33,9 @@
     "ghcr.io/bmingles/devc-tools/agents:0": {
       "installClaudeCli": true,
       "installCopilotCli": false,
-      "installPiCli": true
+      "installHerdr": true,
+      "installPiCli": true,
+      "piPackages": "npm:@andrewjacop/pi-herdr"
     },
     "ghcr.io/bmingles/devc-tools/bash-config:0": {},
     // Bare {}, like bash-config's. There is no identityIncludePath left to pass —
