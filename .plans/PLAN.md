@@ -11,7 +11,13 @@
 
 ### Pending
 
-Nothing pending right now.
+- [feature-agents-dex-cli](feature-agents-dex-cli.md) — `agents` 0.5.0 adds
+  `installDexCli`: the [dex](https://github.com/dcramer/dex) task CLI, npm-installed
+  at build time into `~/.local/bin` beside pi, so the
+  [`dex-orchestrating`](../skills/dex-orchestrating/SKILL.md) skill has its CLI in
+  any container. **Not ready:** dex needs Node ≥ 24, so under `node-nvmrc` a
+  project pinning Node 22 gets a dex that installs and then fails at run time —
+  the plan lists the options; pick one first.
 
 ### Standing rules for Feature work
 
